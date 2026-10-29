@@ -28,6 +28,19 @@ interface SearchLog {
   created_at: string
 }
 
+interface HandbookSection {
+  id: number
+  company_id: string | null
+  section_key: string
+  section_number: string
+  title: string
+  content: string
+  handbook_version: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 const CATEGORIES = ['leave', 'pay', 'shifts', 'timesheets', 'benefits', 'rooms', 'elearning', 'kudos', 'meetings', 'performance', 'onboarding', 'policies', 'general']
 const DATA_QUERY_OPTIONS = [
   { value: '', label: 'None (static answer)' },
@@ -43,7 +56,7 @@ const DATA_QUERY_OPTIONS = [
 export default function AdminHelp() {
   const { selectedCompanyId } = useAdminCompany()
   const { showToast } = useToast()
-  const [tab, setTab] = useState<'company' | 'global' | 'metrics'>('company')
+  const [tab, setTab] = useState<'company' | 'global' | 'metrics' | 'handbook'>('company')
   const [articles, setArticles] = useState<HelpArticle[]>([])
   const [globalArticles, setGlobalArticles] = useState<HelpArticle[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,6 +76,12 @@ export default function AdminHelp() {
   const [searchLogs, setSearchLogs] = useState<SearchLog[]>([])
   const [metricsLoading, setMetricsLoading] = useState(false)
   const [metricsPeriod, setMetricsPeriod] = useState<'7' | '30' | '90'>('30')
+
+  const [handbookSections, setHandbookSections] = useState<HandbookSection[]>([])
+  const [handbookLoading, setHandbookLoading] = useState(false)
+  const [handbookMarkdown, setHandbookMarkdown] = useState('')
+  const [handbookVersion, setHandbookVersion] = useState('1.0')
+  const [handbookSaving, setHandbookSaving] = useState(false)
 
   const loadArticles = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -102,8 +121,96 @@ export default function AdminHelp() {
     setMetricsLoading(false)
   }, [selectedCompanyId, metricsPeriod])
 
+  const loadHandbook = useCallback(async () => {
+    if (!selectedCompanyId) return
+    setHandbookLoading(true)
+    const { data } = await supabase
+      .from('handbook_sections')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .order('section_number')
+    setHandbookSections(data || [])
+    setHandbookLoading(false)
+  }, [selectedCompanyId])
+
+  function parseMarkdownSections(md: string): { key: string; number: string; title: string; content: string }[] {
+    const parts = md.split(/(?=^## )/m).filter(s => s.startsWith('## '))
+    return parts.map((sec, i) => {
+      const heading = sec.split('\n')[0].replace(/^## /, '')
+      const slug = heading.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60)
+      const numMatch = heading.match(/^(\d+)\.?\s/)
+      return {
+        key: `${String(i).padStart(2, '0')}-${slug}`,
+        number: numMatch ? numMatch[1] : String(i),
+        title: heading,
+        content: sec.trim(),
+      }
+    })
+  }
+
+  async function handleHandbookSave() {
+    if (!selectedCompanyId) return
+    const sections = parseMarkdownSections(handbookMarkdown)
+    if (sections.length === 0) {
+      showToast('No sections found. The handbook should contain ## headings to split into sections.', 'error')
+      return
+    }
+    setHandbookSaving(true)
+
+    const { error: delError } = await supabase
+      .from('handbook_sections')
+      .delete()
+      .eq('company_id', selectedCompanyId)
+    if (delError) {
+      showToast('Failed to clear existing sections.', 'error')
+      setHandbookSaving(false)
+      return
+    }
+
+    const rows = sections.map(s => ({
+      company_id: selectedCompanyId,
+      section_key: s.key,
+      section_number: s.number,
+      title: s.title,
+      content: s.content,
+      handbook_version: handbookVersion,
+      is_active: true,
+    }))
+
+    const { error: insError } = await supabase.from('handbook_sections').insert(rows)
+    if (insError) {
+      showToast('Failed to save handbook sections.', 'error')
+      setHandbookSaving(false)
+      return
+    }
+
+    showToast(`${sections.length} handbook sections saved. Both AI assistants will now use them.`, 'success')
+    setHandbookMarkdown('')
+    setHandbookSaving(false)
+    loadHandbook()
+  }
+
+  async function handleHandbookDelete() {
+    if (!selectedCompanyId) return
+    if (!confirm('Remove all handbook sections for this company? The AI assistants will fall back to FAQ-only answers.')) return
+    const { error } = await supabase.from('handbook_sections').delete().eq('company_id', selectedCompanyId)
+    if (error) { showToast('Failed to remove handbook.', 'error'); return }
+    showToast('Handbook sections removed.', 'success')
+    loadHandbook()
+  }
+
+  function handleHandbookFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setHandbookMarkdown(reader.result as string)
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
   useEffect(() => { loadArticles() }, [loadArticles])
   useEffect(() => { if (tab === 'metrics') loadMetrics() }, [tab, loadMetrics])
+  useEffect(() => { if (tab === 'handbook') loadHandbook() }, [tab, loadHandbook])
 
   function resetForm() {
     setForm({ category: 'general', question: '', answer: '', keywords: '', sort_order: 0, data_query: '', is_active: true })
@@ -223,6 +330,9 @@ export default function AdminHelp() {
         </button>
         <button className={`admin-tab ${tab === 'metrics' ? 'active' : ''}`} onClick={() => setTab('metrics')}>
           Search Metrics
+        </button>
+        <button className={`admin-tab ${tab === 'handbook' ? 'active' : ''}`} onClick={() => setTab('handbook')}>
+          Handbook {handbookSections.length > 0 ? `(${handbookSections.length})` : ''}
         </button>
       </div>
 
@@ -481,6 +591,148 @@ export default function AdminHelp() {
                 </table>
               </div>
             </>
+          )}
+        </div>
+      )}
+
+      {tab === 'handbook' && (
+        <div className="admin-help-section">
+          {handbookLoading ? (
+            <p className="admin-help-loading">Loading handbook...</p>
+          ) : handbookSections.length > 0 ? (
+            <>
+              <div className="admin-help-metrics-cards" style={{ marginBottom: '1.5rem' }}>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value">{handbookSections.length}</div>
+                  <div className="admin-help-metric-label">Sections Loaded</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value">{handbookSections[0]?.handbook_version || '—'}</div>
+                  <div className="admin-help-metric-label">Version</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value">{handbookSections[0]?.updated_at ? formatDate(handbookSections[0].updated_at) : '—'}</div>
+                  <div className="admin-help-metric-label">Last Updated</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value" style={{ color: 'var(--success, #22c55e)' }}>{handbookSections.filter(s => s.is_active).length}</div>
+                  <div className="admin-help-metric-label">Active</div>
+                </div>
+              </div>
+
+              <div className="admin-help-metrics-section">
+                <h3>Loaded Sections</h3>
+                <p className="admin-page-subtitle">These sections are used by both AI assistants when employees ask policy questions.</p>
+                <table className="admin-help-table">
+                  <thead>
+                    <tr>
+                      <th>Section</th>
+                      <th>Title</th>
+                      <th>Length</th>
+                      <th>Active</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {handbookSections.map(s => (
+                      <tr key={s.id}>
+                        <td>{s.section_number}</td>
+                        <td>{s.title}</td>
+                        <td>{s.content.length.toLocaleString()} chars</td>
+                        <td>
+                          <span className={`admin-help-toggle ${s.is_active ? 'active' : ''}`}>
+                            {s.is_active ? 'Yes' : 'No'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="admin-help-metrics-section">
+                <h3>Update Handbook</h3>
+                <p className="admin-page-subtitle">Paste new handbook markdown or upload a .md file to replace all sections.</p>
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Version:</label>
+                  <input
+                    type="text"
+                    value={handbookVersion}
+                    onChange={e => setHandbookVersion(e.target.value)}
+                    style={{ width: '80px', padding: '0.375rem 0.5rem', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}
+                  />
+                  <label className="admin-btn admin-btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
+                    Upload .md file
+                    <input type="file" accept=".md,.txt" onChange={handleHandbookFileUpload} style={{ display: 'none' }} />
+                  </label>
+                </div>
+                <textarea
+                  rows={8}
+                  value={handbookMarkdown}
+                  onChange={e => setHandbookMarkdown(e.target.value)}
+                  placeholder="Paste the full handbook markdown here. Sections are split on ## headings."
+                  style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.8125rem', padding: '0.75rem', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px', resize: 'vertical' }}
+                />
+                {handbookMarkdown && (
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary, #6b7280)', margin: '0.5rem 0' }}>
+                    Preview: {parseMarkdownSections(handbookMarkdown).length} sections detected
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem' }}>
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    onClick={handleHandbookSave}
+                    disabled={handbookSaving || !handbookMarkdown.trim()}
+                  >
+                    {handbookSaving ? 'Saving...' : 'Replace All Sections'}
+                  </button>
+                  <button className="admin-btn admin-btn-danger" onClick={handleHandbookDelete}>
+                    Remove Handbook
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="admin-help-empty">
+              <p>No handbook loaded for this company. Upload your employee handbook to give the AI assistants access to your company's policies.</p>
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary, #6b7280)', marginTop: '0.5rem' }}>
+                The handbook is split on ## headings into sections. Both the AI Help Agent and Enterprise AI will search relevant sections when employees ask policy questions.
+              </p>
+              <div style={{ marginTop: '1.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Version:</label>
+                  <input
+                    type="text"
+                    value={handbookVersion}
+                    onChange={e => setHandbookVersion(e.target.value)}
+                    style={{ width: '80px', padding: '0.375rem 0.5rem', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}
+                  />
+                  <label className="admin-btn admin-btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
+                    Upload .md file
+                    <input type="file" accept=".md,.txt" onChange={handleHandbookFileUpload} style={{ display: 'none' }} />
+                  </label>
+                </div>
+                <textarea
+                  rows={10}
+                  value={handbookMarkdown}
+                  onChange={e => setHandbookMarkdown(e.target.value)}
+                  placeholder="Paste the full handbook markdown here. Sections are split on ## headings.&#10;&#10;Example:&#10;## 1. Welcome&#10;Your welcome policy content here...&#10;&#10;## 2. Annual Leave&#10;Your leave policy content here..."
+                  style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.8125rem', padding: '0.75rem', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px', resize: 'vertical' }}
+                />
+                {handbookMarkdown && (
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary, #6b7280)', margin: '0.5rem 0' }}>
+                    Preview: {parseMarkdownSections(handbookMarkdown).length} sections detected
+                  </p>
+                )}
+                <button
+                  className="admin-btn admin-btn-primary"
+                  onClick={handleHandbookSave}
+                  disabled={handbookSaving || !handbookMarkdown.trim()}
+                  style={{ marginTop: '0.75rem' }}
+                >
+                  {handbookSaving ? 'Saving...' : 'Load Handbook'}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}
