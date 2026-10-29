@@ -10593,7 +10593,7 @@ body {
 .hc-fab {
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  right: 20px;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -10643,11 +10643,11 @@ body {
 
 /* -- Mobile panel -- */
 .hc-mobile {
-  bottom: 0; left: 0; right: 0;
-  height: 100dvh;
-  height: 100vh;
-  border-radius: 0;
-  padding-top: env(safe-area-inset-top, 0px);
+  bottom: 8px; left: 8px; right: 8px;
+  top: 8px;
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.25);
+  padding-top: 0;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .hc-mobile.hc-opening { animation: hc-slide-up 280ms ease-out both; }
@@ -11093,7 +11093,7 @@ body {
 /* -- Mobile-specific FAB -- */
 @media (max-width: 639px) {
   .hc-fab {
-    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
     right: 16px; width: 52px; height: 52px;
   }
 }
@@ -11111,7 +11111,7 @@ body {
 .eai-fab {
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  right: 20px;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -11158,11 +11158,11 @@ body {
 :root[data-theme="dark"] .eai-overlay { background: rgba(0,0,0,0.55); }
 
 .eai-mobile {
-  bottom: 0; left: 0; right: 0;
-  height: 100dvh;
-  height: 100vh;
-  border-radius: 0;
-  padding-top: env(safe-area-inset-top, 0px);
+  bottom: 8px; left: 8px; right: 8px;
+  top: 8px;
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.25);
+  padding-top: 0;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .eai-mobile.eai-opening { animation: eai-slide-up 280ms ease-out both; }
@@ -11487,7 +11487,7 @@ body {
 
 @media (max-width: 639px) {
   .eai-fab {
-    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
     right: 16px; width: 52px; height: 52px;
   }
 }
