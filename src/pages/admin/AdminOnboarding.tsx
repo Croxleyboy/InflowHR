@@ -473,6 +473,11 @@ export default function AdminOnboarding() {
     schedule_stages: any[] | null
     schedule_next_due_at: string | null
     schedule_options: any | null
+    pass_id: string | null
+    pass_expires_at: string | null
+    pass_viewed_at: string | null
+    pass_viewed_by: string | null
+    pass_status: string | null
   }
   interface IfoSettings {
     approver_mode: 'manager' | 'nominated'
@@ -483,6 +488,7 @@ export default function AdminOnboarding() {
     licence_sku_name: string | null
     licence_manager_name: string | null
     group_name: string | null
+    passes_ready: boolean
   }
   const [m365Actions, setM365Actions] = useState<M365Actions | null>(null)
   const [m365Upn, setM365Upn] = useState('')
@@ -499,6 +505,12 @@ export default function AdminOnboarding() {
   const [m365PrepareDays, setM365PrepareDays] = useState(3)
   const [m365PrepareDate, setM365PrepareDate] = useState('')
   const [m365ScheduleCreating, setM365ScheduleCreating] = useState(false)
+  const [m365IssuePass, setM365IssuePass] = useState(true)
+  const [tapRevealConfirmOpen, setTapRevealConfirmOpen] = useState(false)
+  const [tapRevealData, setTapRevealData] = useState<{ pass: string; upn: string; expiresAt: string; oneTimeUse: boolean; notice: string } | null>(null)
+  const [tapRevealing, setTapRevealing] = useState(false)
+  const [tapRequesting, setTapRequesting] = useState(false)
+  const [tapJobPolling, setTapJobPolling] = useState(false)
   const [m365ScheduleCancelling, setM365ScheduleCancelling] = useState(false)
   const [m365ScheduleRefreshing, setM365ScheduleRefreshing] = useState(false)
   const [m365ActiveProvisionCount, setM365ActiveProvisionCount] = useState(0)
@@ -1714,7 +1726,7 @@ export default function AdminOnboarding() {
     const [{ data }, { data: ifo }, { data: wt }, { data: schedulingFlag }] = await Promise.all([
       supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle(),
       supabase.from('inflowonboarder_integrations')
-        .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache')
+        .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache, passes_ready')
         .eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
         .eq('onboard_id', onboardingId).in('record_type', ['M365 Provisioning', 'M365 Scheduling']).order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -1762,6 +1774,7 @@ export default function AdminOnboarding() {
         licence_sku_name: ifo.licence_sku_name,
         licence_manager_name: ifo.licence_manager_name,
         group_name: ifo.group_name,
+        passes_ready: ifo.passes_ready === true,
       })
       const templates = Array.isArray(ifo.schedule_templates_cache) ? ifo.schedule_templates_cache : []
       const hasJoiner = templates.some((t: any) => t.id === 'hr.joiner' || t.templateId === 'hr.joiner')
@@ -1818,6 +1831,7 @@ export default function AdminOnboarding() {
           approver_email: ifo?.approver_email || '',
           approved_at: wt?.updated_at || data.approved_at || new Date().toISOString(),
           attempt: data.attempt_count_run || 0,
+          ...(ifo?.passes_ready === true ? { issuePass: true } : {}),
         })
         if (result && !result.use_run_now) {
           const { data: synced } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
@@ -2095,6 +2109,47 @@ export default function AdminOnboarding() {
     await loadM365Actions(record.id)
   }
 
+  async function tapRevealPass(onboardingId: number, passId: string) {
+    setTapRevealing(true)
+    const result = await callIfo('reveal-pass', { onboarding_id: onboardingId, pass_id: passId })
+    setTapRevealing(false)
+    if (result) {
+      setTapRevealData({
+        pass: result.temporaryAccessPass || result.pass || '',
+        upn: result.userPrincipalName || m365Actions?.m365_upn || '',
+        expiresAt: result.expiresAt || m365Actions?.pass_expires_at || '',
+        oneTimeUse: result.isUsableOnce !== false,
+        notice: result.notice || '',
+      })
+      setTapRevealConfirmOpen(false)
+      await loadM365Actions(onboardingId)
+    }
+  }
+
+  async function tapRequestNewPass(onboardingId: number) {
+    setTapRequesting(true)
+    const result = await callIfo('request-new-pass', { onboarding_id: onboardingId })
+    if (!result?.jobId) { setTapRequesting(false); return }
+    setTapJobPolling(true)
+    const poll = async (attempts: number) => {
+      if (attempts > 30) { setTapRequesting(false); setTapJobPolling(false); showError('Pass request timed out'); return }
+      const job = await callIfo('check-pass-job', { job_id: result.jobId, onboarding_id: onboardingId })
+      if (job?.status === 'succeeded') {
+        setTapRequesting(false)
+        setTapJobPolling(false)
+        showSuccess('New pass is ready')
+        await loadM365Actions(onboardingId)
+      } else if (job?.status === 'failed') {
+        setTapRequesting(false)
+        setTapJobPolling(false)
+        showError(job.error?.message || 'Failed to create new pass')
+      } else {
+        setTimeout(() => poll(attempts + 1), 2000)
+      }
+    }
+    poll(0)
+  }
+
   async function m365CreateSchedule(record: OnboardRecord) {
     if (!selectedCompanyId || !m365Actions) return
     setM365ScheduleCreating(true)
@@ -2117,6 +2172,7 @@ export default function AdminOnboarding() {
       approver_email: ifoSettings?.approver_email || '',
       approved_at: m365Actions.approved_at || new Date().toISOString(),
       attempt: m365Actions.attempt_count_run || 0,
+      ...(ifoSettings?.passes_ready && m365IssuePass ? { issuePass: true } : {}),
     })
     setM365ScheduleCreating(false)
     if (result) {
@@ -4048,6 +4104,61 @@ export default function AdminOnboarding() {
                                     {m365Actions.m365_upn && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>Email: {m365Actions.m365_upn}</p>}
                                   </div>
                                 )}
+                                {/* TAP card */}
+                                {m365Actions.pass_status && (
+                                  <div style={{ marginTop: 10, border: '1px solid #bbdefb', borderRadius: 8, padding: 12, background: 'rgba(227,242,253,.3)' }}>
+                                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      🔑 First-Day Sign-In Pass
+                                    </p>
+                                    {m365Actions.pass_status === 'pending' && (
+                                      <p style={{ margin: '6px 0 0', fontSize: 12, color: '#888' }}>Pass will be ready on the start date</p>
+                                    )}
+                                    {m365Actions.pass_status === 'ready' && (
+                                      <div style={{ marginTop: 6 }}>
+                                        <p style={{ margin: 0, fontSize: 12, color: '#2e7d32' }}>Pass is ready</p>
+                                        {m365Actions.pass_expires_at && (
+                                          <p style={{ margin: '2px 0 0', fontSize: 11, color: '#888' }}>
+                                            Expires: {new Date(m365Actions.pass_expires_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                          </p>
+                                        )}
+                                        <p style={{ margin: '6px 0 4px', fontSize: 11, color: '#c62828', fontWeight: 500 }}>This pass is shown once and then deleted</p>
+                                        <button className="admin-btn-sm admin-btn-save" disabled={tapRevealing}
+                                          onClick={() => setTapRevealConfirmOpen(true)}
+                                          style={{ background: '#0078D4', marginTop: 4 }}>
+                                          {tapRevealing ? 'Revealing...' : 'View Pass (Once)'}
+                                        </button>
+                                      </div>
+                                    )}
+                                    {m365Actions.pass_status === 'viewed' && (
+                                      <div style={{ marginTop: 6 }}>
+                                        <p style={{ margin: 0, fontSize: 12, color: '#666' }}>
+                                          Pass viewed{m365Actions.pass_viewed_at ? ` on ${new Date(m365Actions.pass_viewed_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+                                        </p>
+                                        <span style={{ display: 'inline-block', marginTop: 4, padding: '2px 8px', borderRadius: 4, background: '#e0e0e0', fontSize: 11, fontWeight: 600, color: '#666' }}>Viewed</span>
+                                      </div>
+                                    )}
+                                    {(m365Actions.pass_status === 'expired' || m365Actions.pass_status === 'gone') && (
+                                      <div style={{ marginTop: 6 }}>
+                                        <p style={{ margin: 0, fontSize: 12, color: '#888' }}>This pass is no longer available</p>
+                                        <button className="admin-btn-sm" disabled={tapRequesting}
+                                          onClick={() => tapRequestNewPass(selectedRecord.id)}
+                                          style={{ marginTop: 6 }}>
+                                          {tapRequesting ? (tapJobPolling ? 'Creating pass...' : 'Requesting...') : 'Request a New Pass'}
+                                        </button>
+                                      </div>
+                                    )}
+                                    {m365Actions.pass_status === 'error' && (
+                                      <div style={{ marginTop: 6 }}>
+                                        <p style={{ margin: 0, fontSize: 12, color: '#c62828' }}>Pass could not be issued — check InflowOnboarder settings</p>
+                                        <button className="admin-btn-sm" disabled={tapRequesting}
+                                          onClick={() => tapRequestNewPass(selectedRecord.id)}
+                                          style={{ marginTop: 6 }}>
+                                          {tapRequesting ? 'Requesting...' : 'Request a New Pass'}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )}
 
@@ -4067,6 +4178,12 @@ export default function AdminOnboarding() {
                                     <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                       <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Schedule approved — ready to create</p>
                                     </div>
+                                    {ifoSettings?.passes_ready && (
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 13, cursor: 'pointer' }}>
+                                        <input type="checkbox" checked={m365IssuePass} onChange={e => setM365IssuePass(e.target.checked)} />
+                                        Give {selectedRecord.firstname} a first-day sign-in pass (collected once by {selectedRecord.manager || 'their manager'})
+                                      </label>
+                                    )}
                                     <button className="admin-btn-sm admin-btn-save" disabled={m365ScheduleCreating}
                                       onClick={e => { e.stopPropagation(); m365CreateSchedule(selectedRecord) }}
                                       style={{ background: '#0078D4' }}>
@@ -7043,6 +7160,65 @@ export default function AdminOnboarding() {
 
       {tab === 'setup' && (
         <CompanySetupWizard onSetupComplete={(companyId) => { refreshCompanies(companyId); load() }} />
+      )}
+
+      {/* TAP reveal confirmation dialog */}
+      {tapRevealConfirmOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setTapRevealConfirmOpen(false)}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 24, maxWidth: 420, width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,.2)' }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#1565c0' }}>View Sign-In Pass</h3>
+            <p style={{ margin: '0 0 8px', fontSize: 13, color: '#333' }}>
+              This pass is shown once and then deleted. Make sure you can note it down or hand it over now.
+            </p>
+            <p style={{ margin: '0 0 16px', fontSize: 12, color: '#c62828', fontWeight: 500 }}>
+              You will not be able to view it again.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="admin-btn-sm" onClick={() => setTapRevealConfirmOpen(false)}>Not Now</button>
+              <button className="admin-btn-sm admin-btn-save" disabled={tapRevealing}
+                style={{ background: '#0078D4' }}
+                onClick={() => { if (m365Actions?.pass_id && selectedRecord) tapRevealPass(selectedRecord.id, m365Actions.pass_id) }}>
+                {tapRevealing ? 'Loading...' : 'Show It'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAP reveal modal — pass value shown, never cached/stored */}
+      {tapRevealData && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 28, maxWidth: 480, width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,.25)' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
+              🔑 First-Day Sign-In Pass
+            </h3>
+            <div style={{ background: '#f5f5f5', border: '2px solid #1565c0', borderRadius: 8, padding: 16, marginBottom: 12, textAlign: 'center' }}>
+              <p style={{ margin: '0 0 4px', fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Temporary Access Pass</p>
+              <p style={{ margin: 0, fontSize: 24, fontFamily: 'monospace', fontWeight: 700, color: '#1565c0', userSelect: 'text', wordBreak: 'break-all' }}>
+                {tapRevealData.pass}
+              </p>
+            </div>
+            <div style={{ display: 'grid', gap: 6, fontSize: 13, marginBottom: 12 }}>
+              <div><strong>Sign-in name:</strong> {tapRevealData.upn}</div>
+              <div><strong>Expires:</strong> {tapRevealData.expiresAt ? new Date(tapRevealData.expiresAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown'}</div>
+              <div><strong>Usage:</strong> {tapRevealData.oneTimeUse ? 'Works once' : 'Works until expiry'}</div>
+            </div>
+            {tapRevealData.notice && (
+              <div style={{ padding: '8px 12px', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 6, fontSize: 12, color: '#6d4c00', marginBottom: 12 }}>
+                {tapRevealData.notice}
+              </div>
+            )}
+            <div style={{ padding: '10px 12px', background: '#e3f2fd', borderRadius: 6, fontSize: 12, color: '#1565c0', marginBottom: 16 }}>
+              <strong>Instructions:</strong> Go to <span style={{ fontFamily: 'monospace', userSelect: 'text' }}>aka.ms/mysecurityinfo</span>, sign in with the work email above, choose "Use a Temporary Access Pass", enter it, then set up the Microsoft Authenticator app.
+            </div>
+            <button className="admin-btn-sm admin-btn-save" style={{ background: '#0078D4', width: '100%' }}
+              onClick={() => setTapRevealData(null)}>
+              I've Given It to {selectedRecord?.firstname || 'Them'}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

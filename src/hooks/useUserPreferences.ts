@@ -16,7 +16,7 @@ export interface UserPreferences {
 
 const DEFAULTS: UserPreferences = {
   dashboard_layout: 'detailed',
-  dashboard_mode: 'simple',
+  dashboard_mode: 'info',
   info_card_order: null,
   info_card_hidden: null,
   dd2_columns: null,
