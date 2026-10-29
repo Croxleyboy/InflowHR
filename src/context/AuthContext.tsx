@@ -332,21 +332,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    let loadId = 0
+
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
       setUser(s?.user ?? null)
       if (s?.user) {
-        loadCompanyData(s.user.id, s.user.email || '').finally(() => setLoading(false))
+        const id = ++loadId
+        loadCompanyData(s.user.id, s.user.email || '').finally(() => {
+          if (id === loadId) setLoading(false)
+        })
       } else {
         setLoading(false)
       }
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'TOKEN_REFRESHED') {
+        setSession(s)
+        return
+      }
+
       setSession(s)
       setUser(s?.user ?? null)
       if (s?.user) {
-        loadCompanyData(s.user.id, s.user.email || '').finally(() => setLoading(false))
+        if (event === 'INITIAL_SESSION') return
+        const id = ++loadId
+        loadCompanyData(s.user.id, s.user.email || '').finally(() => {
+          if (id === loadId) setLoading(false)
+        })
       } else {
         setCompanyUser(null)
         setCompany(null)
