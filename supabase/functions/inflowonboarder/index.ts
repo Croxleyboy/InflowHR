@@ -263,6 +263,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   schedule_busy: 'The schedule is currently running and cannot be changed.',
   passes_off: 'First-day passes are switched off in InflowOnboarder.',
   passes_not_connected: 'First-day passes are being set up in InflowOnboarder.',
+  function_suspended: 'First-day passes are temporarily suspended by the InflowOnboarder service.',
   pass_gone: 'This pass is no longer available.',
   plan_required: 'This feature needs the JML Management plan in InflowOnboarder.',
   not_engine_managed: 'This account was not created by InflowOnboarder.',
@@ -474,8 +475,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Check passes readiness — keep existing DB values unless the engine
-      // explicitly tells us otherwise (the /v1/passes endpoint may not exist)
+      // Check passes readiness from engine
       let passesEnabled = config.passes_enabled || false
       let passesReady = config.passes_ready || false
       let passesStatusDetail = config.passes_status_detail || null
@@ -498,7 +498,30 @@ Deno.serve(async (req) => {
             passesReady = false
             passesStatusDetail = 'API key missing passes scope'
           }
-          // 404 or other status: keep existing DB values (endpoint may not exist)
+
+          // Check /v1/functions for suspension state
+          const funcsRes = await engineFetch(apiKey, 'GET', '/v1/functions')
+          if (funcsRes.ok) {
+            const funcs = Array.isArray(funcsRes.data) ? funcsRes.data : (funcsRes.data as any)?.functions || []
+            const passesFunc = funcs.find((f: any) => f.id === 'passes')
+            if (passesFunc) {
+              if (passesFunc.suspended) {
+                passesEnabled = false
+                passesReady = false
+                passesStatusDetail = passesFunc.suspendedReason
+                  ? `Suspended: ${passesFunc.suspendedReason}`
+                  : 'Temporarily suspended by InflowOnboarder'
+              } else if (!passesFunc.enabled) {
+                passesEnabled = false
+                passesReady = false
+                passesStatusDetail = null
+              } else if (!passesFunc.inPlan) {
+                passesEnabled = false
+                passesReady = false
+                passesStatusDetail = 'Requires the JML Management plan'
+              }
+            }
+          }
         }
       }
 
@@ -558,7 +581,7 @@ Deno.serve(async (req) => {
 
     // ── save-settings ───────────────────────────────────────────────────────
     if (action === 'save-settings') {
-      const { approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email, passes_enabled } = body
+      const { approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email } = body
 
       if (approver_mode && !['nominated', 'manager'].includes(approver_mode)) {
         return json({ error: 'approver_mode must be "nominated" or "manager"' }, 400)
@@ -612,10 +635,6 @@ Deno.serve(async (req) => {
       if (mover_approver_mode !== undefined) updates.mover_approver_mode = mover_approver_mode
       if (mover_approver_name !== undefined) updates.mover_approver_name = mover_approver_name
       if (mover_approver_email !== undefined) updates.mover_approver_email = mover_approver_email
-      if (passes_enabled !== undefined) {
-        updates.passes_enabled = passes_enabled === true
-        updates.passes_ready = passes_enabled === true
-      }
 
       const { error: updateErr } = await sb.from('inflowonboarder_integrations').update(updates).eq('company_id', company_id)
       if (updateErr) return json({ error: 'Failed to save settings: ' + updateErr.message }, 500)
@@ -1046,7 +1065,8 @@ Deno.serve(async (req) => {
 
       let res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
 
-      if (res.status === 409 && (res.data as any)?.error?.code === 'passes_off' && scheduleOptions.issuePass) {
+      const errCode409 = res.status === 409 ? (res.data as any)?.error?.code : null
+      if ((errCode409 === 'passes_off' || errCode409 === 'function_suspended') && scheduleOptions.issuePass) {
         delete scheduleOptions.issuePass
         engineBody.options = scheduleOptions
         res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, `${idempotencyKey}-nop`)

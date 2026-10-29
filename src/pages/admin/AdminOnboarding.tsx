@@ -488,7 +488,9 @@ export default function AdminOnboarding() {
     licence_sku_name: string | null
     licence_manager_name: string | null
     group_name: string | null
+    passes_enabled: boolean
     passes_ready: boolean
+    passes_status_detail: string | null
   }
   const [m365Actions, setM365Actions] = useState<M365Actions | null>(null)
   const [m365Upn, setM365Upn] = useState('')
@@ -1726,7 +1728,7 @@ export default function AdminOnboarding() {
     const [{ data }, { data: ifo }, { data: wt }, { data: schedulingFlag }] = await Promise.all([
       supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle(),
       supabase.from('inflowonboarder_integrations')
-        .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache, passes_ready')
+        .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache, passes_enabled, passes_ready, passes_status_detail')
         .eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
         .eq('onboard_id', onboardingId).in('record_type', ['M365 Provisioning', 'M365 Scheduling']).order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -1774,7 +1776,9 @@ export default function AdminOnboarding() {
         licence_sku_name: ifo.licence_sku_name,
         licence_manager_name: ifo.licence_manager_name,
         group_name: ifo.group_name,
+        passes_enabled: ifo.passes_enabled === true,
         passes_ready: ifo.passes_ready === true,
+        passes_status_detail: ifo.passes_status_detail || null,
       })
       const templates = Array.isArray(ifo.schedule_templates_cache) ? ifo.schedule_templates_cache : []
       const hasJoiner = templates.some((t: any) => t.id === 'hr.joiner' || t.templateId === 'hr.joiner')
@@ -4178,12 +4182,16 @@ export default function AdminOnboarding() {
                                     <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                       <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Schedule approved — ready to create</p>
                                     </div>
-                                    {ifoSettings?.passes_ready && (
+                                    {ifoSettings?.passes_ready ? (
                                       <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 13, cursor: 'pointer' }}>
                                         <input type="checkbox" checked={m365IssuePass} onChange={e => setM365IssuePass(e.target.checked)} />
                                         Give {selectedRecord.firstname} a first-day sign-in pass (collected once by {selectedRecord.manager || 'their manager'})
                                       </label>
-                                    )}
+                                    ) : ifoSettings?.passes_status_detail?.includes('Suspended') ? (
+                                      <p style={{ fontSize: 12, color: '#e65100', margin: '0 0 10px' }}>
+                                        First-day passes temporarily suspended{ifoSettings.passes_status_detail.includes(': ') ? ` — ${ifoSettings.passes_status_detail.split(': ').slice(1).join(': ')}` : ''}
+                                      </p>
+                                    ) : null}
                                     <button className="admin-btn-sm admin-btn-save" disabled={m365ScheduleCreating}
                                       onClick={e => { e.stopPropagation(); m365CreateSchedule(selectedRecord) }}
                                       style={{ background: '#0078D4' }}>

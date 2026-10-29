@@ -169,7 +169,7 @@ async function processEvent(sb: ReturnType<typeof getSupabase>, event: ScheduleE
 
   if (type === 'schedule.blocked' && isJoiner) {
     const errCode = (data.error as any)?.code
-    if (errCode === 'passes_off' || errCode === 'passes_not_connected') {
+    if (errCode === 'passes_off' || errCode === 'passes_not_connected' || errCode === 'function_suspended') {
       await sb.from('onboarding_m365_actions').update({
         pass_status: 'error',
         updated_at: new Date().toISOString(),
