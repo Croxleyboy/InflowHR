@@ -474,7 +474,8 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Check passes readiness
+      // Check passes readiness — keep existing DB values unless the engine
+      // explicitly tells us otherwise (the /v1/passes endpoint may not exist)
       let passesEnabled = config.passes_enabled || false
       let passesReady = config.passes_ready || false
       let passesStatusDetail = config.passes_status_detail || null
@@ -497,6 +498,7 @@ Deno.serve(async (req) => {
             passesReady = false
             passesStatusDetail = 'API key missing passes scope'
           }
+          // 404 or other status: keep existing DB values (endpoint may not exist)
         }
       }
 
@@ -556,7 +558,7 @@ Deno.serve(async (req) => {
 
     // ── save-settings ───────────────────────────────────────────────────────
     if (action === 'save-settings') {
-      const { approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email } = body
+      const { approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email, passes_enabled } = body
 
       if (approver_mode && !['nominated', 'manager'].includes(approver_mode)) {
         return json({ error: 'approver_mode must be "nominated" or "manager"' }, 400)
@@ -610,6 +612,10 @@ Deno.serve(async (req) => {
       if (mover_approver_mode !== undefined) updates.mover_approver_mode = mover_approver_mode
       if (mover_approver_name !== undefined) updates.mover_approver_name = mover_approver_name
       if (mover_approver_email !== undefined) updates.mover_approver_email = mover_approver_email
+      if (passes_enabled !== undefined) {
+        updates.passes_enabled = passes_enabled === true
+        updates.passes_ready = passes_enabled === true
+      }
 
       const { error: updateErr } = await sb.from('inflowonboarder_integrations').update(updates).eq('company_id', company_id)
       if (updateErr) return json({ error: 'Failed to save settings: ' + updateErr.message }, 500)

@@ -1304,15 +1304,30 @@ export default function AdminIntegrations() {
                           ✓ Connection verified: {new Date(ifoLastChecked).toLocaleString('en-GB')}
                         </p>
                       )}
-                      {ifoIntegration.passes_ready && (
-                        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#2e7d32' }}>🔑 First-day passes available</p>
-                      )}
-                      {ifoIntegration.passes_enabled && !ifoIntegration.passes_ready && (
-                        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#e65100' }}>🔑 First-day passes are being set up in InflowOnboarder</p>
-                      )}
-                      {!ifoIntegration.passes_enabled && (
-                        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#888' }}>🔑 Ask your InflowOnboarder admin to switch on first-day passes</p>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 0' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
+                          <input
+                            type="checkbox"
+                            checked={!!ifoIntegration.passes_enabled}
+                            onChange={async (e) => {
+                              const newVal = e.target.checked
+                              setIfoIntegration(prev => prev ? { ...prev, passes_enabled: newVal, passes_ready: newVal } : prev)
+                              const result = await callEdgeFunction('inflowonboarder', { action: 'save-settings', passes_enabled: newVal })
+                              if (result?.saved) {
+                                showSuccess(`First-day passes ${newVal ? 'enabled' : 'disabled'}`)
+                              } else {
+                                setIfoIntegration(prev => prev ? { ...prev, passes_enabled: !newVal, passes_ready: !newVal } : prev)
+                                showError('Failed to update passes setting')
+                              }
+                            }}
+                            style={{ width: 16, height: 16, accentColor: '#2e7d32' }}
+                          />
+                          <span>🔑 First-day sign-in passes</span>
+                        </label>
+                        <span style={{ fontSize: 11, color: ifoIntegration.passes_enabled ? '#2e7d32' : '#888', fontWeight: 600 }}>
+                          {ifoIntegration.passes_enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="admin-btn" onClick={checkIfoStatus} disabled={ifoChecking}>
