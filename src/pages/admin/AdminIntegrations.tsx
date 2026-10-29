@@ -214,6 +214,7 @@ export default function AdminIntegrations() {
   const [aiHelpExpanded, setAiHelpExpanded] = useState(false)
   const [aiHelpStats, setAiHelpStats] = useState<{ total: number; today: number } | null>(null)
   // Enterprise AI state
+  const [eaiEnabled, setEaiEnabled] = useState(false)
   const [eaiIntegration, setEaiIntegration] = useState<EnterpriseAIIntegration | null>(null)
   const [eaiExpanded, setEaiExpanded] = useState(false)
   const [eaiEndpoint, setEaiEndpoint] = useState('')
@@ -297,9 +298,11 @@ export default function AdminIntegrations() {
       const fm = new Map(featuresRes.data.map(f => [f.feature_key, f.is_enabled]))
       setTeamsSubscribed(fm.get('teams_integration') === true)
       setAiHelpEnabled(fm.get('ai_help_agent') === true)
+      setEaiEnabled(fm.get('enterprise_ai') === true)
     } else {
       setTeamsSubscribed(false)
       setAiHelpEnabled(false)
+      setEaiEnabled(false)
     }
 
     const today = new Date().toISOString().slice(0, 10)
@@ -619,13 +622,16 @@ export default function AdminIntegrations() {
     if (!companyId) return
     setSaving(true)
     const newState = !aiHelpEnabled
-    if (newState && eaiIntegration?.is_enabled) {
+    if (newState && eaiEnabled) {
       await supabase.from('company_features').upsert(
         { company_id: companyId, feature_key: 'enterprise_ai', is_enabled: false },
         { onConflict: 'company_id,feature_key' },
       )
-      await supabase.from('enterprise_ai_integrations').update({ is_enabled: false, updated_at: new Date().toISOString() }).eq('company_id', companyId)
-      setEaiIntegration(prev => prev ? { ...prev, is_enabled: false } : prev)
+      if (eaiIntegration) {
+        await supabase.from('enterprise_ai_integrations').update({ is_enabled: false, updated_at: new Date().toISOString() }).eq('company_id', companyId)
+        setEaiIntegration(prev => prev ? { ...prev, is_enabled: false } : prev)
+      }
+      setEaiEnabled(false)
     }
     await supabase.from('company_features').upsert(
       { company_id: companyId, feature_key: 'ai_help_agent', is_enabled: newState },
@@ -715,14 +721,18 @@ export default function AdminIntegrations() {
   }
 
   async function toggleEnterpriseAI() {
-    if (!companyId || !eaiIntegration) return
+    if (!companyId) return
     setSaving(true)
-    const newState = !eaiIntegration.is_enabled
-    await supabase.from('enterprise_ai_integrations').update({ is_enabled: newState, updated_at: new Date().toISOString() }).eq('company_id', companyId)
+    const newState = !eaiEnabled
     await supabase.from('company_features').upsert(
       { company_id: companyId, feature_key: 'enterprise_ai', is_enabled: newState },
       { onConflict: 'company_id,feature_key' },
     )
+    if (eaiIntegration) {
+      await supabase.from('enterprise_ai_integrations').update({ is_enabled: newState, updated_at: new Date().toISOString() }).eq('company_id', companyId)
+      setEaiIntegration(prev => prev ? { ...prev, is_enabled: newState } : prev)
+    }
+    setEaiEnabled(newState)
     if (newState && aiHelpEnabled) {
       await supabase.from('company_features').upsert(
         { company_id: companyId, feature_key: 'ai_help_agent', is_enabled: false },
@@ -732,7 +742,6 @@ export default function AdminIntegrations() {
     }
     setSaving(false)
     showSuccess(newState ? 'Enterprise AI Assistant enabled — employees will use Enterprise AI' : 'Enterprise AI Assistant disabled')
-    loadAll()
   }
 
   async function disconnectEnterpriseAI() {
@@ -1218,7 +1227,7 @@ export default function AdminIntegrations() {
         </div>
 
         {/* ── AI Help Agent Card ── */}
-        <div style={{ ...cardStyle(true), position: 'relative', opacity: features.ai_help_agent ? 1 : 0.55, pointerEvents: features.ai_help_agent ? 'auto' : 'none', border: aiHelpEnabled && !eaiIntegration?.is_enabled ? '2px solid #7c3aed' : undefined }}>
+        <div style={{ ...cardStyle(true), position: 'relative', opacity: features.ai_help_agent ? 1 : 0.55, pointerEvents: features.ai_help_agent ? 'auto' : 'none', border: aiHelpEnabled && !eaiEnabled ? '2px solid #7c3aed' : undefined }}>
           {!features.ai_help_agent && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'auto', borderRadius: 16 }}>
               <span style={{ background: '#00897b', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
@@ -1239,7 +1248,7 @@ export default function AdminIntegrations() {
               <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
                 AI-powered answers when FAQ articles cannot match
               </p>
-              {aiHelpEnabled && !eaiIntegration?.is_enabled && (
+              {aiHelpEnabled && !eaiEnabled && (
                 <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>Active for employees</span>
               )}
             </div>
@@ -1310,7 +1319,7 @@ export default function AdminIntegrations() {
         </div>
 
         {/* ── Enterprise AI Assistant Card ── */}
-        <div style={{ ...cardStyle(true), position: 'relative', opacity: features.enterprise_ai ? 1 : 0.55, pointerEvents: features.enterprise_ai ? 'auto' : 'none', border: eaiIntegration?.is_enabled ? '2px solid #0891b2' : undefined }}>
+        <div style={{ ...cardStyle(true), position: 'relative', opacity: features.enterprise_ai ? 1 : 0.55, pointerEvents: features.enterprise_ai ? 'auto' : 'none', border: eaiEnabled ? '2px solid #0891b2' : undefined }}>
           {!features.enterprise_ai && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'auto', borderRadius: 16 }}>
               <span style={{ background: '#0891b2', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
@@ -1331,20 +1340,18 @@ export default function AdminIntegrations() {
               <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
                 Bring-your-own-key Azure OpenAI with full company context
               </p>
-              {eaiIntegration?.is_enabled && !aiHelpEnabled && (
+              {eaiEnabled && !aiHelpEnabled && (
                 <span style={{ fontSize: 11, color: '#0891b2', fontWeight: 600 }}>Active for employees</span>
               )}
             </div>
-            <span className={`admin-badge ${eaiIntegration?.is_enabled ? 'admin-badge-approved' : ''}`}
-              style={!eaiIntegration?.is_enabled ? { background: 'var(--bg, #f1f5f9)', color: 'var(--text-muted, #64748b)' } : undefined}>
-              {eaiIntegration?.status === 'connected' ? 'Connected' : eaiIntegration?.status === 'configured' ? 'Configured' : eaiIntegration?.status === 'error' ? 'Error' : 'Not Configured'}
+            <span className={`admin-badge ${eaiEnabled ? 'admin-badge-approved' : ''}`}
+              style={!eaiEnabled ? { background: 'var(--bg, #f1f5f9)', color: 'var(--text-muted, #64748b)' } : undefined}>
+              {eaiEnabled ? (eaiIntegration?.status === 'connected' ? 'Connected' : eaiIntegration?.status === 'configured' ? 'Configured' : 'Enabled') : 'Not Enabled'}
             </span>
-            {eaiIntegration && (
-              <label className="admin-toggle" onClick={e => e.stopPropagation()}>
-                <input type="checkbox" checked={eaiIntegration.is_enabled} onChange={toggleEnterpriseAI} disabled={saving || eaiIntegration.status === 'not_configured'} />
-                <span className="admin-toggle-slider" />
-              </label>
-            )}
+            <label className="admin-toggle" onClick={e => e.stopPropagation()}>
+              <input type="checkbox" checked={eaiEnabled} onChange={toggleEnterpriseAI} disabled={saving} />
+              <span className="admin-toggle-slider" />
+            </label>
             <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(eaiExpanded)}>
               <polyline points="9 18 15 12 9 6" />
             </svg>
@@ -1352,6 +1359,12 @@ export default function AdminIntegrations() {
 
           {eaiExpanded && (
             <div style={{ marginTop: 20 }}>
+              {eaiEnabled && !eaiIntegration && (
+                <div style={{ ...sectionStyle, background: 'rgba(255,243,224,.5)', borderColor: '#ffcc80', marginBottom: 16 }}>
+                  <strong style={{ fontSize: 13, color: '#e65100' }}>Configuration Required</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>Enterprise AI is enabled for employees but Azure OpenAI is not configured yet. Save your API credentials below to activate AI responses.</p>
+                </div>
+              )}
               {eaiIntegration?.is_enabled && eaiStats && (
                 <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
                   <strong style={{ fontSize: 13, color: '#2e7d32' }}>Usage</strong>
