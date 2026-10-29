@@ -6,7 +6,7 @@ import { FeatureProvider } from './context/FeatureContext'
 import { LanguageProvider } from './context/LanguageContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { useMediaQuery } from './hooks/useMediaQuery'
-import { useFeatures } from './context/FeatureContext'
+import { useFeatures, defaultFeatures } from './context/FeatureContext'
 import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import PrivacyNotice from './pages/PrivacyNotice'
@@ -223,14 +223,18 @@ function EmployeeRoutes() {
 
 function FeatureLoader() {
   const { companyUser, guestCompanyId } = useAuth()
-  const { loadCompanyFeatures } = useFeatures()
+  const { loadCompanyFeatures, setFeatures } = useFeatures()
   const companyId = companyUser?.company_id || guestCompanyId
   const companyIdRef = useRef(companyId)
   companyIdRef.current = companyId
 
   useEffect(() => {
-    if (companyId) loadCompanyFeatures(companyId)
-  }, [companyId, loadCompanyFeatures])
+    if (companyId) {
+      loadCompanyFeatures(companyId)
+    } else {
+      setFeatures(defaultFeatures)
+    }
+  }, [companyId, loadCompanyFeatures, setFeatures])
 
   useEffect(() => {
     if (!companyId) return

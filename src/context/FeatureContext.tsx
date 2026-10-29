@@ -49,7 +49,7 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
 const PACK_A_FEATURES: (keyof Features)[] = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
 const PACK_B_FEATURES: (keyof Features)[] = ['teams_integration', 'skills_passport', 'modulr_integration', 'ai_help_agent']
 
-const defaultFeatures: Features = {
+export const defaultFeatures: Features = {
   expenses: true,
   leave: true,
   profile: true,

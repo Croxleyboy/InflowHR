@@ -546,6 +546,11 @@ export default function HelpChatBubble() {
     }
   }, [isOpen, layoutMode])
 
+  const scrollToBottom = useCallback(() => {
+    if (userScrolled) return
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80)
+  }, [userScrolled])
+
   useEffect(() => {
     if (!isOpen) return
     function handleKey(e: KeyboardEvent) {
@@ -556,11 +561,6 @@ export default function HelpChatBubble() {
   }, [isOpen])
 
   if (!features.employee_help || location.pathname.startsWith('/admin')) return null
-
-  const scrollToBottom = useCallback(() => {
-    if (userScrolled) return
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80)
-  }, [userScrolled])
 
   function handleScroll() {
     const el = messagesAreaRef.current
