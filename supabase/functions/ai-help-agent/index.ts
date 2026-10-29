@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGIN = 'https://app.inflowhr.com'
-const DAILY_LIMIT = 20
+const DAILY_PER_EMPLOYEE_LIMIT = 20
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
@@ -179,15 +179,34 @@ Deno.serve(async (req) => {
     if (!emp && !superAdmin) return json({ error: 'Employee not found' }, 404)
 
     const { data: feature } = await sb.from('company_features')
-      .select('is_enabled').eq('company_id', company_id).eq('feature_key', 'ai_help_agent').maybeSingle()
+      .select('is_enabled, monthly_query_limit, monthly_queries_used, usage_period_start')
+      .eq('company_id', company_id).eq('feature_key', 'ai_help_agent').maybeSingle()
     if (!feature?.is_enabled) return json({ error: 'AI Help Agent is not enabled for this company' }, 403)
 
+    // ── Monthly company cap check ──
+    let queriesUsed = feature.monthly_queries_used || 0
+    let periodStart = feature.usage_period_start
+    const monthStart = new Date().toISOString().slice(0, 8) + '01'
+
+    if (periodStart && periodStart < monthStart) {
+      queriesUsed = 0
+    }
+
+    const monthlyLimit = feature.monthly_query_limit
+    if (monthlyLimit !== null && monthlyLimit !== undefined && queriesUsed >= monthlyLimit) {
+      return json({
+        error: 'Your company has reached its monthly AI query limit. Please contact your HR admin or try again next month.',
+        usage: { queries_used: queriesUsed, monthly_limit: monthlyLimit },
+      }, 429)
+    }
+
+    // ── Per-employee daily limit (safety net) ──
     if (emp) {
       const today = new Date().toISOString().slice(0, 10)
       const { data: usage } = await sb.from('ai_help_usage')
         .select('query_count').eq('company_id', company_id).eq('employee_id', emp.id).eq('query_date', today).maybeSingle()
 
-      if (usage && usage.query_count >= DAILY_LIMIT) {
+      if (usage && usage.query_count >= DAILY_PER_EMPLOYEE_LIMIT) {
         return json({ error: 'Daily AI query limit reached. Please try again tomorrow or browse the help topics.' }, 429)
       }
 
@@ -196,6 +215,9 @@ Deno.serve(async (req) => {
         { onConflict: 'company_id,employee_id,query_date' },
       )
     }
+
+    // ── Increment company monthly counter ──
+    await sb.rpc('increment_ai_usage', { p_company_id: company_id })
 
     const { data: secretRow } = await sb.from('platform_secrets')
       .select('key_value').eq('key_name', 'openai_api_key').maybeSingle()

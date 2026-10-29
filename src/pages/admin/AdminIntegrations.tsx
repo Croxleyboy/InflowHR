@@ -213,6 +213,10 @@ export default function AdminIntegrations() {
   const [aiHelpEnabled, setAiHelpEnabled] = useState(false)
   const [aiHelpExpanded, setAiHelpExpanded] = useState(false)
   const [aiHelpStats, setAiHelpStats] = useState<{ total: number; today: number } | null>(null)
+  const [aiMonthlyLimit, setAiMonthlyLimit] = useState<number | null>(null)
+  const [aiMonthlyUsed, setAiMonthlyUsed] = useState(0)
+  const [aiLimitInput, setAiLimitInput] = useState('')
+  const [aiLimitSaving, setAiLimitSaving] = useState(false)
   // Enterprise AI state
   const [eaiEnabled, setEaiEnabled] = useState(false)
   const [eaiIntegration, setEaiIntegration] = useState<EnterpriseAIIntegration | null>(null)
@@ -288,7 +292,7 @@ export default function AdminIntegrations() {
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, sync_benefits_to_xero').eq('company_id', companyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', companyId).maybeSingle(),
-      supabase.from('company_features').select('feature_key, is_enabled, is_visible').eq('company_id', companyId),
+      supabase.from('company_features').select('feature_key, is_enabled, is_visible, monthly_query_limit, monthly_queries_used, usage_period_start').eq('company_id', companyId),
       supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at, approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, settings_updated_at, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email, schedule_templates_cache, passes_enabled, passes_ready, passes_status_detail').eq('company_id', companyId).maybeSingle(),
       supabase.from('companies').select('identity_provider').eq('id', companyId).single(),
     ])
@@ -297,10 +301,18 @@ export default function AdminIntegrations() {
     if (featuresRes.data) {
       const fm = new Map(featuresRes.data.map(f => [f.feature_key, f]))
       setTeamsSubscribed(fm.get('teams_integration')?.is_enabled === true)
-      const aiRow = fm.get('ai_help_agent')
+      const aiRow = fm.get('ai_help_agent') as Record<string, unknown> | undefined
       const eaiRow = fm.get('enterprise_ai')
-      setAiHelpEnabled(aiRow?.is_enabled === true && (aiRow?.is_visible ?? true))
+      setAiHelpEnabled(aiRow?.is_enabled === true && ((aiRow?.is_visible as boolean) ?? true))
       setEaiEnabled(eaiRow?.is_enabled === true && (eaiRow?.is_visible ?? true))
+
+      const mLimit = aiRow?.monthly_query_limit as number | null ?? null
+      const mUsed = (aiRow?.monthly_queries_used as number) || 0
+      const periodStart = aiRow?.usage_period_start as string | null
+      const monthStart = new Date().toISOString().slice(0, 8) + '01'
+      setAiMonthlyLimit(mLimit)
+      setAiMonthlyUsed(periodStart && periodStart < monthStart ? 0 : mUsed)
+      setAiLimitInput(mLimit !== null ? String(mLimit) : '')
     } else {
       setTeamsSubscribed(false)
       setAiHelpEnabled(false)
@@ -1284,6 +1296,74 @@ export default function AdminIntegrations() {
                       <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Today</p>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {aiHelpEnabled && (
+                <div style={{ ...sectionStyle, background: aiMonthlyLimit !== null && aiMonthlyUsed >= aiMonthlyLimit ? 'rgba(254,226,226,.5)' : 'rgba(237,233,254,.5)', borderColor: aiMonthlyLimit !== null && aiMonthlyUsed >= aiMonthlyLimit ? '#fca5a5' : '#c4b5fd', marginTop: 16 }}>
+                  <strong style={{ fontSize: 13, color: aiMonthlyLimit !== null && aiMonthlyUsed >= aiMonthlyLimit ? '#dc2626' : '#7c3aed' }}>Monthly AI Usage</strong>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 8 }}>
+                    <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{aiMonthlyUsed}</span>
+                    {aiMonthlyLimit !== null && (
+                      <span style={{ fontSize: 14, color: 'var(--text-muted, #888)' }}>/ {aiMonthlyLimit} queries</span>
+                    )}
+                    {aiMonthlyLimit === null && (
+                      <span style={{ fontSize: 14, color: 'var(--text-muted, #888)' }}>queries this month (no limit set)</span>
+                    )}
+                  </div>
+                  {aiMonthlyLimit !== null && (
+                    <div style={{ marginTop: 8, height: 8, borderRadius: 4, background: 'rgba(0,0,0,.08)', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        borderRadius: 4,
+                        width: `${Math.min(100, (aiMonthlyUsed / aiMonthlyLimit) * 100)}%`,
+                        background: aiMonthlyUsed >= aiMonthlyLimit ? '#dc2626' : aiMonthlyUsed >= aiMonthlyLimit * 0.8 ? '#f59e0b' : '#7c3aed',
+                        transition: 'width 0.3s ease',
+                      }} />
+                    </div>
+                  )}
+                  {aiMonthlyLimit !== null && aiMonthlyUsed >= aiMonthlyLimit && (
+                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
+                      Monthly limit reached — AI queries disabled until next month
+                    </p>
+                  )}
+                  {aiMonthlyLimit !== null && aiMonthlyUsed >= aiMonthlyLimit * 0.8 && aiMonthlyUsed < aiMonthlyLimit && (
+                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
+                      Approaching monthly limit ({Math.round((aiMonthlyUsed / aiMonthlyLimit) * 100)}% used)
+                    </p>
+                  )}
+                  {isSuperAdmin && (
+                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <label style={{ fontSize: 12, color: 'var(--text-muted, #888)', whiteSpace: 'nowrap' }}>Monthly limit:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Unlimited"
+                        value={aiLimitInput}
+                        onChange={e => setAiLimitInput(e.target.value)}
+                        style={{ width: 100, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border, #ddd)', fontSize: 13 }}
+                      />
+                      <button
+                        className="admin-btn admin-btn-sm"
+                        disabled={aiLimitSaving}
+                        onClick={async () => {
+                          setAiLimitSaving(true)
+                          const newLimit = aiLimitInput.trim() === '' ? null : parseInt(aiLimitInput)
+                          await supabase.from('company_features').update({ monthly_query_limit: newLimit }).eq('company_id', companyId).eq('feature_key', 'ai_help_agent')
+                          setAiMonthlyLimit(newLimit)
+                          setAiLimitSaving(false)
+                          showSuccess(newLimit !== null ? `Monthly AI limit set to ${newLimit} queries` : 'Monthly AI limit removed (unlimited)')
+                        }}
+                      >
+                        {aiLimitSaving ? 'Saving...' : 'Set'}
+                      </button>
+                    </div>
+                  )}
+                  {!isSuperAdmin && aiMonthlyLimit === null && (
+                    <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                      Contact your super admin to set a monthly query limit.
+                    </p>
+                  )}
                 </div>
               )}
 

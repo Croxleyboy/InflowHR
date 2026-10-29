@@ -83,6 +83,19 @@ export default function AdminHelp() {
   const [handbookVersion, setHandbookVersion] = useState('1.0')
   const [handbookSaving, setHandbookSaving] = useState(false)
   const [handbookOverlaps, setHandbookOverlaps] = useState<{ id: number; question: string; matchedSection: string }[]>([])
+  const [aiUsage, setAiUsage] = useState<{ used: number; limit: number | null; periodStart: string } | null>(null)
+
+  const loadAiUsage = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase.from('company_features')
+      .select('monthly_queries_used, monthly_query_limit, usage_period_start')
+      .eq('company_id', selectedCompanyId).eq('feature_key', 'ai_help_agent').maybeSingle()
+    if (data) {
+      const monthStart = new Date().toISOString().slice(0, 8) + '01'
+      const used = data.usage_period_start && data.usage_period_start < monthStart ? 0 : (data.monthly_queries_used || 0)
+      setAiUsage({ used, limit: data.monthly_query_limit, periodStart: data.usage_period_start || monthStart })
+    }
+  }, [selectedCompanyId])
 
   const loadArticles = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -264,7 +277,7 @@ export default function AdminHelp() {
   }
 
   useEffect(() => { loadArticles() }, [loadArticles])
-  useEffect(() => { if (tab === 'metrics') loadMetrics() }, [tab, loadMetrics])
+  useEffect(() => { if (tab === 'metrics') { loadMetrics(); loadAiUsage() } }, [tab, loadMetrics, loadAiUsage])
   useEffect(() => { if (tab === 'handbook') loadHandbook() }, [tab, loadHandbook])
 
   function resetForm() {
@@ -563,6 +576,41 @@ export default function AdminHelp() {
                   <div className="admin-help-metric-label">Match Rate</div>
                 </div>
               </div>
+
+              {aiUsage && (
+                <div className="admin-help-metrics-section" style={{ marginTop: '1.5rem' }}>
+                  <h3>AI Usage This Month</h3>
+                  <p className="admin-page-subtitle">
+                    Monthly AI query usage for {new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}. Limits are set in Integrations by a super admin.
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 8 }}>
+                    <span style={{ fontSize: 28, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{aiUsage.used}</span>
+                    {aiUsage.limit !== null ? (
+                      <span style={{ fontSize: 14, color: 'var(--text-muted, #888)' }}>/ {aiUsage.limit} queries used</span>
+                    ) : (
+                      <span style={{ fontSize: 14, color: 'var(--text-muted, #888)' }}>queries used (no limit set)</span>
+                    )}
+                  </div>
+                  {aiUsage.limit !== null && (
+                    <>
+                      <div style={{ marginTop: 10, height: 10, borderRadius: 5, background: 'var(--bg-secondary, #f1f5f9)', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          borderRadius: 5,
+                          width: `${Math.min(100, (aiUsage.used / aiUsage.limit) * 100)}%`,
+                          background: aiUsage.used >= aiUsage.limit ? '#ef4444' : aiUsage.used >= aiUsage.limit * 0.8 ? '#f59e0b' : '#7c3aed',
+                          transition: 'width 0.3s ease',
+                        }} />
+                      </div>
+                      <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                        {aiUsage.used >= aiUsage.limit
+                          ? 'Monthly limit reached — AI queries are disabled until next month'
+                          : `${aiUsage.limit - aiUsage.used} queries remaining`}
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
 
               {topUnmatched.length > 0 && (
                 <div className="admin-help-metrics-section">
