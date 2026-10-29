@@ -54,6 +54,144 @@ const STOP_WORDS = new Set([
   'too', 'much', 'many', 'more', 'most', 'other', 'into', 'here', 'there',
 ])
 
+const SYNONYMS: Record<string, string[]> = {
+  pet: ['animal', 'dog', 'cat', 'pets', 'animals', 'companion'],
+  animal: ['pet', 'dog', 'cat', 'pets', 'animals'],
+  dog: ['pet', 'animal', 'pets'],
+  cat: ['pet', 'animal', 'pets'],
+  holiday: ['leave', 'annual', 'vacation', 'time off', 'day off', 'holidays', 'pto'],
+  vacation: ['leave', 'annual', 'holiday', 'time off', 'pto'],
+  pto: ['leave', 'annual', 'holiday', 'vacation', 'time off'],
+  sick: ['illness', 'unwell', 'medical', 'doctor', 'sickness'],
+  illness: ['sick', 'unwell', 'medical', 'sickness'],
+  pay: ['salary', 'wage', 'payslip', 'payroll', 'compensation', 'earnings'],
+  salary: ['pay', 'wage', 'payslip', 'payroll', 'compensation', 'earnings'],
+  wage: ['pay', 'salary', 'payslip', 'payroll', 'earnings'],
+  payslip: ['pay', 'salary', 'wage', 'payroll', 'earnings'],
+  pregnant: ['pregnancy', 'maternity', 'baby', 'expecting'],
+  pregnancy: ['pregnant', 'maternity', 'baby', 'expecting'],
+  maternity: ['pregnant', 'pregnancy', 'baby', 'parental', 'paternity'],
+  paternity: ['parental', 'maternity', 'baby', 'father'],
+  baby: ['maternity', 'paternity', 'parental', 'pregnant', 'pregnancy'],
+  parental: ['maternity', 'paternity', 'baby', 'adoption'],
+  bereavement: ['death', 'funeral', 'compassionate', 'loss', 'grief', 'deceased'],
+  death: ['bereavement', 'funeral', 'compassionate', 'loss', 'grief'],
+  funeral: ['bereavement', 'death', 'compassionate'],
+  compassionate: ['bereavement', 'death', 'funeral', 'loss'],
+  wfh: ['remote', 'home', 'hybrid', 'working from home'],
+  remote: ['wfh', 'home', 'hybrid', 'working from home'],
+  home: ['wfh', 'remote', 'hybrid'],
+  hybrid: ['wfh', 'remote', 'home', 'flexible'],
+  flexible: ['hybrid', 'flexitime', 'flex', 'hours'],
+  overtime: ['extra hours', 'toil', 'time off in lieu', 'additional hours'],
+  toil: ['overtime', 'time off in lieu', 'extra hours', 'lieu'],
+  lieu: ['toil', 'overtime', 'time off in lieu'],
+  expense: ['expenses', 'receipt', 'claim', 'reimburse', 'reimbursement', 'mileage'],
+  expenses: ['expense', 'receipt', 'claim', 'reimburse', 'reimbursement', 'mileage'],
+  receipt: ['expense', 'expenses', 'claim', 'reimbursement'],
+  mileage: ['expense', 'expenses', 'travel', 'car'],
+  pension: ['retirement', 'auto enrolment', 'contribution', 'workplace pension'],
+  retirement: ['pension', 'auto enrolment'],
+  training: ['elearning', 'course', 'learning', 'development', 'cpd'],
+  elearning: ['training', 'course', 'learning', 'development'],
+  course: ['training', 'elearning', 'learning'],
+  probation: ['trial period', 'probationary', 'new starter'],
+  notice: ['resignation', 'resign', 'leaving', 'notice period', 'quit'],
+  resign: ['resignation', 'notice', 'leaving', 'quit'],
+  resignation: ['resign', 'notice', 'leaving', 'quit'],
+  quit: ['resign', 'resignation', 'notice', 'leaving'],
+  grievance: ['complaint', 'dispute', 'raise issue', 'formal complaint'],
+  complaint: ['grievance', 'dispute', 'raise issue'],
+  disciplinary: ['misconduct', 'warning', 'investigation', 'dismissal'],
+  bully: ['bullying', 'harassment', 'intimidation'],
+  bullying: ['bully', 'harassment', 'intimidation'],
+  harassment: ['bullying', 'bully', 'intimidation', 'discrimination'],
+  discrimination: ['harassment', 'equality', 'protected characteristic'],
+  dress: ['dress code', 'uniform', 'clothing', 'appearance'],
+  uniform: ['dress', 'dress code', 'clothing'],
+  parking: ['car park', 'car', 'vehicle'],
+  smoke: ['smoking', 'vaping', 'cigarette'],
+  smoking: ['smoke', 'vaping', 'cigarette'],
+  shift: ['rota', 'schedule', 'roster', 'shifts'],
+  rota: ['shift', 'schedule', 'roster', 'shifts'],
+  swap: ['shift swap', 'exchange', 'trade shift'],
+  timesheet: ['hours', 'time tracking', 'clock in', 'time entry'],
+  clock: ['clock in', 'clock out', 'check in', 'timesheet'],
+  bonus: ['incentive', 'commission', 'performance pay'],
+  raise: ['pay rise', 'salary increase', 'pay review', 'increment'],
+  promotion: ['promoted', 'career', 'progression', 'grade'],
+  reference: ['employment reference', 'job reference', 'referee'],
+  jury: ['jury service', 'jury duty', 'court'],
+  wedding: ['marriage', 'wedding leave'],
+  marriage: ['wedding', 'wedding leave'],
+  moving: ['relocation', 'moving house', 'house move'],
+  exam: ['study leave', 'examination', 'study'],
+  volunteer: ['volunteering', 'charity', 'volunteer day'],
+}
+
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  leave: ['leave', 'holiday', 'vacation', 'sick', 'annual', 'absence', 'day off', 'time off', 'pto', 'maternity', 'paternity', 'parental', 'bereavement', 'compassionate', 'unpaid', 'carers', 'jury', 'study', 'sabbatical', 'duvet'],
+  pay: ['pay', 'salary', 'wage', 'payslip', 'payroll', 'tax', 'pension', 'bonus', 'overtime', 'deduction', 'earnings', 'toil', 'national insurance', 'student loan', 'raise', 'increment'],
+  shifts: ['shift', 'rota', 'schedule', 'roster', 'swap', 'working hours', 'overtime', 'night shift', 'weekend'],
+  timesheets: ['timesheet', 'hours', 'clock', 'time tracking', 'time entry', 'check in'],
+  benefits: ['benefit', 'pension', 'health', 'dental', 'gym', 'cycle', 'childcare', 'voucher', 'perk', 'wellbeing', 'eye test', 'flu jab'],
+  rooms: ['room', 'booking', 'meeting room', 'desk', 'space', 'office'],
+  elearning: ['training', 'elearning', 'course', 'learning', 'development', 'cpd', 'certification'],
+  kudos: ['kudos', 'recognition', 'praise', 'thank', 'appreciation', 'reward', 'shout out'],
+  meetings: ['meeting', '1:1', 'one to one', 'check in', 'catch up', 'performance review'],
+  performance: ['performance', 'appraisal', 'review', 'objective', 'goal', 'target', 'kpi', 'feedback'],
+  onboarding: ['onboarding', 'new starter', 'induction', 'first day', 'probation', 'welcome'],
+  policies: ['policy', 'procedure', 'handbook', 'code of conduct', 'dress', 'smoking', 'alcohol', 'drug', 'pet', 'animal', 'remote', 'wfh', 'hybrid', 'flexible', 'grievance', 'disciplinary', 'bullying', 'harassment', 'discrimination', 'data protection', 'gdpr', 'social media', 'internet', 'email', 'phone', 'confidential', 'whistleblowing', 'bribery', 'gift', 'conflict of interest'],
+  general: ['manager', 'hr', 'contact', 'help', 'who', 'emergency', 'first aid', 'fire', 'parking', 'wifi', 'it support', 'equipment', 'laptop', 'reference', 'notice', 'resign', 'leaving'],
+}
+
+const DATA_INTENT_WORDS = new Set([
+  'balance', 'remaining', 'left', 'used', 'taken', 'booked', 'allowance',
+  'payslip', 'last pay', 'net pay', 'gross pay', 'tax paid',
+  'next shift', 'working tomorrow', 'shifts this week', 'shifts next week',
+  'hours worked', 'hours logged', 'hours this week',
+  'my manager', 'who is my', 'what department', 'my profile', 'when did i start',
+  'my benefits', 'enrolled', 'my courses', 'my training', 'progress',
+  'bank holiday', 'company holiday', 'next holiday',
+  'expenses', 'owed', 'expense claim', 'submitted',
+])
+
+function hasDataIntent(text: string): boolean {
+  const lower = text.toLowerCase()
+  for (const phrase of DATA_INTENT_WORDS) {
+    if (lower.includes(phrase)) return true
+  }
+  return false
+}
+
+function expandWithSynonyms(words: string[]): string[] {
+  const expanded = new Set(words)
+  for (const w of words) {
+    const syns = SYNONYMS[w]
+    if (syns) {
+      for (const s of syns) expanded.add(s)
+    }
+  }
+  return [...expanded]
+}
+
+function inferCategory(words: string[]): string | null {
+  const expanded = expandWithSynonyms(words)
+  let best: string | null = null
+  let bestScore = 0
+  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    let score = 0
+    for (const w of expanded) {
+      if (keywords.some(k => k.includes(w) || w.includes(k))) score++
+    }
+    if (score > bestScore) {
+      bestScore = score
+      best = cat
+    }
+  }
+  return bestScore > 0 ? best : null
+}
+
 function getSignificantWords(text: string): string[] {
   return text.toLowerCase().split(/\s+/)
     .map(w => w.replace(/[^a-z0-9]/g, ''))
@@ -61,7 +199,7 @@ function getSignificantWords(text: string): string[] {
 }
 
 function articleMatchesQuery(article: HelpArticle, queryWords: string[]): boolean {
-  const searchText = `${article.question} ${article.keywords}`.toLowerCase()
+  const searchText = `${article.question} ${article.keywords} ${article.answer}`.toLowerCase()
   return queryWords.some(w => searchText.includes(w))
 }
 
@@ -495,6 +633,8 @@ export default function HelpChatBubble() {
     const queryWords = getSignificantWords(searchQuery)
     if (queryWords.length === 0) return []
 
+    const expandedWords = expandWithSynonyms(queryWords)
+
     const { data } = await supabase
       .from('help_articles')
       .select('id, category, question, answer, keywords, data_query')
@@ -505,19 +645,17 @@ export default function HelpChatBubble() {
       .limit(10)
 
     if (data && data.length > 0) {
-      const relevant = data.filter(a => articleMatchesQuery(a, queryWords))
+      const relevant = data.filter(a => articleMatchesQuery(a, expandedWords))
       if (relevant.length > 0) return relevant.slice(0, 5)
     }
 
-    if (queryWords.length === 0) return []
-
-    const ilikeFilters = queryWords.map(w =>
-      `question.ilike.%${w}%,keywords.ilike.%${w}%`
+    const ilikeFilters = expandedWords.map(w =>
+      `question.ilike.%${w}%,keywords.ilike.%${w}%,answer.ilike.%${w}%`
     )
 
     let fallbackArticles: HelpArticle[] = []
 
-    if (queryWords.length <= 3) {
+    if (expandedWords.length <= 5) {
       for (const filter of ilikeFilters) {
         const { data: partial } = await supabase
           .from('help_articles')
@@ -530,12 +668,13 @@ export default function HelpChatBubble() {
         if (partial) fallbackArticles.push(...partial)
       }
     } else {
+      const topFilters = ilikeFilters.slice(0, 6)
       const { data: partial } = await supabase
         .from('help_articles')
         .select('id, category, question, answer, keywords, data_query')
         .or(`company_id.is.null,company_id.eq.${companyId}`)
         .eq('is_active', true)
-        .or(ilikeFilters.join(','))
+        .or(topFilters.join(','))
         .order('sort_order')
         .limit(10)
       if (partial) fallbackArticles = partial
@@ -549,19 +688,32 @@ export default function HelpChatBubble() {
     })
 
     const scored = unique.map(a => {
-      const text = `${a.question} ${a.keywords}`.toLowerCase()
-      const matchCount = queryWords.filter(w => text.includes(w)).length
+      const text = `${a.question} ${a.keywords} ${a.answer}`.toLowerCase()
+      const matchCount = expandedWords.filter(w => text.includes(w)).length
       return { article: a, score: matchCount }
     })
       .filter(s => s.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
 
-    if (scored.length > 0 && scored[0].score < Math.ceil(queryWords.length / 2) && queryWords.length > 2) {
+    if (scored.length > 0 && scored[0].score === 0) {
       return []
     }
 
     return scored.map(s => s.article)
+  }
+
+  async function searchCategoryArticles(category: string): Promise<HelpArticle[]> {
+    if (!companyId) return []
+    const { data } = await supabase
+      .from('help_articles')
+      .select('id, category, question, answer, keywords, data_query')
+      .or(`company_id.is.null,company_id.eq.${companyId}`)
+      .eq('is_active', true)
+      .eq('category', category)
+      .order('sort_order')
+      .limit(8)
+    return data || []
   }
 
   async function handleCategoryClick(category: string) {
@@ -631,7 +783,7 @@ export default function HelpChatBubble() {
         articles,
         askAiQuery: features.ai_help_agent && session ? q : undefined,
       }])
-    } else if (features.ai_help_agent && session) {
+    } else if (hasDataIntent(q) && features.ai_help_agent && session) {
       try {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
         const res = await fetch(`${supabaseUrl}/functions/v1/ai-help-agent`, {
@@ -669,12 +821,39 @@ export default function HelpChatBubble() {
         setShowChips(true)
       }
     } else {
-      logSearch(q, false, 0, null)
-      setMessages(prev => [...prev, {
-        role: 'bot',
-        text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
-      }])
-      setShowChips(true)
+      const queryWords = getSignificantWords(q)
+      const inferredCat = inferCategory(queryWords)
+
+      if (inferredCat) {
+        const catArticles = await searchCategoryArticles(inferredCat)
+        const catLabel = CATEGORIES.find(c => c.key === inferredCat)?.label || inferredCat
+
+        if (catArticles.length > 0) {
+          logSearch(q, true, catArticles.length, catArticles[0]?.id || null)
+          setMessages(prev => [...prev, {
+            role: 'bot',
+            text: `I didn't find an exact match, but here are some ${catLabel.toLowerCase()} articles that might help:`,
+            articles: catArticles,
+            askAiQuery: features.ai_help_agent && session ? q : undefined,
+          }])
+        } else {
+          logSearch(q, false, 0, null)
+          setMessages(prev => [...prev, {
+            role: 'bot',
+            text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
+            askAiQuery: features.ai_help_agent && session ? q : undefined,
+          }])
+          setShowChips(true)
+        }
+      } else {
+        logSearch(q, false, 0, null)
+        setMessages(prev => [...prev, {
+          role: 'bot',
+          text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
+          askAiQuery: features.ai_help_agent && session ? q : undefined,
+        }])
+        setShowChips(true)
+      }
     }
     setLoading(false)
     scrollToBottom()
@@ -951,13 +1130,20 @@ export default function HelpChatBubble() {
                 ))}
 
                 {showChips && (!isDesktop || isDocked) && (
-                  <div className="hc-chips">
-                    {CATEGORIES.map(cat => (
-                      <button key={cat.key} className="hc-chip" onClick={() => handleCategoryClick(cat.key)}>
-                        <span className="hc-chip-icon">{cat.icon}</span>
-                        {cat.label}
-                      </button>
-                    ))}
+                  <div className="hc-topic-dropdown-wrap">
+                    <select
+                      className="hc-topic-dropdown"
+                      value=""
+                      onChange={(ev) => {
+                        const val = ev.target.value
+                        if (val) handleCategoryClick(val)
+                      }}
+                    >
+                      <option value="" disabled>Browse by topic...</option>
+                      {CATEGORIES.map(cat => (
+                        <option key={cat.key} value={cat.key}>{cat.icon} {cat.label}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
 
