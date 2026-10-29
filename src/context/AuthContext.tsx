@@ -334,23 +334,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let loadId = 0
 
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s)
-      setUser(s?.user ?? null)
-      if (s?.user) {
-        const id = ++loadId
-        loadCompanyData(s.user.id, s.user.email || '').finally(() => {
-          if (id === loadId) setLoading(false)
-        })
-      } else {
-        setLoading(false)
-      }
-    })
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
-      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+      if (event === 'TOKEN_REFRESHED') {
         setSession(s)
-        if (event === 'INITIAL_SESSION') setUser(s?.user ?? null)
         return
       }
 
