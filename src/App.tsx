@@ -270,7 +270,6 @@ function AuthGate() {
   if (isGuest) {
     return (
       <>
-        <FeatureLoader />
         <Routes>
           <Route path="/admin" element={<AdminGate />}>
             <Route element={<AdminLayout />}>
@@ -321,7 +320,6 @@ function AuthGate() {
   if (isDesktop) {
     return (
       <CheckInProvider>
-      <FeatureLoader />
       <CheckInPrompt />
       <Routes>
         <Route path="/admin" element={<AdminGate />}>
@@ -379,7 +377,6 @@ function AuthGate() {
 
   return (
     <CheckInProvider>
-    <FeatureLoader />
     <CheckInPrompt />
     <Routes>
       {/* Admin Portal — locked to admin/hr roles */}
@@ -454,7 +451,7 @@ export default function App() {
           <Routes>
             <Route path="/privacy" element={<PrivacyNotice />} />
             <Route path="/trial" element={<TrialSignup />} />
-            <Route path="*" element={<AuthProvider><AuthGate /></AuthProvider>} />
+            <Route path="*" element={<AuthProvider><FeatureLoader /><AuthGate /></AuthProvider>} />
           </Routes>
         </BrowserRouter>
       </FeatureProvider>
