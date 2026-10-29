@@ -182,7 +182,7 @@ export default function AdminIntegrations() {
   const canDisconnect = isSuperAdmin || companyUser?.role === 'admin'
   const { selectedCompanyId } = useAdminCompany()
   const { showSuccess, showError } = useToast()
-  const { features } = useFeatures()
+  const { features, companyFeatures, loadCompanyFeatures } = useFeatures()
 
   // Teams state
   const [teamsConfig, setTeamsConfig] = useState<TeamsConfig | null>(null)
@@ -288,17 +288,19 @@ export default function AdminIntegrations() {
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, sync_benefits_to_xero').eq('company_id', companyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', companyId).maybeSingle(),
-      supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', companyId),
+      supabase.from('company_features').select('feature_key, is_enabled, is_visible').eq('company_id', companyId),
       supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at, approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, settings_updated_at, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email, schedule_templates_cache, passes_enabled, passes_ready, passes_status_detail').eq('company_id', companyId).maybeSingle(),
       supabase.from('companies').select('identity_provider').eq('id', companyId).single(),
     ])
     if (companyRes.data?.identity_provider) setIdentityProvider(companyRes.data.identity_provider as 'entra' | 'google_workspace')
 
     if (featuresRes.data) {
-      const fm = new Map(featuresRes.data.map(f => [f.feature_key, f.is_enabled]))
-      setTeamsSubscribed(fm.get('teams_integration') === true)
-      setAiHelpEnabled(fm.get('ai_help_agent') === true)
-      setEaiEnabled(fm.get('enterprise_ai') === true)
+      const fm = new Map(featuresRes.data.map(f => [f.feature_key, f]))
+      setTeamsSubscribed(fm.get('teams_integration')?.is_enabled === true)
+      const aiRow = fm.get('ai_help_agent')
+      const eaiRow = fm.get('enterprise_ai')
+      setAiHelpEnabled(aiRow?.is_enabled === true && (aiRow?.is_visible ?? true))
+      setEaiEnabled(eaiRow?.is_enabled === true && (eaiRow?.is_visible ?? true))
     } else {
       setTeamsSubscribed(false)
       setAiHelpEnabled(false)
@@ -624,7 +626,7 @@ export default function AdminIntegrations() {
     const newState = !aiHelpEnabled
     if (newState && eaiEnabled) {
       await supabase.from('company_features').upsert(
-        { company_id: companyId, feature_key: 'enterprise_ai', is_enabled: false },
+        { company_id: companyId, feature_key: 'enterprise_ai', is_visible: false },
         { onConflict: 'company_id,feature_key' },
       )
       if (eaiIntegration) {
@@ -634,12 +636,13 @@ export default function AdminIntegrations() {
       setEaiEnabled(false)
     }
     await supabase.from('company_features').upsert(
-      { company_id: companyId, feature_key: 'ai_help_agent', is_enabled: newState },
+      { company_id: companyId, feature_key: 'ai_help_agent', is_visible: newState },
       { onConflict: 'company_id,feature_key' },
     )
     setAiHelpEnabled(newState)
     setSaving(false)
     showSuccess(newState ? 'AI Help Agent enabled — employees will use the standard AI helper' : 'AI Help Agent disabled')
+    loadCompanyFeatures(companyId)
   }
 
   // ── Enterprise AI handlers ─────────────────────────────────────────────────
@@ -725,7 +728,7 @@ export default function AdminIntegrations() {
     setSaving(true)
     const newState = !eaiEnabled
     await supabase.from('company_features').upsert(
-      { company_id: companyId, feature_key: 'enterprise_ai', is_enabled: newState },
+      { company_id: companyId, feature_key: 'enterprise_ai', is_visible: newState },
       { onConflict: 'company_id,feature_key' },
     )
     if (eaiIntegration) {
@@ -735,13 +738,14 @@ export default function AdminIntegrations() {
     setEaiEnabled(newState)
     if (newState && aiHelpEnabled) {
       await supabase.from('company_features').upsert(
-        { company_id: companyId, feature_key: 'ai_help_agent', is_enabled: false },
+        { company_id: companyId, feature_key: 'ai_help_agent', is_visible: false },
         { onConflict: 'company_id,feature_key' },
       )
       setAiHelpEnabled(false)
     }
     setSaving(false)
     showSuccess(newState ? 'Enterprise AI Assistant enabled — employees will use Enterprise AI' : 'Enterprise AI Assistant disabled')
+    loadCompanyFeatures(companyId)
   }
 
   async function disconnectEnterpriseAI() {
@@ -1227,8 +1231,8 @@ export default function AdminIntegrations() {
         </div>
 
         {/* ── AI Help Agent Card ── */}
-        <div style={{ ...cardStyle(true), position: 'relative', opacity: features.ai_help_agent ? 1 : 0.55, pointerEvents: features.ai_help_agent ? 'auto' : 'none', border: aiHelpEnabled && !eaiEnabled ? '2px solid #7c3aed' : undefined }}>
-          {!features.ai_help_agent && (
+        <div style={{ ...cardStyle(true), position: 'relative', opacity: companyFeatures.ai_help_agent ? 1 : 0.55, pointerEvents: companyFeatures.ai_help_agent ? 'auto' : 'none', border: aiHelpEnabled && !eaiEnabled ? '2px solid #7c3aed' : undefined }}>
+          {!companyFeatures.ai_help_agent && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'auto', borderRadius: 16 }}>
               <span style={{ background: '#00897b', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
                 Requires Pro Integrations (Pack B)
@@ -1319,8 +1323,8 @@ export default function AdminIntegrations() {
         </div>
 
         {/* ── Enterprise AI Assistant Card ── */}
-        <div style={{ ...cardStyle(true), position: 'relative', opacity: features.enterprise_ai ? 1 : 0.55, pointerEvents: features.enterprise_ai ? 'auto' : 'none', border: eaiEnabled ? '2px solid #0891b2' : undefined }}>
-          {!features.enterprise_ai && (
+        <div style={{ ...cardStyle(true), position: 'relative', opacity: companyFeatures.enterprise_ai ? 1 : 0.55, pointerEvents: companyFeatures.enterprise_ai ? 'auto' : 'none', border: eaiEnabled ? '2px solid #0891b2' : undefined }}>
+          {!companyFeatures.enterprise_ai && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'auto', borderRadius: 16 }}>
               <span style={{ background: '#0891b2', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
                 Add-on subscription required
