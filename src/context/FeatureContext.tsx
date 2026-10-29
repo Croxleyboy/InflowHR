@@ -26,6 +26,7 @@ export interface Features {
   ai_help_agent: boolean
   inflowonboarder_integration: boolean
   m365_scheduling: boolean
+  enterprise_ai: boolean
 }
 
 const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management', 'benefits', 'xero_integration', 'sage_integration', 'payslips', 'surveys', 'employee_help']
@@ -43,6 +44,7 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   ai_help_agent: 'ai_help_agent',
   inflowonboarder_integration: 'inflowonboarder_integration',
   m365_scheduling: 'm365_scheduling',
+  enterprise_ai: 'enterprise_ai',
 }
 const PACK_A_FEATURES: (keyof Features)[] = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
 const PACK_B_FEATURES: (keyof Features)[] = ['teams_integration', 'skills_passport', 'modulr_integration', 'ai_help_agent']
@@ -72,6 +74,7 @@ const defaultFeatures: Features = {
   ai_help_agent: false,
   inflowonboarder_integration: false,
   m365_scheduling: false,
+  enterprise_ai: false,
 }
 
 interface FeatureContextType {

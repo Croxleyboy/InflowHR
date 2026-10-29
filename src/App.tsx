@@ -15,6 +15,7 @@ import InitialSetup from './pages/InitialSetup'
 import Footer from './components/Footer'
 import DesktopLayout from './components/DesktopLayout'
 import HelpChatBubble from './components/HelpChatBubble'
+import EnterpriseAIChat from './components/EnterpriseAIChat'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Expenses from './pages/Expenses'
@@ -231,6 +232,7 @@ function FeatureLoader() {
 
 function AuthGate() {
   const { user, loading, companyUser, setupComplete, isSuperAdmin, isGuest } = useAuth()
+  const { features } = useFeatures()
   const isDesktop = useMediaQuery('(min-width: 769px)')
 
   if (loading) {
@@ -350,7 +352,7 @@ function AuthGate() {
           <Route path="*" element={<EmployeeRoutes />} />
         </Route>
       </Routes>
-      <HelpChatBubble />
+      {features.enterprise_ai ? <EnterpriseAIChat /> : <HelpChatBubble />}
       </CheckInProvider>
     )
   }
@@ -417,7 +419,7 @@ function AuthGate() {
         </>
       } />
     </Routes>
-    <HelpChatBubble />
+    {features.enterprise_ai ? <EnterpriseAIChat /> : <HelpChatBubble />}
     </CheckInProvider>
   )
 }

@@ -75,6 +75,22 @@ interface InflowOnboarderIntegration {
   passes_status_detail: string | null
 }
 
+interface EnterpriseAIIntegration {
+  id: string
+  company_id: string
+  ai_provider: string
+  ai_endpoint: string | null
+  ai_api_key: string | null
+  ai_model: string | null
+  ai_api_version: string | null
+  is_enabled: boolean
+  connected_at: string | null
+  last_test_at: string | null
+  last_test_ok: boolean | null
+  status: string
+  status_detail: string | null
+}
+
 interface IfoLicence {
   skuId: string
   skuPartNumber: string
@@ -197,6 +213,18 @@ export default function AdminIntegrations() {
   const [aiHelpEnabled, setAiHelpEnabled] = useState(false)
   const [aiHelpExpanded, setAiHelpExpanded] = useState(false)
   const [aiHelpStats, setAiHelpStats] = useState<{ total: number; today: number } | null>(null)
+  // Enterprise AI state
+  const [eaiIntegration, setEaiIntegration] = useState<EnterpriseAIIntegration | null>(null)
+  const [eaiExpanded, setEaiExpanded] = useState(false)
+  const [eaiEndpoint, setEaiEndpoint] = useState('')
+  const [eaiApiKey, setEaiApiKey] = useState('')
+  const [eaiModel, setEaiModel] = useState('gpt-4o')
+  const [eaiApiVersion, setEaiApiVersion] = useState('2024-06-01')
+  const [eaiShowKey, setEaiShowKey] = useState(false)
+  const [eaiTesting, setEaiTesting] = useState(false)
+  const [eaiSaving, setEaiSaving] = useState(false)
+  const [eaiStats, setEaiStats] = useState<{ total: number; today: number } | null>(null)
+
   // InflowOnboarder state
   const [ifoIntegration, setIfoIntegration] = useState<InflowOnboarderIntegration | null>(null)
   const [ifoExpanded, setIfoExpanded] = useState(false)
@@ -281,6 +309,29 @@ export default function AdminIntegrations() {
     ])
     setAiHelpStats({ total: aiTotalRes.count || 0, today: aiTodayRes.count || 0 })
 
+    // Enterprise AI integration + usage
+    const eaiRes = await supabase.from('enterprise_ai_integrations').select('*').eq('company_id', companyId).maybeSingle()
+    const eaiData = eaiRes.data as EnterpriseAIIntegration | null
+    setEaiIntegration(eaiData)
+    if (eaiData) {
+      setEaiEndpoint(eaiData.ai_endpoint || '')
+      setEaiModel(eaiData.ai_model || 'gpt-4o')
+      setEaiApiVersion(eaiData.ai_api_version || '2024-06-01')
+      setEaiApiKey(eaiData.ai_api_key ? '••••••••••••••••' : '')
+    } else {
+      setEaiEndpoint('')
+      setEaiModel('gpt-4o')
+      setEaiApiVersion('2024-06-01')
+      setEaiApiKey('')
+    }
+    const [eaiTotalRes, eaiTodayRes] = await Promise.all([
+      supabase.from('enterprise_ai_usage').select('query_count').eq('company_id', companyId),
+      supabase.from('enterprise_ai_usage').select('query_count').eq('company_id', companyId).eq('query_date', today),
+    ])
+    const eaiTotal = (eaiTotalRes.data || []).reduce((sum: number, r: any) => sum + (r.query_count || 0), 0)
+    const eaiToday = (eaiTodayRes.data || []).reduce((sum: number, r: any) => sum + (r.query_count || 0), 0)
+    setEaiStats({ total: eaiTotal, today: eaiToday })
+
     if (teamsRes.data) {
       const t = teamsRes.data as TeamsConfig
       setTeamsConfig(t)
@@ -344,6 +395,7 @@ export default function AdminIntegrations() {
     setSageExpanded(false)
     setModulrExpanded(false)
     setAiHelpExpanded(false)
+    setEaiExpanded(false)
     setIfoExpanded(false)
     setIfoSettingsOpen(false)
     setIfoLicences([])
@@ -574,6 +626,107 @@ export default function AdminIntegrations() {
     setAiHelpEnabled(newState)
     setSaving(false)
     showSuccess(newState ? 'AI Help Agent enabled' : 'AI Help Agent disabled')
+  }
+
+  // ── Enterprise AI handlers ─────────────────────────────────────────────────
+
+  async function saveEnterpriseAI() {
+    if (!companyId) return
+    if (!eaiEndpoint.trim()) { showError('Azure OpenAI Endpoint is required'); return }
+    if (!eaiApiKey.trim() || eaiApiKey === '••••••••••••••••') {
+      if (!eaiIntegration?.ai_api_key) { showError('API Key is required'); return }
+    }
+    eaiSaving || setEaiSaving(true)
+    const payload: Record<string, unknown> = {
+      company_id: companyId,
+      ai_provider: 'azure_openai',
+      ai_endpoint: eaiEndpoint.trim(),
+      ai_model: eaiModel.trim() || 'gpt-4o',
+      ai_api_version: eaiApiVersion.trim() || '2024-06-01',
+      status: 'configured',
+      updated_at: new Date().toISOString(),
+    }
+    if (eaiApiKey.trim() && eaiApiKey !== '••••••••••••••••') {
+      payload.ai_api_key = eaiApiKey.trim()
+    }
+    const { error } = await supabase.from('enterprise_ai_integrations').upsert(payload, { onConflict: 'company_id' })
+    setEaiSaving(false)
+    if (error) { showError('Failed to save: ' + error.message); return }
+    showSuccess('Enterprise AI configuration saved')
+    loadAll()
+  }
+
+  async function testEnterpriseAI() {
+    if (!companyId) return
+    setEaiTesting(true)
+    const endpoint = eaiEndpoint.trim()
+    const model = eaiModel.trim() || 'gpt-4o'
+    const apiVersion = eaiApiVersion.trim() || '2024-06-01'
+    const key = (eaiApiKey.trim() && eaiApiKey !== '••••••••••••••••') ? eaiApiKey.trim() : null
+    if (!endpoint) { showError('Enter your Azure OpenAI endpoint first'); setEaiTesting(false); return }
+    if (!key && !eaiIntegration?.ai_api_key) { showError('Enter your API key first'); setEaiTesting(false); return }
+
+    const testKey = key || eaiIntegration?.ai_api_key || ''
+    const url = `${endpoint.replace(/\/+$/, '')}/openai/deployments/${model}/chat/completions?api-version=${apiVersion}`
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'api-key': testKey },
+        body: JSON.stringify({ messages: [{ role: 'user', content: 'Say hello' }], max_tokens: 5 }),
+      })
+      if (resp.ok) {
+        showSuccess('Connection test passed — Azure OpenAI responded successfully')
+        await supabase.from('enterprise_ai_integrations').update({
+          last_test_at: new Date().toISOString(),
+          last_test_ok: true,
+          status: 'connected',
+          status_detail: null,
+        }).eq('company_id', companyId)
+      } else {
+        const body = await resp.text().catch(() => '')
+        const detail = resp.status === 401 ? 'Invalid API key' : resp.status === 404 ? 'Model deployment not found — check the model name' : `HTTP ${resp.status}: ${body.slice(0, 120)}`
+        showError('Connection test failed: ' + detail)
+        await supabase.from('enterprise_ai_integrations').update({
+          last_test_at: new Date().toISOString(),
+          last_test_ok: false,
+          status: 'error',
+          status_detail: detail,
+        }).eq('company_id', companyId)
+      }
+    } catch {
+      showError('Connection test failed — could not reach the endpoint. Check the URL.')
+      await supabase.from('enterprise_ai_integrations').update({
+        last_test_at: new Date().toISOString(),
+        last_test_ok: false,
+        status: 'error',
+        status_detail: 'Network error',
+      }).eq('company_id', companyId)
+    }
+    setEaiTesting(false)
+    loadAll()
+  }
+
+  async function toggleEnterpriseAI() {
+    if (!companyId || !eaiIntegration) return
+    setSaving(true)
+    const newState = !eaiIntegration.is_enabled
+    await supabase.from('enterprise_ai_integrations').update({ is_enabled: newState, updated_at: new Date().toISOString() }).eq('company_id', companyId)
+    setSaving(false)
+    showSuccess(newState ? 'Enterprise AI Assistant enabled' : 'Enterprise AI Assistant disabled')
+    loadAll()
+  }
+
+  async function disconnectEnterpriseAI() {
+    if (!confirm('Disconnect Enterprise AI? This will remove the Azure OpenAI configuration.')) return
+    if (!companyId) return
+    await supabase.from('enterprise_ai_integrations').delete().eq('company_id', companyId)
+    setEaiIntegration(null)
+    setEaiEndpoint('')
+    setEaiApiKey('')
+    setEaiModel('gpt-4o')
+    setEaiApiVersion('2024-06-01')
+    showSuccess('Enterprise AI disconnected')
+    loadAll()
   }
 
   // ── InflowOnboarder handlers ───────────────────────────────────────────────
@@ -1134,6 +1287,189 @@ export default function AdminIntegrations() {
           )}
         </div>
 
+        {/* ── Enterprise AI Assistant Card ── */}
+        <div style={{ ...cardStyle(true), position: 'relative', opacity: features.enterprise_ai ? 1 : 0.55, pointerEvents: features.enterprise_ai ? 'auto' : 'none' }}>
+          {!features.enterprise_ai && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'auto', borderRadius: 16 }}>
+              <span style={{ background: '#0891b2', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
+                Add-on subscription required
+              </span>
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}
+            onClick={() => setEaiExpanded(!eaiExpanded)}>
+            <svg width="36" height="36" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="256" cy="256" r="256" fill="#0891b2"/>
+              <path d="M256 120c-75 0-136 61-136 136s61 136 136 136 136-61 136-136-61-136-136-136zm0 240c-57.4 0-104-46.6-104-104s46.6-104 104-104 104 46.6 104 104-46.6 104-104 104z" fill="#fff"/>
+              <path d="M296 216h-80c-4.4 0-8 3.6-8 8v16c0 4.4 3.6 8 8 8h24v48h-24c-4.4 0-8 3.6-8 8v16c0 4.4 3.6 8 8 8h80c4.4 0 8-3.6 8-8v-16c0-4.4-3.6-8-8-8h-24v-64c0-4.4-3.6-8-8-8h-8z" fill="#fff"/>
+              <circle cx="256" cy="192" r="16" fill="#fff"/>
+            </svg>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Enterprise AI Assistant</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+                Bring-your-own-key Azure OpenAI with full company context
+              </p>
+            </div>
+            <span className={`admin-badge ${eaiIntegration?.is_enabled ? 'admin-badge-approved' : ''}`}
+              style={!eaiIntegration?.is_enabled ? { background: 'var(--bg, #f1f5f9)', color: 'var(--text-muted, #64748b)' } : undefined}>
+              {eaiIntegration?.status === 'connected' ? 'Connected' : eaiIntegration?.status === 'configured' ? 'Configured' : eaiIntegration?.status === 'error' ? 'Error' : 'Not Configured'}
+            </span>
+            {eaiIntegration && (
+              <label className="admin-toggle" onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={eaiIntegration.is_enabled} onChange={toggleEnterpriseAI} disabled={saving || eaiIntegration.status === 'not_configured'} />
+                <span className="admin-toggle-slider" />
+              </label>
+            )}
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(eaiExpanded)}>
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </div>
+
+          {eaiExpanded && (
+            <div style={{ marginTop: 20 }}>
+              {eaiIntegration?.is_enabled && eaiStats && (
+                <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
+                  <strong style={{ fontSize: 13, color: '#2e7d32' }}>Usage</strong>
+                  <div style={{ display: 'flex', gap: 24, marginTop: 8 }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{eaiStats.total}</p>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Total AI queries</p>
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{eaiStats.today}</p>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Today</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {eaiIntegration?.status === 'error' && eaiIntegration.status_detail && (
+                <div style={{ ...sectionStyle, background: 'rgba(255,235,238,.5)', borderColor: '#ef9a9a', marginBottom: 16 }}>
+                  <strong style={{ fontSize: 13, color: '#c62828' }}>Connection Error</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>{eaiIntegration.status_detail}</p>
+                </div>
+              )}
+
+              <div style={{ ...sectionStyle, marginTop: 16 }}>
+                <p style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>Azure OpenAI Configuration</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <label style={labelStyle}>Endpoint URL</label>
+                    <input
+                      type="text"
+                      value={eaiEndpoint}
+                      onChange={e => setEaiEndpoint(e.target.value)}
+                      placeholder="https://your-resource.openai.azure.com"
+                      style={inputStyle}
+                    />
+                    <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                      Your Azure OpenAI resource endpoint (e.g. https://company-ai.openai.azure.com)
+                    </p>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>API Key</label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={eaiShowKey ? 'text' : 'password'}
+                        value={eaiApiKey}
+                        onChange={e => setEaiApiKey(e.target.value)}
+                        placeholder="Enter your Azure OpenAI API key"
+                        style={inputStyle}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setEaiShowKey(!eaiShowKey)}
+                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted, #888)' }}
+                      >
+                        {eaiShowKey ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <label style={labelStyle}>Model Deployment Name</label>
+                      <input
+                        type="text"
+                        value={eaiModel}
+                        onChange={e => setEaiModel(e.target.value)}
+                        placeholder="gpt-4o"
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <label style={labelStyle}>API Version</label>
+                      <input
+                        type="text"
+                        value={eaiApiVersion}
+                        onChange={e => setEaiApiVersion(e.target.value)}
+                        placeholder="2024-06-01"
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  {eaiIntegration && canDisconnect && (
+                    <button className="admin-btn" onClick={disconnectEnterpriseAI}>Disconnect</button>
+                  )}
+                  <button
+                    className="admin-btn"
+                    onClick={testEnterpriseAI}
+                    disabled={eaiTesting || !eaiEndpoint.trim()}
+                  >
+                    {eaiTesting ? 'Testing...' : 'Test Connection'}
+                  </button>
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    onClick={saveEnterpriseAI}
+                    disabled={eaiSaving || !eaiEndpoint.trim()}
+                    style={{ minWidth: 140, background: '#0891b2' }}
+                  >
+                    {eaiSaving ? 'Saving...' : 'Save Configuration'}
+                  </button>
+                </div>
+                {eaiIntegration?.last_test_at && (
+                  <p style={{ margin: '8px 0 0', fontSize: 11, color: eaiIntegration.last_test_ok ? '#2e7d32' : '#c62828' }}>
+                    Last test: {new Date(eaiIntegration.last_test_at).toLocaleString('en-GB')} — {eaiIntegration.last_test_ok ? 'Passed' : 'Failed'}
+                  </p>
+                )}
+              </div>
+
+              <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>How it works</p>
+                <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.9, color: 'var(--text, #444)' }}>
+                  <li><strong>BYOK (Bring Your Own Key)</strong> — connect your company&rsquo;s own Azure OpenAI deployment</li>
+                  <li><strong>Full company context</strong> — the AI knows your leave policies, benefits, help articles and the employee&rsquo;s own profile</li>
+                  <li><strong>Personal data queries run locally</strong> — leave balances, shifts, payslips and expenses are looked up inside your database, never sent externally</li>
+                  <li><strong>Replaces the standard helper</strong> — when enabled, employees see the Enterprise AI Assistant instead of the built-in Employee Help</li>
+                  <li><strong>50 queries per employee per day</strong> — configurable rate limit with metadata-only audit logging</li>
+                </ol>
+              </div>
+
+              <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>Supported personal data queries</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                  {['Leave balance', 'Leave requests by date', 'Expense claims', 'Upcoming shifts', 'Hours worked', 'Payslip summary', 'My profile & manager', 'Benefits', 'E-learning progress', 'Company holidays'].map(t => (
+                    <span key={t} style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 12, fontSize: 12, background: 'rgba(8,145,178,.08)', color: '#0891b2', fontWeight: 500 }}>{t}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ ...sectionStyle, background: 'rgba(255,248,225,.5)', borderColor: '#ffe0b2', marginTop: 16 }}>
+                <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: '#e65100' }}>GDPR &amp; Data Privacy</p>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                  <li><strong>Your key, your data processing</strong> — AI calls go directly to your Azure OpenAI deployment. InflowHR never sees the API key in transit after initial configuration</li>
+                  <li><strong>No query or response content stored</strong> — audit logs record only timestamp, employee ID, success/fail, and which data tool was called. The actual question and AI answer are never stored anywhere</li>
+                  <li><strong>Personal data queries execute locally</strong> — when the AI identifies a personal question, the data lookup runs entirely inside your Supabase database. No employee PII leaves the platform</li>
+                  <li><strong>Company context is read-only</strong> — the AI reads your published policies and help articles but cannot modify any data</li>
+                  <li><strong>Rate limited</strong> — 50 AI queries per employee per day</li>
+                  <li><strong>Cache-Control: no-store</strong> — all AI responses are returned with no-cache headers to prevent browser or proxy caching</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* ── Modulr Card ── */}
         <div style={{ ...cardStyle(true), position: 'relative', opacity: features.modulr_integration ? 1 : 0.55, pointerEvents: features.modulr_integration ? 'auto' : 'none' }}>
           {!features.modulr_integration && (
@@ -1305,28 +1641,24 @@ export default function AdminIntegrations() {
                         </p>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 0' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
-                          <input
-                            type="checkbox"
-                            checked={!!ifoIntegration.passes_enabled}
-                            onChange={async (e) => {
-                              const newVal = e.target.checked
-                              setIfoIntegration(prev => prev ? { ...prev, passes_enabled: newVal, passes_ready: newVal } : prev)
-                              const result = await callEdgeFunction('inflowonboarder', { action: 'save-settings', passes_enabled: newVal })
-                              if (result?.saved) {
-                                showSuccess(`First-day passes ${newVal ? 'enabled' : 'disabled'}`)
-                              } else {
-                                setIfoIntegration(prev => prev ? { ...prev, passes_enabled: !newVal, passes_ready: !newVal } : prev)
-                                showError('Failed to update passes setting')
-                              }
-                            }}
-                            style={{ width: 16, height: 16, accentColor: '#2e7d32' }}
-                          />
-                          <span>🔑 First-day sign-in passes</span>
-                        </label>
-                        <span style={{ fontSize: 11, color: ifoIntegration.passes_enabled ? '#2e7d32' : '#888', fontWeight: 600 }}>
-                          {ifoIntegration.passes_enabled ? 'Enabled' : 'Disabled'}
-                        </span>
+                        <span style={{ fontSize: 12 }}>🔑 First-day sign-in passes:</span>
+                        {ifoIntegration.passes_enabled && ifoIntegration.passes_ready ? (
+                          <span style={{ fontSize: 11, color: '#2e7d32', fontWeight: 600 }}>Available</span>
+                        ) : ifoIntegration.passes_status_detail?.startsWith('Suspended:') ? (
+                          <span style={{ fontSize: 11, color: '#e65100', fontWeight: 600 }}>
+                            {ifoIntegration.passes_status_detail.replace('Suspended: ', '')}
+                          </span>
+                        ) : ifoIntegration.passes_status_detail === 'Temporarily suspended by InflowOnboarder' ? (
+                          <span style={{ fontSize: 11, color: '#e65100', fontWeight: 600 }}>Temporarily suspended</span>
+                        ) : ifoIntegration.passes_status_detail === 'API key missing passes scope' ? (
+                          <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>API key needs passes scope</span>
+                        ) : ifoIntegration.passes_status_detail === 'Requires the JML Management plan' ? (
+                          <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>Requires the JML Management plan</span>
+                        ) : (
+                          <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>
+                            {ifoIntegration.passes_enabled ? 'Not ready' : 'Off — switch on in InflowOnboarder'}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
