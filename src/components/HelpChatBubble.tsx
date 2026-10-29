@@ -1,10 +1,13 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
+import { useTheme } from '../context/ThemeContext'
 import { formatCurrency, formatDate } from '../lib/formatters'
+
+const ASSISTANT_NAME = 'Employee Help'
 
 interface HelpArticle {
   id: number
@@ -21,22 +24,23 @@ interface ChatMessage {
   articles?: HelpArticle[]
   loading?: boolean
   askAiQuery?: string
+  sourcePolicy?: string
 }
 
 const CATEGORIES = [
-  { key: 'leave', label: 'Leave' },
-  { key: 'pay', label: 'Pay' },
-  { key: 'shifts', label: 'Shifts' },
-  { key: 'timesheets', label: 'Timesheets' },
-  { key: 'benefits', label: 'Benefits' },
-  { key: 'rooms', label: 'Room Booking' },
-  { key: 'elearning', label: 'Training' },
-  { key: 'kudos', label: 'Kudos' },
-  { key: 'meetings', label: '1:1 Meetings' },
-  { key: 'performance', label: 'Performance' },
-  { key: 'onboarding', label: 'Onboarding' },
-  { key: 'policies', label: 'Policies' },
-  { key: 'general', label: 'General' },
+  { key: 'leave', label: 'Leave', icon: '🏖️' },
+  { key: 'pay', label: 'Pay', icon: '💷' },
+  { key: 'shifts', label: 'Shifts', icon: '📅' },
+  { key: 'timesheets', label: 'Timesheets', icon: '⏱️' },
+  { key: 'benefits', label: 'Benefits', icon: '🎁' },
+  { key: 'rooms', label: 'Room Booking', icon: '🏢' },
+  { key: 'elearning', label: 'Training', icon: '📚' },
+  { key: 'kudos', label: 'Kudos', icon: '⭐' },
+  { key: 'meetings', label: '1:1 Meetings', icon: '🤝' },
+  { key: 'performance', label: 'Performance', icon: '📊' },
+  { key: 'onboarding', label: 'Onboarding', icon: '🚀' },
+  { key: 'policies', label: 'Policies', icon: '📋' },
+  { key: 'general', label: 'General', icon: '❓' },
 ]
 
 const STOP_WORDS = new Set([
@@ -324,45 +328,138 @@ async function resolveAnswer(article: HelpArticle, employeeId: string, companyId
   return answer
 }
 
+type LayoutMode = 'mobile' | 'tablet' | 'desktop'
+type DockMode = 'center' | 'side'
+
+function getLayoutMode(): LayoutMode {
+  const w = window.innerWidth
+  if (w < 640) return 'mobile'
+  if (w < 1024) return 'tablet'
+  return 'desktop'
+}
+
+function renderMarkdown(text: string): string {
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+  html = html.replace(/^### (.+)$/gm, '<h4 class="hc-md-h">$1</h4>')
+  html = html.replace(/^## (.+)$/gm, '<h3 class="hc-md-h">$1</h3>')
+  html = html.replace(/^# (.+)$/gm, '<h3 class="hc-md-h">$1</h3>')
+  html = html.replace(/^[•\-\*] (.+)$/gm, '<li>$1</li>')
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul class="hc-md-ul">${m}</ul>`)
+  html = html.replace(/\n{2,}/g, '</p><p>')
+  html = html.replace(/\n/g, '<br/>')
+  html = `<p>${html}</p>`
+  html = html.replace(/<p><\/p>/g, '')
+  html = html.replace(/<p>(<h[34]|<ul)/g, '<$1'.replace('<$1', (_, tag) => `<${tag}`))
+  return html
+}
+
 export default function HelpChatBubble() {
   const { features } = useFeatures()
   const { employeeId, employeeName, companyUser, company, session } = useAuth()
   const { t } = useLanguage()
+  const { dark } = useTheme()
   const location = useLocation()
+
   const [isOpen, setIsOpen] = useState(false)
+  const [isClosing, setIsClosing] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [expandedArticle, setExpandedArticle] = useState<number | null>(null)
   const [resolvedAnswers, setResolvedAnswers] = useState<Record<number, string>>({})
   const [showChips, setShowChips] = useState(true)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(getLayoutMode)
+  const [dockMode, setDockMode] = useState<DockMode>(() => {
+    try { return (localStorage.getItem('hc-dock') as DockMode) || 'center' } catch { return 'center' }
+  })
+  const [userScrolled, setUserScrolled] = useState(false)
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+  const [feedback, setFeedback] = useState<Record<number, 'up' | 'down'>>({})
 
-  if (!features.employee_help || location.pathname.startsWith('/admin')) return null
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const messagesAreaRef = useRef<HTMLDivElement>(null)
+  const fabRef = useRef<HTMLButtonElement>(null)
+  const touchStartY = useRef<number | null>(null)
 
   const companyId = companyUser?.company_id
   const currency = company?.currency || 'GBP'
+  const firstName = employeeName?.split(' ')[0] || ''
+  const isDesktop = layoutMode === 'desktop'
+  const isDocked = isDesktop && dockMode === 'side'
 
-  function scrollToBottom() {
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+  useEffect(() => {
+    function handleResize() { setLayoutMode(getLayoutMode()) }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  useEffect(() => {
+    if (isOpen && layoutMode === 'mobile') {
+      document.body.style.overflow = 'hidden'
+      return () => { document.body.style.overflow = '' }
+    }
+  }, [isOpen, layoutMode])
+
+  useEffect(() => {
+    if (!isOpen) return
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') handleClose()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [isOpen])
+
+  if (!features.employee_help || location.pathname.startsWith('/admin')) return null
+
+  const scrollToBottom = useCallback(() => {
+    if (userScrolled) return
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80)
+  }, [userScrolled])
+
+  function handleScroll() {
+    const el = messagesAreaRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+    setUserScrolled(!atBottom)
+  }
+
+  function jumpToBottom() {
+    setUserScrolled(false)
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   function handleOpen() {
     setIsOpen(true)
+    setIsClosing(false)
     if (messages.length === 0) {
-      const firstName = employeeName?.split(' ')[0] || ''
       setMessages([{
         role: 'bot',
         text: `Hi ${firstName}! How can I help you today? Choose a topic below or type your question.`,
       }])
       setShowChips(true)
     }
-    setTimeout(() => inputRef.current?.focus(), 200)
+    setTimeout(() => inputRef.current?.focus(), 300)
   }
 
-  function handleNewQuestion() {
-    const firstName = employeeName?.split(' ')[0] || ''
+  function handleClose() {
+    setIsClosing(true)
+    const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 50 : 200
+    setTimeout(() => {
+      setIsOpen(false)
+      setIsClosing(false)
+      fabRef.current?.focus()
+    }, duration)
+  }
+
+  function handleNewChat() {
     setMessages([{
       role: 'bot',
       text: `Hi ${firstName}! How can I help you today? Choose a topic below or type your question.`,
@@ -370,13 +467,31 @@ export default function HelpChatBubble() {
     setExpandedArticle(null)
     setResolvedAnswers({})
     setShowChips(true)
+    setSelectedCategory(null)
     setQuery('')
+    setFeedback({})
     setTimeout(() => inputRef.current?.focus(), 100)
+  }
+
+  function toggleDock() {
+    const next = dockMode === 'center' ? 'side' : 'center'
+    setDockMode(next)
+    try { localStorage.setItem('hc-dock', next) } catch { /* */ }
+  }
+
+  function handleHeaderTouchStart(e: React.TouchEvent) {
+    if (layoutMode !== 'mobile') return
+    touchStartY.current = e.touches[0].clientY
+  }
+  function handleHeaderTouchEnd(e: React.TouchEvent) {
+    if (touchStartY.current === null) return
+    const diff = e.changedTouches[0].clientY - touchStartY.current
+    if (diff > 60) handleClose()
+    touchStartY.current = null
   }
 
   async function searchArticles(searchQuery: string): Promise<HelpArticle[]> {
     if (!companyId) return []
-
     const queryWords = getSignificantWords(searchQuery)
     if (queryWords.length === 0) return []
 
@@ -453,6 +568,7 @@ export default function HelpChatBubble() {
     if (!companyId) return
     setLoading(true)
     setShowChips(false)
+    setSelectedCategory(category)
 
     setMessages(prev => [...prev, { role: 'user', text: CATEGORIES.find(c => c.key === category)?.label || category }])
 
@@ -495,8 +611,8 @@ export default function HelpChatBubble() {
     }).then()
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleSubmit(e?: React.FormEvent) {
+    if (e) e.preventDefault()
     const q = query.trim()
     if (!q || loading) return
     setQuery('')
@@ -620,144 +736,307 @@ export default function HelpChatBubble() {
     scrollToBottom()
   }
 
+  function handleCopyMessage(text: string, idx: number) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIdx(idx)
+      setTimeout(() => setCopiedIdx(null), 2000)
+    }).catch(() => {})
+  }
+
+  function handleTextareaKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit()
+    }
+  }
+
+  function autoGrowTextarea(el: HTMLTextAreaElement) {
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+  }
+
+  const panelClass = [
+    'hc-panel',
+    `hc-${layoutMode}`,
+    isDocked ? 'hc-docked' : '',
+    isClosing ? 'hc-closing' : 'hc-opening',
+  ].filter(Boolean).join(' ')
+
+  const overlayClass = `hc-overlay ${isClosing ? 'hc-overlay-closing' : 'hc-overlay-opening'}`
+
+  // Desktop sidebar with topics
+  const sidebarContent = isDesktop && !isDocked && (
+    <div className="hc-sidebar">
+      <div className="hc-sidebar-section">
+        <div className="hc-sidebar-label">Topics</div>
+        <div className="hc-sidebar-topics">
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat.key}
+              className={`hc-sidebar-topic ${selectedCategory === cat.key ? 'hc-sidebar-topic-active' : ''}`}
+              onClick={() => handleCategoryClick(cat.key)}
+            >
+              <span className="hc-sidebar-topic-icon">{cat.icon}</span>
+              <span>{cat.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <>
-      {isOpen && <div className="help-chat-overlay" onClick={() => setIsOpen(false)} />}
+      {isOpen && <div className={overlayClass} onClick={handleClose} />}
 
       {isOpen && (
-        <div className="help-chat-panel">
-          <div className="help-chat-header">
-            <div className="help-chat-header-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              </svg>
-              <span>{t('help.title') === 'help.title' ? 'Employee Help' : t('help.title')}</span>
+        <div
+          ref={panelRef}
+          className={panelClass}
+          role="dialog"
+          aria-modal="true"
+          aria-label={ASSISTANT_NAME}
+        >
+          {/* Header */}
+          <div
+            className="hc-header"
+            onTouchStart={handleHeaderTouchStart}
+            onTouchEnd={handleHeaderTouchEnd}
+          >
+            {layoutMode === 'mobile' && <div className="hc-handle" />}
+            <div className="hc-header-left">
+              <div className="hc-header-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+              </div>
+              <div className="hc-header-info">
+                <span className="hc-header-name">{ASSISTANT_NAME}</span>
+                <span className="hc-header-status">
+                  <span className="hc-status-dot" />
+                  Online · answers from your company's policies
+                </span>
+              </div>
             </div>
-            <div className="help-chat-header-actions">
+            <div className="hc-header-actions">
               {messages.length > 1 && (
-                <button className="help-chat-new-btn" onClick={handleNewQuestion} aria-label="New question" title="Start new question">
+                <button className="hc-header-btn" onClick={handleNewChat} aria-label="New chat" title="New chat">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
                   </svg>
                 </button>
               )}
-              <button className="help-chat-close" onClick={() => setIsOpen(false)} aria-label="Close">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {isDesktop && (
+                <button className="hc-header-btn" onClick={toggleDock} aria-label={isDocked ? 'Centre panel' : 'Dock to side'} title={isDocked ? 'Centre panel' : 'Dock to side'}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {isDocked ? (
+                      <><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></>
+                    ) : (
+                      <><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></>
+                    )}
+                  </svg>
+                </button>
+              )}
+              <button className="hc-header-btn" onClick={handleClose} aria-label="Close" title="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
               </button>
             </div>
           </div>
 
-          <div className="help-chat-messages">
-            {messages.map((msg, i) => (
-              <div key={i} className={`help-chat-message help-chat-message-${msg.role}`}>
-                {msg.role === 'bot' && (
-                  <div className="help-chat-avatar">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
+          <div className="hc-body">
+            {sidebarContent}
+
+            <div className="hc-main">
+              {/* Messages area */}
+              <div className="hc-messages" ref={messagesAreaRef} onScroll={handleScroll}>
+                <div aria-live="polite" aria-atomic="false" className="hc-sr-only" />
+
+                {messages.map((msg, i) => (
+                  <div key={i} className={`hc-msg hc-msg-${msg.role}`}>
+                    {msg.role === 'bot' && (
+                      <div className="hc-msg-avatar">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                      </div>
+                    )}
+                    <div className={`hc-msg-content ${msg.role === 'user' ? 'hc-msg-user-bubble' : 'hc-msg-bot-card'}`}>
+                      <div
+                        className="hc-msg-text"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
+                      />
+
+                      {msg.articles && msg.articles.length > 0 && (
+                        <div className="hc-articles">
+                          {msg.articles.map(article => (
+                            <button
+                              key={article.id}
+                              data-article-id={article.id}
+                              className={`hc-article ${expandedArticle === article.id ? 'hc-article-expanded' : ''}`}
+                              onClick={() => handleArticleClick(article)}
+                            >
+                              <div className="hc-article-q">
+                                <span>{article.question}</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: expandedArticle === article.id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                                  <polyline points="6 9 12 15 18 9"/>
+                                </svg>
+                              </div>
+                              {expandedArticle === article.id && (
+                                <div className="hc-article-a">
+                                  {(resolvedAnswers[article.id] || article.answer).split('\n').map((line, li) => (
+                                    <p key={li}>{line}</p>
+                                  ))}
+                                  {article.data_query && !resolvedAnswers[article.id] && (
+                                    <p style={{ fontStyle: 'italic', opacity: 0.7 }}>Loading your data...</p>
+                                  )}
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {msg.role === 'bot' && !msg.articles && i > 0 && (
+                        <div className="hc-msg-actions">
+                          <button
+                            className="hc-msg-action-btn"
+                            onClick={() => handleCopyMessage(msg.text, i)}
+                            title="Copy"
+                            aria-label="Copy answer"
+                          >
+                            {copiedIdx === i ? (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            )}
+                          </button>
+                          <button
+                            className={`hc-msg-action-btn ${feedback[i] === 'up' ? 'hc-feedback-active' : ''}`}
+                            onClick={() => setFeedback(prev => ({ ...prev, [i]: 'up' }))}
+                            title="Helpful"
+                            aria-label="Mark as helpful"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill={feedback[i] === 'up' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                          </button>
+                          <button
+                            className={`hc-msg-action-btn ${feedback[i] === 'down' ? 'hc-feedback-active' : ''}`}
+                            onClick={() => setFeedback(prev => ({ ...prev, [i]: 'down' }))}
+                            title="Not helpful"
+                            aria-label="Mark as not helpful"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill={feedback[i] === 'down' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
+                          </button>
+                        </div>
+                      )}
+
+                      {msg.askAiQuery && (
+                        <button
+                          className="hc-ask-ai"
+                          onClick={() => handleAskAi(msg.askAiQuery!, i)}
+                          disabled={loading}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93"/>
+                            <path d="M8.24 4.77A4 4 0 0 1 12 2"/>
+                            <path d="M14 10.5V19a2 2 0 0 1-4 0v-8.5"/>
+                            <circle cx="12" cy="6" r="1"/>
+                          </svg>
+                          Not what you need? Ask HR AI
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {showChips && (!isDesktop || isDocked) && (
+                  <div className="hc-chips">
+                    {CATEGORIES.map(cat => (
+                      <button key={cat.key} className="hc-chip" onClick={() => handleCategoryClick(cat.key)}>
+                        <span className="hc-chip-icon">{cat.icon}</span>
+                        {cat.label}
+                      </button>
+                    ))}
                   </div>
                 )}
-                <div className="help-chat-bubble">
-                  <p style={{ whiteSpace: 'pre-line' }}>{msg.text}</p>
-                  {msg.articles && msg.articles.length > 0 && (
-                    <div className="help-chat-articles">
-                      {msg.articles.map(article => (
-                        <button
-                          key={article.id}
-                          data-article-id={article.id}
-                          className={`help-chat-article-card ${expandedArticle === article.id ? 'expanded' : ''}`}
-                          onClick={() => handleArticleClick(article)}
-                        >
-                          <div className="help-chat-article-question">
-                            <span>{article.question}</span>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={expandedArticle === article.id ? 'rotated' : ''}>
-                              <polyline points="6 9 12 15 18 9"/>
-                            </svg>
-                          </div>
-                          {expandedArticle === article.id && (
-                            <div className="help-chat-article-answer">
-                              {(resolvedAnswers[article.id] || article.answer).split('\n').map((line, li) => (
-                                <p key={li}>{line}</p>
-                              ))}
-                              {article.data_query && !resolvedAnswers[article.id] && (
-                                <p className="help-chat-loading-data">Loading your data...</p>
-                              )}
-                            </div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {msg.askAiQuery && (
-                    <button
-                      className="help-chat-ask-ai-btn"
-                      onClick={() => handleAskAi(msg.askAiQuery!, i)}
-                      disabled={loading}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93"/>
-                        <path d="M8.24 4.77A4 4 0 0 1 12 2"/>
-                        <path d="M14 10.5V19a2 2 0 0 1-4 0v-8.5"/>
-                        <circle cx="12" cy="6" r="1"/>
-                      </svg>
-                      Not what you need? Ask HR AI
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
 
-            {showChips && (
-              <div className="help-chat-chips">
-                {CATEGORIES.map(cat => (
-                  <button key={cat.key} className="help-chat-chip" onClick={() => handleCategoryClick(cat.key)}>
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {loading && (
-              <div className="help-chat-message help-chat-message-bot">
-                <div className="help-chat-avatar">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                  </svg>
-                </div>
-                <div className="help-chat-bubble">
-                  <div className="help-chat-typing">
-                    <span /><span /><span />
+                {showChips && isDesktop && !isDocked && (
+                  <div className="hc-welcome-chips">
+                    {CATEGORIES.map(cat => (
+                      <button key={cat.key} className="hc-chip" onClick={() => handleCategoryClick(cat.key)}>
+                        <span className="hc-chip-icon">{cat.icon}</span>
+                        {cat.label}
+                      </button>
+                    ))}
                   </div>
-                </div>
+                )}
+
+                {loading && (
+                  <div className="hc-msg hc-msg-bot">
+                    <div className="hc-msg-avatar">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      </svg>
+                    </div>
+                    <div className="hc-msg-content hc-msg-bot-card">
+                      <div className="hc-typing">
+                        <span /><span /><span />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
               </div>
-            )}
 
-            <div ref={messagesEndRef} />
+              {/* Jump to bottom */}
+              {userScrolled && (
+                <button className="hc-jump-btn" onClick={jumpToBottom} aria-label="Jump to latest message">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                  New message
+                </button>
+              )}
+
+              {/* Input */}
+              <div className="hc-input-area">
+                <form className="hc-input-form" onSubmit={handleSubmit}>
+                  <textarea
+                    ref={inputRef}
+                    className="hc-textarea"
+                    value={query}
+                    onChange={e => { setQuery(e.target.value); autoGrowTextarea(e.target) }}
+                    onKeyDown={handleTextareaKeyDown}
+                    placeholder="Type your question..."
+                    maxLength={500}
+                    disabled={loading}
+                    rows={1}
+                  />
+                  <button
+                    type="submit"
+                    className="hc-send-btn"
+                    disabled={!query.trim() || loading}
+                    aria-label="Send"
+                    title="Send"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                    </svg>
+                  </button>
+                </form>
+                {isDesktop && (
+                  <div className="hc-input-hint">Enter to send · Shift + Enter for a new line · Esc to close</div>
+                )}
+              </div>
+            </div>
           </div>
-
-          <form className="help-chat-input" onSubmit={handleSubmit}>
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Type your question..."
-              maxLength={500}
-              disabled={loading}
-            />
-            <button type="submit" disabled={!query.trim() || loading} aria-label="Send">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-              </svg>
-            </button>
-          </form>
         </div>
       )}
 
       {!isOpen && (
-        <button className="help-chat-fab" onClick={handleOpen} aria-label="Open help chat">
+        <button ref={fabRef} className="hc-fab" onClick={handleOpen} aria-label={`Open ${ASSISTANT_NAME}`}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
           </svg>
