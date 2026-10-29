@@ -9,7 +9,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_found BOOLEAN;
+  v_count INTEGER;
 BEGIN
   UPDATE approval_delegations
   SET is_active = false, updated_at = now()
@@ -19,8 +19,8 @@ BEGIN
     )
     AND is_active = true;
 
-  GET DIAGNOSTICS v_found = ROW_COUNT;
-  RETURN v_found > 0;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count > 0;
 END;
 $$;
 

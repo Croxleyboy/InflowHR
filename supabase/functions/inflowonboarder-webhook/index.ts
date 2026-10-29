@@ -153,11 +153,78 @@ async function processEvent(sb: ReturnType<typeof getSupabase>, event: ScheduleE
 
   await sb.from(table).update(updates).eq(idColumn, recordId)
 
+  if (type === 'schedule.stage_completed' && isJoiner) {
+    const completedStage = stages?.find(s => s.name === 'enable_sign_in' && s.status === 'completed')
+    const stageResult = completedStage?.result as any
+    if (stageResult?.passId) {
+      await sb.from('onboarding_m365_actions').update({
+        pass_id: stageResult.passId,
+        pass_expires_at: stageResult.expiresAt,
+        pass_status: 'ready',
+        updated_at: new Date().toISOString(),
+      }).eq('onboarding_id', recordId)
+      await createTapReadyNotification(sb, existing.company_id, recordId, stageResult.expiresAt)
+    }
+  }
+
+  if (type === 'schedule.blocked' && isJoiner) {
+    const errCode = (data.error as any)?.code
+    if (errCode === 'passes_off' || errCode === 'passes_not_connected') {
+      await sb.from('onboarding_m365_actions').update({
+        pass_status: 'error',
+        updated_at: new Date().toISOString(),
+      }).eq('onboarding_id', recordId)
+    }
+  }
+
   if (type === 'schedule.stage_upcoming' && isLeaver) {
     const upcomingStage = stages?.find(s => s.status === 'upcoming')
     if (upcomingStage?.name === 'remove_access') {
       await createLeaverReminder(sb, existing.company_id, recordId)
     }
+  }
+}
+
+async function createTapReadyNotification(
+  sb: ReturnType<typeof getSupabase>,
+  companyId: string,
+  onboardingId: number,
+  expiresAt: string,
+) {
+  try {
+    const { data: onboarding } = await sb.from('onboardings')
+      .select('employee_id, employees!inner(first_name, last_name, manager_id)')
+      .eq('id', onboardingId)
+      .maybeSingle()
+
+    if (!onboarding) return
+
+    const emp = (onboarding as any).employees
+    const empName = `${emp.first_name} ${emp.last_name}`
+    const managerId = emp.manager_id
+
+    if (!managerId) return
+
+    const { data: manager } = await sb.from('employees')
+      .select('id')
+      .eq('id', managerId)
+      .maybeSingle()
+    if (!manager) return
+
+    const expiry = new Date(expiresAt)
+    const expiryStr = `${expiry.getDate().toString().padStart(2, '0')}/${(expiry.getMonth() + 1).toString().padStart(2, '0')}/${expiry.getFullYear()} at ${expiry.getHours().toString().padStart(2, '0')}:${expiry.getMinutes().toString().padStart(2, '0')}`
+
+    await sb.from('notifications').insert({
+      company_id: companyId,
+      employee_id: managerId,
+      type: 'tap_ready',
+      title: 'First-day sign-in pass ready',
+      message: `${empName}'s first-day sign-in pass is ready. View it once in InflowHR before ${expiryStr}.`,
+      is_read: false,
+      metadata: { onboarding_id: onboardingId },
+    })
+  } catch (e) {
+    console.error('[IFO-WEBHOOK] Failed to create TAP notification:', e)
   }
 }
 

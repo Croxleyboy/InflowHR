@@ -170,6 +170,35 @@ function mockProceedRun(runId: string, onboardingId: number, currentStatus: stri
   return { status: currentStatus }
 }
 
+function mockPassesStatus() {
+  return { enabled: true, ready: true, passes: { total: 10, active: 2 } }
+}
+
+function mockRevealPass(passId: string) {
+  return {
+    passId,
+    temporaryAccessPass: `MOCK${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+    expiresAt: new Date(Date.now() + 8 * 3600000).toISOString(),
+    isUsableOnce: true,
+    notice: 'This is a one-time use pass. Go to https://aka.ms/mysecurityinfo, sign in with your work email, choose "Use a Temporary Access Pass", enter it, then set up the Microsoft Authenticator app.',
+  }
+}
+
+let mockPassJobCounter = 0
+function mockRequestNewPass(onboardingId: number) {
+  mockPassJobCounter++
+  const jobId = `mock-pass-job-${mockPassJobCounter}`
+  mockJobs[jobId] = {
+    id: jobId, action: 'passes.create', status: 'succeeded', idempotencyKey: `pass-${onboardingId}`,
+    result: {
+      passId: `mock-pass-${onboardingId}-${mockPassJobCounter}`,
+      expiresAt: new Date(Date.now() + 8 * 3600000).toISOString(),
+    },
+    error: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  }
+  return { jobId }
+}
+
 // ── Audit helper ────────────────────────────────────────────────────────────
 
 async function audit(sb: ReturnType<typeof getSupabase>, companyId: string, userId: string, action: string, details: Record<string, unknown>) {
@@ -232,6 +261,22 @@ const ERROR_MESSAGES: Record<string, string> = {
   schedule_exists: 'A schedule already exists for this starter.',
   stage_in_past: 'One or more schedule stages would fall in the past. Use "Run now" instead.',
   schedule_busy: 'The schedule is currently running and cannot be changed.',
+  passes_off: 'First-day passes are switched off in InflowOnboarder.',
+  passes_not_connected: 'First-day passes are being set up in InflowOnboarder.',
+  pass_gone: 'This pass is no longer available.',
+  plan_required: 'This feature needs the JML Management plan in InflowOnboarder.',
+  not_engine_managed: 'This account was not created by InflowOnboarder.',
+  account_has_admin_role: 'Passes are not allowed for this account.',
+  account_protected: 'Passes are not allowed for this account.',
+  pass_not_allowed: "The company's Microsoft policy does not allow passes.",
+  pass_policy: "The pass lifetime does not fit the company's Microsoft policy.",
+}
+
+function jsonNoStore(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  })
 }
 
 function friendlyError(code: string, fallbackMessage?: string): string {
@@ -429,11 +474,40 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Check passes readiness
+      let passesEnabled = config.passes_enabled || false
+      let passesReady = config.passes_ready || false
+      let passesStatusDetail = config.passes_status_detail || null
+      if (status === 'connected_ready') {
+        if (MOCK_MODE) {
+          const mockPasses = mockPassesStatus()
+          passesEnabled = mockPasses.enabled
+          passesReady = mockPasses.ready
+          passesStatusDetail = null
+        } else {
+          const apiKey = await decryptApiKey(config.api_key_encrypted, config.api_key_iv)
+          const passesRes = await engineFetch(apiKey, 'GET', '/v1/passes')
+          if (passesRes.ok) {
+            const pd = passesRes.data as any
+            passesEnabled = pd.enabled === true
+            passesReady = pd.ready === true
+            passesStatusDetail = pd.statusDetail || null
+          } else if (passesRes.status === 403) {
+            passesEnabled = false
+            passesReady = false
+            passesStatusDetail = 'API key missing passes scope'
+          }
+        }
+      }
+
       const updateData: Record<string, unknown> = {
         status,
         status_detail: statusDetail,
         status_checked_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        passes_enabled: passesEnabled,
+        passes_ready: passesReady,
+        passes_status_detail: passesStatusDetail,
       }
       if (scheduleTemplates !== config.schedule_templates_cache) {
         updateData.schedule_templates_cache = scheduleTemplates
@@ -467,6 +541,9 @@ Deno.serve(async (req) => {
         schedule_templates: templates,
         has_joiner_template: hasJoinerTemplate,
         has_leaver_template: hasLeaverTemplate,
+        passes_enabled: passesEnabled,
+        passes_ready: passesReady,
+        passes_status_detail: passesStatusDetail,
       })
     }
 
@@ -905,6 +982,11 @@ Deno.serve(async (req) => {
       if (input.officeLocation) person.officeLocation = input.officeLocation
       if (input.employeeHireDate) person.employeeHireDate = input.employeeHireDate
 
+      const scheduleOptions: Record<string, unknown> = { prepareDaysBefore: options?.prepareDaysBefore || 3 }
+      if (body.issuePass && config.passes_ready) {
+        scheduleOptions.issuePass = true
+      }
+
       const engineBody: Record<string, unknown> = {
         templateId: 'hr.joiner',
         externalRef: `starter-${onboarding_id}`,
@@ -917,7 +999,7 @@ Deno.serve(async (req) => {
             licenceContact: { name: config.licence_manager_name, email: config.licence_manager_email },
           } : {}),
         },
-        options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
+        options: scheduleOptions,
         timeZone: 'Europe/London',
         approval: {
           approvedBy: { name: approver_name || 'InflowHR Approver', email: approver_email || userEmail },
@@ -937,7 +1019,7 @@ Deno.serve(async (req) => {
           ],
           nextDueAt: new Date(Date.now() + 86400000).toISOString(),
         }
-        await sb.from('onboarding_m365_actions').upsert({
+        const upsertRow: Record<string, unknown> = {
           onboarding_id,
           company_id,
           schedule_id: mockSchedule.id,
@@ -946,15 +1028,23 @@ Deno.serve(async (req) => {
           schedule_stages: mockSchedule.stages,
           schedule_next_due_at: mockSchedule.nextDueAt,
           schedule_updated_at: new Date().toISOString(),
-          schedule_options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
+          schedule_options: scheduleOptions,
           external_ref: `starter-${onboarding_id}`,
           run_status: 'completed',
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'onboarding_id' })
+        }
+        if (body.issuePass) upsertRow.pass_status = 'pending'
+        await sb.from('onboarding_m365_actions').upsert(upsertRow, { onConflict: 'onboarding_id' })
         return json(mockSchedule)
       }
 
-      const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
+      let res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
+
+      if (res.status === 409 && (res.data as any)?.error?.code === 'passes_off' && scheduleOptions.issuePass) {
+        delete scheduleOptions.issuePass
+        engineBody.options = scheduleOptions
+        res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, `${idempotencyKey}-nop`)
+      }
 
       if (res.status === 409) {
         const errData = res.data as any
@@ -1000,7 +1090,7 @@ Deno.serve(async (req) => {
       if (errResp) return errResp
 
       const sched = res.data as any
-      await sb.from('onboarding_m365_actions').upsert({
+      const schedUpsert: Record<string, unknown> = {
         onboarding_id, company_id,
         schedule_id: sched.id,
         schedule_status: sched.status || 'scheduled',
@@ -1008,13 +1098,15 @@ Deno.serve(async (req) => {
         schedule_stages: sched.stages,
         schedule_next_due_at: sched.nextDueAt,
         schedule_updated_at: sched.updatedAt || new Date().toISOString(),
-        schedule_options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
+        schedule_options: scheduleOptions,
         external_ref: `starter-${onboarding_id}`,
         run_status: 'completed',
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'onboarding_id' })
+      }
+      if (scheduleOptions.issuePass) schedUpsert.pass_status = 'pending'
+      await sb.from('onboarding_m365_actions').upsert(schedUpsert, { onConflict: 'onboarding_id' })
 
-      await audit(sb, company_id, userId, 'inflowonboarder_create_schedule', { onboarding_id, scheduleId: sched.id })
+      await audit(sb, company_id, userId, 'inflowonboarder_create_schedule', { onboarding_id, scheduleId: sched.id, issuePass: !!scheduleOptions.issuePass })
       return json(sched)
     }
 
@@ -1238,6 +1330,151 @@ Deno.serve(async (req) => {
 
       const friendlyErrorMsg = jobData.error ? friendlyError(jobData.error.code, jobData.error.message) : null
       return json({ ...jobData, friendlyError: friendlyErrorMsg })
+    }
+
+    // ── reveal-pass (TAP — view once) ─────────────────────────────────────
+    if (action === 'reveal-pass') {
+      const { onboarding_id, pass_id } = body
+      if (!onboarding_id || !pass_id) return json({ error: 'Missing onboarding_id or pass_id' }, 400)
+
+      const { data: m365Row } = await sb.from('onboarding_m365_actions')
+        .select('pass_id, pass_status, company_id')
+        .eq('onboarding_id', onboarding_id)
+        .maybeSingle()
+      if (!m365Row) return json({ error: 'Onboarding record not found' }, 404)
+      if (m365Row.pass_id !== pass_id) return json({ error: 'Pass ID mismatch' }, 400)
+      if (m365Row.pass_status === 'viewed') return json({ error: 'This pass has already been viewed.' }, 410)
+      if (m365Row.pass_status === 'gone') return json({ error: friendlyError('pass_gone') }, 410)
+      if (m365Row.pass_status === 'expired') return json({ error: 'This pass has expired.' }, 410)
+
+      if (MOCK_MODE) {
+        const mockResult = mockRevealPass(pass_id)
+        await sb.from('onboarding_m365_actions').update({
+          pass_status: 'viewed',
+          pass_viewed_at: new Date().toISOString(),
+          pass_viewed_by: userId,
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+        await audit(sb, company_id, userId, 'inflowonboarder_pass_viewed', { onboarding_id, pass_id })
+        return jsonNoStore(mockResult)
+      }
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+      const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/passes/${encodeURIComponent(pass_id)}/reveal`)
+
+      if (res.status === 404 || (res.data as any)?.error?.code === 'pass_gone') {
+        await sb.from('onboarding_m365_actions').update({
+          pass_status: 'gone', updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+        return json({ error: friendlyError('pass_gone') }, 410)
+      }
+
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      await sb.from('onboarding_m365_actions').update({
+        pass_status: 'viewed',
+        pass_viewed_at: new Date().toISOString(),
+        pass_viewed_by: userId,
+        updated_at: new Date().toISOString(),
+      }).eq('onboarding_id', onboarding_id)
+
+      await audit(sb, company_id, userId, 'inflowonboarder_pass_viewed', { onboarding_id, pass_id })
+      return jsonNoStore(res.data)
+    }
+
+    // ── request-new-pass (TAP — expired/gone, request another) ──────────
+    if (action === 'request-new-pass') {
+      const { onboarding_id } = body
+      if (!onboarding_id) return json({ error: 'Missing onboarding_id' }, 400)
+
+      const { data: m365Row } = await sb.from('onboarding_m365_actions')
+        .select('m365_upn, company_id')
+        .eq('onboarding_id', onboarding_id)
+        .maybeSingle()
+      if (!m365Row || !m365Row.m365_upn) return json({ error: 'No M365 account found for this starter' }, 400)
+
+      const { data: onb } = await sb.from('onboardings')
+        .select('employee_id, employees!inner(first_name, last_name)')
+        .eq('id', onboarding_id)
+        .maybeSingle()
+      const empName = onb ? `${(onb as any).employees.first_name} ${(onb as any).employees.last_name}` : 'New starter'
+
+      const idempotencyKey = `inflowhr-pass-${onboarding_id}-${Date.now()}`
+
+      if (MOCK_MODE) {
+        const mock = mockRequestNewPass(onboarding_id)
+        await sb.from('onboarding_m365_actions').update({
+          pass_status: 'pending',
+          pass_id: null,
+          pass_expires_at: null,
+          pass_viewed_at: null,
+          pass_viewed_by: null,
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+        return json(mock)
+      }
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+      const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/passes', {
+        userPrincipalName: m365Row.m365_upn,
+        displayName: empName,
+      }, idempotencyKey)
+
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const resData = res.data as any
+
+      await sb.from('onboarding_m365_actions').update({
+        pass_status: 'pending',
+        pass_id: null,
+        pass_expires_at: null,
+        pass_viewed_at: null,
+        pass_viewed_by: null,
+        updated_at: new Date().toISOString(),
+      }).eq('onboarding_id', onboarding_id)
+
+      await audit(sb, company_id, userId, 'inflowonboarder_request_new_pass', { onboarding_id })
+      return json({ jobId: resData.jobId || resData.id })
+    }
+
+    // ── check-pass-job (TAP — poll new-pass creation job) ───────────────
+    if (action === 'check-pass-job') {
+      const { job_id, onboarding_id } = body
+      if (!job_id) return json({ error: 'Missing job_id' }, 400)
+
+      let jobData: any
+
+      if (MOCK_MODE) {
+        jobData = mockJobStatus(job_id)
+      } else {
+        const keyResult = await getApiKey(sb, company_id)
+        if (keyResult instanceof Response) return keyResult
+        const res = await engineFetch(keyResult.apiKey, 'GET', `/v1/jobs/${job_id}`)
+        const errResp = handleEngineError(sb, company_id, res)
+        if (errResp) return errResp
+        jobData = res.data
+      }
+
+      if (onboarding_id && jobData.status === 'succeeded' && jobData.result) {
+        await sb.from('onboarding_m365_actions').update({
+          pass_id: jobData.result.passId,
+          pass_expires_at: jobData.result.expiresAt,
+          pass_status: 'ready',
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+      }
+      if (onboarding_id && jobData.status === 'failed') {
+        await sb.from('onboarding_m365_actions').update({
+          pass_status: 'error',
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+      }
+
+      return json(jobData)
     }
 
     return json({ error: `Unknown action: ${action}` }, 400)

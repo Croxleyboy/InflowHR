@@ -58,6 +58,16 @@ interface SwapAction {
   swap_type: 'incoming' | 'counter_offer'
 }
 
+interface TapNotification {
+  id: string
+  type: string
+  title: string
+  message: string
+  is_read: boolean
+  created_at: string
+  metadata: { onboarding_id?: number } | null
+}
+
 
 function formatNotifDate(dateStr: string) {
   const d = new Date(dateStr)
@@ -298,6 +308,15 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'tap_ready') {
+    return (
+      <div className="notif-icon" style={{ background: '#2e7d32' }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+        </svg>
+      </div>
+    )
+  }
   return (
     <div className="notif-icon notif-icon-default">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
@@ -329,6 +348,7 @@ export default function Notifications() {
   const [checkinHistory, setCheckinHistory] = useState<PersonalReminder[]>([])
   const [remindersExpanded, setRemindersExpanded] = useState(locState?.expandReminders || false)
   const [notifSearch, setNotifSearch] = useState('')
+  const [tapNotifications, setTapNotifications] = useState<TapNotification[]>([])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -766,6 +786,18 @@ export default function Notifications() {
       }
     }
     setCheckinHistory(checkinItems)
+
+    if (HARDCODED_EMPLOYEE_ID && companyId) {
+      const { data: tapRows } = await supabase
+        .from('notifications')
+        .select('id, type, title, message, is_read, created_at, metadata')
+        .eq('employee_id', HARDCODED_EMPLOYEE_ID)
+        .eq('company_id', companyId)
+        .eq('type', 'tap_ready')
+        .order('created_at', { ascending: false })
+        .limit(10)
+      setTapNotifications((tapRows || []) as TapNotification[])
+    }
 
     const currentTime = `${String(todayDate.getHours()).padStart(2, '0')}:${String(todayDate.getMinutes()).padStart(2, '0')}`
     const activeReminders = personalReminders.filter(r => {
@@ -1802,7 +1834,7 @@ export default function Notifications() {
             </div>
           )}
 
-          {(myNotifs.length > 0 || checkinHistory.length > 0) && (
+          {(myNotifs.length > 0 || checkinHistory.length > 0 || tapNotifications.length > 0) && (
             <>
               {reminders.length > 0 && (
                 <h3 className="notif-section-heading">{t('notifications.history')}</h3>
@@ -1824,7 +1856,7 @@ export default function Notifications() {
             </>
           )}
 
-          {myNotifs.length === 0 && checkinHistory.length === 0 && reminders.length === 0 && <p className="claims-empty">{t('notifications.no_notifs')}</p>}
+          {myNotifs.length === 0 && checkinHistory.length === 0 && tapNotifications.length === 0 && reminders.length === 0 && <p className="claims-empty">{t('notifications.no_notifs')}</p>}
           {checkinHistory.filter(r => {
             if (!notifSearch) return true
             const q = notifSearch.toLowerCase()
@@ -1846,6 +1878,27 @@ export default function Notifications() {
                   <path d="M9 6l6 6-6 6" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               )}
+            </div>
+          ))}
+          {tapNotifications.filter(tn => {
+            if (!notifSearch) return true
+            const q = notifSearch.toLowerCase()
+            return tn.title.toLowerCase().includes(q) || tn.message.toLowerCase().includes(q)
+          }).map(tn => (
+            <div
+              key={`tap-${tn.id}`}
+              className="notif-card notif-card-clickable"
+              onClick={() => navigate('/admin/onboarding')}
+            >
+              <NotifIcon type="tap_ready" />
+              <div className="notif-card-content">
+                <span className="notif-card-title">{tn.title}</span>
+                <span className="notif-card-sub">{tn.message}</span>
+                <span className="notif-card-date">{formatNotifDate(tn.created_at)}</span>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="notif-reminder-arrow">
+                <path d="M9 6l6 6-6 6" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </div>
           ))}
           {myNotifs.filter(n => {

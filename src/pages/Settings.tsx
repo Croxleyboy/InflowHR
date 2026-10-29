@@ -288,10 +288,14 @@ export default function Settings() {
       reason: newDel.reason,
     })
     if (error) { showError('Failed to create delegation: ' + error.message); setDelSaving(false); return }
-    const { data } = await supabase.rpc('get_my_delegations_out')
+    const { data, error: rpcErr } = await supabase.rpc('get_my_delegations_out')
+    if (rpcErr) console.error('get_my_delegations_out error:', rpcErr)
     if (data) setDelegationsOut(data as typeof delegationsOut)
+    const { data: inData } = await supabase.rpc('get_my_delegations_in')
+    if (inData) setDelegationsIn(inData as typeof delegationsIn)
     setNewDel({ delegate_id: '', start_date: '', end_date: '', scope: 'all', reason: '' })
     setShowNewDelegation(false)
+    setDelegationsOpen(true)
     setDelSaving(false)
     showSuccess('Delegation created')
   }, [companyUser, newDel, showError, showSuccess])
@@ -776,7 +780,12 @@ export default function Settings() {
       {!delegationsLoading && companyUser?.employee_id && (isManager || activeDelegationsOut.length > 0 || activeDelegationsIn.length > 0) && (
         <section className="settings-section">
           <button className="settings-section-toggle" onClick={() => setDelegationsOpen(v => !v)}>
-            <h2>Approval Delegation</h2>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              Approval Delegation
+              {activeDelegationsOut.length > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: '#dcfce7', color: '#166534' }}>{activeDelegationsOut.length} active</span>
+              )}
+            </h2>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: delegationsOpen ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }}><path d="M6 9l6 6 6-6"/></svg>
           </button>
           {delegationsOpen && (
