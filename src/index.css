@@ -4039,6 +4039,127 @@ body {
   font-family: var(--sans); cursor: pointer;
 }
 
+/* ── Directory View Toggle ── */
+.directory-view-toggle {
+  background: none; border: 2px solid #7b1fa230;
+  border-radius: 8px; padding: 4px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.directory-view-toggle:hover {
+  background: #7b1fa210; border-color: #7b1fa2;
+}
+
+/* ── Directory View Swap Animation ── */
+.directory-view-container {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center top;
+}
+.directory-view-animating {
+  transform: scale(0.92, 0.85) perspective(600px) rotateX(2deg);
+  opacity: 0;
+}
+
+/* ── Directory Table View ── */
+.directory-table-wrap {
+  padding: 0 16px;
+  overflow-x: auto;
+}
+.directory-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+}
+.directory-table thead th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+.directory-table-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.directory-table-row:hover {
+  background: var(--bg-hover, rgba(123, 31, 162, 0.04));
+}
+.directory-table-row td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.directory-table-name-cell {
+  display: flex; align-items: center; gap: 10px;
+  min-width: 180px;
+}
+.directory-table-avatar-wrap {
+  position: relative; flex-shrink: 0;
+}
+.directory-table-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid #e8a000;
+  object-fit: cover;
+}
+.directory-table-avatar-initials {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid #e8a000;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.directory-table-name-info {
+  display: flex; flex-direction: column; gap: 1px;
+  min-width: 0;
+}
+.directory-table-name {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.directory-table-email {
+  font-size: 11px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.directory-table-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.directory-table-badge-active {
+  background: #e6f7ec; color: #16a34a;
+}
+.directory-table-badge-leave {
+  background: #fff3e0; color: #e65100;
+}
+.directory-table-role {
+  font-size: 13px; color: var(--text);
+}
+.directory-table-secondary {
+  font-size: 13px; color: var(--text-muted);
+}
+.directory-table-presence {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.directory-table-hide-mobile {}
+
+@media (max-width: 640px) {
+  .directory-table-hide-mobile { display: none; }
+  .directory-table-name-cell { min-width: 140px; }
+}
+
 /* ── Directory Contact Modal ── */
 .directory-modal-overlay {
   position: fixed; inset: 0;

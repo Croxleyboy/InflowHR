@@ -18,6 +18,10 @@ interface DirectoryEntry {
   department: string | null
   avatar_url: string | null
   employee_uuid: string | null
+  location: string | null
+  manager_name: string | null
+  start_date: string | null
+  appstatus: string | null
 }
 
 interface ActiveCheckin {
@@ -57,6 +61,8 @@ export default function Directory() {
   const presenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const presenceFailCount = useRef(0)
   const [delegationMap, setDelegationMap] = useState<Record<string, { name: string; start: string; end: string }>>({})
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
+  const [viewAnimating, setViewAnimating] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -67,7 +73,7 @@ export default function Directory() {
     const [dirRes, leaveRes, empRes] = await Promise.all([
       supabase
         .from('onboarding')
-        .select('id, firstname, surname, display_name, job_title, user_email, telephone, department, avatar_url')
+        .select('id, firstname, surname, display_name, job_title, user_email, telephone, department, avatar_url, appstatus')
         .eq('company_id', companyUser.company_id)
         .eq('appstatus', 'active')
         .order('firstname'),
@@ -80,20 +86,26 @@ export default function Directory() {
         .gte('end_date', today),
       supabase
         .from('employees')
-        .select('id, email')
+        .select('id, email, location, manager_name, start_date')
         .eq('company_id', companyUser.company_id)
         .eq('is_active', true),
     ])
 
-    const emailToEmpId = new Map<string, string>()
-    ;(empRes.data || []).forEach((e: any) => emailToEmpId.set(e.email?.toLowerCase(), e.id))
+    const emailToEmp = new Map<string, { id: string; location: string | null; manager_name: string | null; start_date: string | null }>()
+    ;(empRes.data || []).forEach((e: any) => emailToEmp.set(e.email?.toLowerCase(), { id: e.id, location: e.location, manager_name: e.manager_name, start_date: e.start_date }))
 
-    const validEmpIds = new Set(emailToEmpId.values())
+    const validEmpIds = new Set([...emailToEmp.values()].map(e => e.id))
 
-    const entriesWithUuid = ((dirRes.data || []) as any[]).map(d => ({
-      ...d,
-      employee_uuid: emailToEmpId.get(d.user_email?.toLowerCase()) || null,
-    })) as DirectoryEntry[]
+    const entriesWithUuid = ((dirRes.data || []) as any[]).map(d => {
+      const emp = emailToEmp.get(d.user_email?.toLowerCase())
+      return {
+        ...d,
+        employee_uuid: emp?.id || null,
+        location: emp?.location || null,
+        manager_name: emp?.manager_name || null,
+        start_date: emp?.start_date || null,
+      }
+    }) as DirectoryEntry[]
     setEntries(entriesWithUuid)
 
     const stored = prefs.kudos_watchlist || []
@@ -310,6 +322,29 @@ export default function Directory() {
     setShowWatchlistPrompt(false)
   }
 
+  function getTenure(startDate: string | null): string {
+    if (!startDate) return '—'
+    const start = new Date(startDate)
+    const now = new Date()
+    const diffMs = now.getTime() - start.getTime()
+    if (diffMs < 0) return '—'
+    const totalMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth())
+    if (totalMonths < 1) return '< 1 month'
+    if (totalMonths < 12) return `${totalMonths} month${totalMonths !== 1 ? 's' : ''}`
+    const years = Math.floor(totalMonths / 12)
+    const months = totalMonths % 12
+    if (months === 0) return `${years} yr${years !== 1 ? 's' : ''}`
+    return `${years} yr${years !== 1 ? 's' : ''} ${months} mo`
+  }
+
+  function handleViewToggle() {
+    setViewAnimating(true)
+    setTimeout(() => {
+      setViewMode(prev => prev === 'cards' ? 'table' : 'cards')
+      setTimeout(() => setViewAnimating(false), 50)
+    }, 300)
+  }
+
   return (
     <div className="feature-page directory-page">
       <header className="directory-header">
@@ -322,6 +357,19 @@ export default function Directory() {
         <div className="directory-header-center">
           <h1 className="directory-title">{t('directory.title')} <span className="directory-title-accent">{t('directory.title_accent')}</span></h1>
         </div>
+        <button className="directory-view-toggle" onClick={handleViewToggle} title={viewMode === 'cards' ? 'Switch to table view' : 'Switch to card view'}>
+          {viewMode === 'cards' ? (
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7b1fa2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+              <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+            </svg>
+          ) : (
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7b1fa2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+          )}
+        </button>
         <button className="feature-refresh" onClick={fetchData}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
             <circle cx="16" cy="16" r="14" stroke="#1565c0" strokeWidth="2" />
@@ -371,66 +419,129 @@ export default function Directory() {
         <p className="claims-empty">{t('directory.no_results')}</p>
       )}
 
-      <div className="directory-list">
-        {filtered.map(entry => (
-          <div key={entry.id} className="directory-card">
-            <div className="directory-card-top">
-              <div className="directory-card-avatar-wrap">
-                <button className="directory-card-avatar-btn" onClick={() => openProfile(entry)}>
-                  {entry.avatar_url ? (
-                    <img className="directory-card-avatar-img" src={entry.avatar_url} alt={`${entry.firstname} ${entry.surname}`} />
-                  ) : (
-                    <div className="directory-card-avatar">{getInitials(entry)}</div>
+      <div className={`directory-view-container${viewAnimating ? ' directory-view-animating' : ''}`}>
+        {viewMode === 'cards' ? (
+          <div className="directory-list">
+            {filtered.map(entry => (
+              <div key={entry.id} className="directory-card">
+                <div className="directory-card-top">
+                  <div className="directory-card-avatar-wrap">
+                    <button className="directory-card-avatar-btn" onClick={() => openProfile(entry)}>
+                      {entry.avatar_url ? (
+                        <img className="directory-card-avatar-img" src={entry.avatar_url} alt={`${entry.firstname} ${entry.surname}`} />
+                      ) : (
+                        <div className="directory-card-avatar">{getInitials(entry)}</div>
+                      )}
+                    </button>
+                    {isOnLeave(entry) && (
+                      <span className="directory-leave-badge">{t('directory.on_leave')}</span>
+                    )}
+                    {teamsEnabled && presenceMap[entry.user_email] && presenceMap[entry.user_email] !== 'PresenceUnknown' && (
+                      <span
+                        className={`directory-presence-dot${presenceStale ? ' directory-presence-stale' : ''}`}
+                        title={presenceMap[entry.user_email] + (presenceStale ? ' (updating…)' : '')}
+                        style={{ background: getPresenceColor(presenceMap[entry.user_email]) }}
+                      />
+                    )}
+                  </div>
+                  <div className="directory-card-info">
+                    <span className="directory-card-name">{entry.firstname} {entry.surname}</span>
+                    <span className="directory-card-email">{entry.user_email}</span>
+                  </div>
+                  {entry.employee_uuid !== currentEmployeeId && (
+                    <button
+                      className={`directory-watchlist-btn ${isOnWatchlist(entry) ? 'directory-watchlist-active' : ''}`}
+                      onClick={() => toggleWatchlist(entry)}
+                      title={isOnWatchlist(entry) ? t('directory.remove_watchlist') : t('directory.add_watchlist')}
+                    >
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill={isOnWatchlist(entry) ? '#e8a000' : 'none'} stroke="#e8a000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                      </svg>
+                    </button>
                   )}
-                </button>
-                {isOnLeave(entry) && (
-                  <span className="directory-leave-badge">{t('directory.on_leave')}</span>
-                )}
-                {teamsEnabled && presenceMap[entry.user_email] && presenceMap[entry.user_email] !== 'PresenceUnknown' && (
-                  <span
-                    className={`directory-presence-dot${presenceStale ? ' directory-presence-stale' : ''}`}
-                    title={presenceMap[entry.user_email] + (presenceStale ? ' (updating…)' : '')}
-                    style={{ background: getPresenceColor(presenceMap[entry.user_email]) }}
-                  />
-                )}
+                  <a className="directory-card-phone" href={`tel:${entry.telephone || ''}`}>
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="20" cy="20" r="19" fill="#1a1a2e" />
+                      <path d="M12 13.5C12 12.67 12.67 12 13.5 12h2.47a.8.8 0 0 1 .78.63l.74 3.32a.8.8 0 0 1-.22.74l-1.6 1.6a11.82 11.82 0 0 0 6.04 6.04l1.6-1.6a.8.8 0 0 1 .74-.22l3.32.74a.8.8 0 0 1 .63.78v2.47c0 .83-.67 1.5-1.5 1.5C19.06 28 12 20.94 12 13.5z" fill="#fff" />
+                    </svg>
+                  </a>
+                </div>
+                <div className="directory-card-bottom">
+                  <span className="directory-card-tel">
+                    <strong>{t('directory.tel')}</strong> {entry.telephone || ''}
+                  </span>
+                  <span className="directory-card-dept">
+                    <strong>{t('directory.dept')}</strong> {entry.department || ''}
+                  </span>
+                  {entry.employee_uuid && delegationMap[entry.employee_uuid] && (
+                    <span style={{ display: 'inline-block', marginTop: 4, fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#e8eaf6', color: '#283593', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                      Delegated → {delegationMap[entry.employee_uuid].name}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="directory-card-info">
-                <span className="directory-card-name">{entry.firstname} {entry.surname}</span>
-                <span className="directory-card-email">{entry.user_email}</span>
-              </div>
-              {entry.employee_uuid !== currentEmployeeId && (
-                <button
-                  className={`directory-watchlist-btn ${isOnWatchlist(entry) ? 'directory-watchlist-active' : ''}`}
-                  onClick={() => toggleWatchlist(entry)}
-                  title={isOnWatchlist(entry) ? t('directory.remove_watchlist') : t('directory.add_watchlist')}
-                >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill={isOnWatchlist(entry) ? '#e8a000' : 'none'} stroke="#e8a000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                  </svg>
-                </button>
-              )}
-              <a className="directory-card-phone" href={`tel:${entry.telephone || ''}`}>
-                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="20" cy="20" r="19" fill="#1a1a2e" />
-                  <path d="M12 13.5C12 12.67 12.67 12 13.5 12h2.47a.8.8 0 0 1 .78.63l.74 3.32a.8.8 0 0 1-.22.74l-1.6 1.6a11.82 11.82 0 0 0 6.04 6.04l1.6-1.6a.8.8 0 0 1 .74-.22l3.32.74a.8.8 0 0 1 .63.78v2.47c0 .83-.67 1.5-1.5 1.5C19.06 28 12 20.94 12 13.5z" fill="#fff" />
-                </svg>
-              </a>
-            </div>
-            <div className="directory-card-bottom">
-              <span className="directory-card-tel">
-                <strong>{t('directory.tel')}</strong> {entry.telephone || ''}
-              </span>
-              <span className="directory-card-dept">
-                <strong>{t('directory.dept')}</strong> {entry.department || ''}
-              </span>
-              {entry.employee_uuid && delegationMap[entry.employee_uuid] && (
-                <span style={{ display: 'inline-block', marginTop: 4, fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#e8eaf6', color: '#283593', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
-                  Delegated → {delegationMap[entry.employee_uuid].name}
-                </span>
-              )}
-            </div>
+            ))}
           </div>
-        ))}
+        ) : (
+          <div className="directory-table-wrap">
+            <table className="directory-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Role</th>
+                  <th className="directory-table-hide-mobile">Reports to</th>
+                  <th className="directory-table-hide-mobile">Office</th>
+                  <th className="directory-table-hide-mobile">Tenure</th>
+                  {teamsEnabled && <th style={{ width: 40 }}>Teams</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(entry => (
+                  <tr key={entry.id} className="directory-table-row" onClick={() => openProfile(entry)}>
+                    <td>
+                      <div className="directory-table-name-cell">
+                        <div className="directory-table-avatar-wrap">
+                          {entry.avatar_url ? (
+                            <img className="directory-table-avatar" src={entry.avatar_url} alt="" />
+                          ) : (
+                            <div className="directory-table-avatar-initials">{getInitials(entry)}</div>
+                          )}
+                        </div>
+                        <div className="directory-table-name-info">
+                          <span className="directory-table-name">{entry.firstname} {entry.surname}</span>
+                          <span className="directory-table-email">{entry.user_email}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {isOnLeave(entry) ? (
+                        <span className="directory-table-badge directory-table-badge-leave">On Leave</span>
+                      ) : (
+                        <span className="directory-table-badge directory-table-badge-active">Active</span>
+                      )}
+                    </td>
+                    <td><span className="directory-table-role">{entry.job_title || '—'}</span></td>
+                    <td className="directory-table-hide-mobile"><span className="directory-table-secondary">{entry.manager_name || '—'}</span></td>
+                    <td className="directory-table-hide-mobile"><span className="directory-table-secondary">{entry.location || '—'}</span></td>
+                    <td className="directory-table-hide-mobile"><span className="directory-table-secondary">{getTenure(entry.start_date)}</span></td>
+                    {teamsEnabled && (
+                      <td>
+                        {presenceMap[entry.user_email] && presenceMap[entry.user_email] !== 'PresenceUnknown' && (
+                          <span
+                            className="directory-table-presence"
+                            title={presenceMap[entry.user_email]}
+                            style={{ background: getPresenceColor(presenceMap[entry.user_email]) }}
+                          />
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {selected && (
