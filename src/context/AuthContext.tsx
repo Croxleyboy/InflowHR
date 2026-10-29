@@ -88,15 +88,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [guestCompanyId, setGuestCompanyId] = useState<string | null>(null)
 
   async function loadCompanyData(userId: string, email: string) {
-    // Check super admin status server-side
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: saResult } = await supabase.rpc('is_super_admin' as any)
-    setIsSuperAdmin(saResult === true)
+    // ── Batch 1: three independent checks in parallel ──
+    const [{ data: saResult }, { data: mspResult }, { data: guestRow }] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase.rpc('is_super_admin' as any),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase.rpc('is_msp_admin' as any),
+      supabase
+        .from('guest_users')
+        .select('id, company_id, role_key, read_only, is_active, otp_expires_at')
+        .eq('auth_user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle(),
+    ])
 
-    // Check MSP admin status
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: mspResult } = await supabase.rpc('is_msp_admin' as any)
+    setIsSuperAdmin(saResult === true)
     setIsMspAdmin(mspResult === true)
+
     if (mspResult === true) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: mspCo } = await supabase.rpc('get_msp_company_id' as any)
@@ -105,36 +113,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMspCompanyId(null)
     }
 
-    // Check guest_users server-side first — no client-side sessionStorage dependency
-    const { data: guestRow } = await supabase
-      .from('guest_users')
-      .select('id, company_id, role_key, read_only, is_active, otp_expires_at')
-      .eq('auth_user_id', userId)
-      .eq('is_active', true)
-      .maybeSingle()
-
+    // ── Guest user early return ──
     if (guestRow && new Date(guestRow.otp_expires_at) > new Date()) {
       setIsGuest(true)
       setGuestReadOnly(guestRow.read_only)
       setGuestCompanyId(guestRow.company_id)
 
-      const { data: co } = await supabase
-        .from('companies')
-        .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
-        .eq('id', guestRow.company_id)
-        .single()
-      if (co) setCompany(co as Company)
+      const [{ data: co }, { data: roleData }] = await Promise.all([
+        supabase
+          .from('companies')
+          .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
+          .eq('id', guestRow.company_id)
+          .single(),
+        supabase
+          .from('admin_portal_roles')
+          .select('permissions')
+          .eq('company_id', guestRow.company_id)
+          .eq('role_key', guestRow.role_key)
+          .maybeSingle(),
+      ])
 
+      if (co) setCompany(co as Company)
       setPortalRole(guestRow.role_key)
-      const { data: roleData } = await supabase
-        .from('admin_portal_roles')
-        .select('permissions')
-        .eq('company_id', guestRow.company_id)
-        .eq('role_key', guestRow.role_key)
-        .maybeSingle()
       setPortalPermissions(roleData?.permissions || null)
 
-      await supabase
+      supabase
         .from('guest_users')
         .update({ last_login_at: new Date().toISOString() })
         .eq('id', guestRow.id)
@@ -143,18 +146,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // Step 1: RPC ensures company_users row exists, claims orphans, resolves employee by local-part match
+    // ── Batch 2: ensure_company_user must run before re-query ──
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: rpcResult } = await supabase.rpc('ensure_company_user' as any)
 
-    // Step 2: Re-query company_users to get the authoritative row (RPC may have updated it)
     const { data: rows } = await supabase
       .from('company_users')
       .select('id, company_id, role, employee_id')
       .eq('auth_user_id', userId)
       .eq('is_active', true)
 
-    // Prefer the row with employee_id linked, then admin, then any
     let cu = rows && rows.length > 0
       ? rows.find((r: any) => r.role === 'admin' && r.employee_id)
         || rows.find((r: any) => r.employee_id != null)
@@ -162,7 +163,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         || rows[0]
       : null
 
-    // If direct query found nothing but RPC succeeded, use RPC result as fallback
     if (!cu && rpcResult && !rpcResult.error) {
       cu = rpcResult
     }
@@ -170,10 +170,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (cu) {
       let empId = cu.employee_id
 
-      // Step 3: If employee_id still missing, resolve it client-side
       if (!empId && email && cu.company_id) {
         const localPart = email.split('@')[0]
-        // Try exact email, then local-part match
         let { data: emp } = await supabase
           .from('employees')
           .select('id')
@@ -199,7 +197,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Step 4: Sync role from employees.is_admin flag
       if (empId) {
         const { data: empRow } = await supabase
           .from('employees')
@@ -224,11 +221,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCompanyUser(cu as CompanyUser)
       setEmployeeId(empId)
 
-      const { data: co } = await supabase
-        .from('companies')
-        .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
-        .eq('id', cu.company_id)
-        .single()
+      // ── Batch 3: company + onboarding in parallel ──
+      const [{ data: co }, { data: onbRows }] = await Promise.all([
+        supabase
+          .from('companies')
+          .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
+          .eq('id', cu.company_id)
+          .single(),
+        supabase
+          .from('onboarding')
+          .select('initial_setup_complete, avatar_url')
+          .eq('user_email', email)
+          .eq('company_id', cu.company_id)
+          .order('id', { ascending: false })
+          .limit(1),
+      ])
+
       if (co) {
         const trialExpired = co.is_trial && co.trial_end_date && new Date(co.trial_end_date) < new Date()
         const isCancelled = co.cancellation_status && ['frozen', 'exported', 'completed', 'purged'].includes(co.cancellation_status)
@@ -241,13 +249,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCompany(co as Company)
       }
 
-      let { data: onbRows } = await supabase
-        .from('onboarding')
-        .select('initial_setup_complete, avatar_url')
-        .eq('user_email', email)
-        .eq('company_id', cu.company_id)
-        .order('id', { ascending: false })
-        .limit(1)
       let onb = onbRows?.[0] || null
       if (!onb) {
         const lp = email.split('@')[0].toLowerCase()
@@ -299,7 +300,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           })
       }
     } else {
-      // No active company_users row — check if user has a deactivated row in a cancelled company
       const { data: inactiveRows } = await supabase
         .from('company_users')
         .select('company_id')
