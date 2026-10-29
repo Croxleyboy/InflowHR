@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 
 export interface Features {
@@ -154,12 +154,14 @@ export function FeatureProvider({ children }: { children: ReactNode }) {
     setFeaturesLoaded(true)
   }, [])
 
-  const setFeatures = (f: Features) => {
+  const setFeatures = useCallback((f: Features) => {
     setFeaturesState(f)
-  }
+  }, [])
+
+  const value = useMemo(() => ({ features, companyFeatures, dashboardStyle, setFeatures, loadCompanyFeatures, featuresLoaded }), [features, companyFeatures, dashboardStyle, setFeatures, loadCompanyFeatures, featuresLoaded])
 
   return (
-    <FeatureContext.Provider value={{ features, companyFeatures, dashboardStyle, setFeatures, loadCompanyFeatures, featuresLoaded }}>
+    <FeatureContext.Provider value={value}>
       {children}
     </FeatureContext.Provider>
   )
