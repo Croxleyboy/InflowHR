@@ -300,16 +300,33 @@ export default function AdminSubscriptions() {
   async function toggleIndividualAddon(featureKey: string, currentlyEnabled: boolean) {
     if (!selectedCompanyId) return
     setSavingFeature(featureKey)
+
+    const enabling = !currentlyEnabled
+    const mutualPair: Record<string, string> = { enterprise_ai: 'ai_help_agent', ai_help_agent: 'enterprise_ai' }
+    const opposite = mutualPair[featureKey]
+
+    if (enabling && opposite) {
+      await supabase
+        .from('company_features')
+        .upsert(
+          { company_id: selectedCompanyId, feature_key: opposite, is_enabled: false, custom_price: null },
+          { onConflict: 'company_id,feature_key' }
+        )
+    }
+
     const { error } = await supabase
       .from('company_features')
       .upsert(
-        { company_id: selectedCompanyId, feature_key: featureKey, is_enabled: !currentlyEnabled, custom_price: null },
+        { company_id: selectedCompanyId, feature_key: featureKey, is_enabled: enabling, custom_price: null },
         { onConflict: 'company_id,feature_key' }
       )
     if (error) {
       showError('Failed to update add-on')
     } else {
-      showSuccess(`Add-on ${!currentlyEnabled ? 'enabled' : 'disabled'}`)
+      const msg = enabling && opposite
+        ? `${featureKey === 'enterprise_ai' ? 'Enterprise AI' : 'AI Help Agent'} enabled — ${featureKey === 'enterprise_ai' ? 'AI Help Agent' : 'Enterprise AI'} disabled`
+        : `Add-on ${enabling ? 'enabled' : 'disabled'}`
+      showSuccess(msg)
     }
     await loadCompanyFeatures(selectedCompanyId)
     setSavingFeature(null)

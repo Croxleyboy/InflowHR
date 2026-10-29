@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
 import { ToastProvider } from './context/ToastContext'
@@ -7,6 +7,7 @@ import { LanguageProvider } from './context/LanguageContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { useFeatures } from './context/FeatureContext'
+import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import PrivacyNotice from './pages/PrivacyNotice'
 import TrialSignup from './pages/TrialSignup'
@@ -224,9 +225,24 @@ function FeatureLoader() {
   const { companyUser, guestCompanyId } = useAuth()
   const { loadCompanyFeatures } = useFeatures()
   const companyId = companyUser?.company_id || guestCompanyId
+  const companyIdRef = useRef(companyId)
+  companyIdRef.current = companyId
+
   useEffect(() => {
     if (companyId) loadCompanyFeatures(companyId)
   }, [companyId, loadCompanyFeatures])
+
+  useEffect(() => {
+    if (!companyId) return
+    const channel = supabase
+      .channel(`features-${companyId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'company_features', filter: `company_id=eq.${companyId}` }, () => {
+        if (companyIdRef.current) loadCompanyFeatures(companyIdRef.current)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [companyId, loadCompanyFeatures])
+
   return null
 }
 

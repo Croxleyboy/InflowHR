@@ -345,6 +345,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (s?.user) {
         if (event === 'SIGNED_IN' && loadId > 0) return
+        setLoading(true)
         const id = ++loadId
         loadCompanyData(s.user.id, s.user.email || '').finally(() => {
           if (id === loadId) setLoading(false)
@@ -353,12 +354,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loadId = 0
         setCompanyUser(null)
         setCompany(null)
+        setEmployeeId(null)
         setIsSuperAdmin(false)
         setIsMspAdmin(false)
         setMspCompanyId(null)
+        setIsManager(false)
+        setCanPostNotifications(false)
+        setPortalRole(null)
         setIsGuest(false)
         setGuestReadOnly(false)
         setGuestCompanyId(null)
+        setSetupComplete(null)
+        setAvatarUrl(null)
+        setPortalPermissions(null)
+        setWorkPatternType(null)
+        setEmploymentCategory(null)
         setLoading(false)
       }
     })
@@ -413,6 +423,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsGuest(false)
     setGuestReadOnly(false)
     setGuestCompanyId(null)
+    setSetupComplete(null)
+    setAvatarUrl(null)
+    setPortalPermissions(null)
+    setWorkPatternType(null)
+    setEmploymentCategory(null)
   }
 
   const INACTIVITY_TIMEOUT = 15 * 60 * 1000
