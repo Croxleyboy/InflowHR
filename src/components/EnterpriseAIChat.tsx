@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
-import { useTheme } from '../context/ThemeContext'
 import { formatCurrency, formatDate } from '../lib/formatters'
 
 const ASSISTANT_NAME = 'AI Assistant'
@@ -264,7 +263,6 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
 export default function EnterpriseAIChat() {
   const { employeeId, employeeName, companyUser, company, session } = useAuth()
   const { features } = useFeatures()
-  const { isDark } = useTheme()
 
   const [isOpen, setIsOpen] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
@@ -438,7 +436,6 @@ export default function EnterpriseAIChat() {
   function handleStarterClick(question: string) {
     setQuery(question)
     setTimeout(() => {
-      const fakeEvent = { preventDefault: () => {} } as React.FormEvent
       setQuery('')
       setLoading(true)
       setMessages(prev => [...prev, { role: 'user', text: question }])
