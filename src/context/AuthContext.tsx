@@ -348,20 +348,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
-      if (event === 'TOKEN_REFRESHED') {
+      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         setSession(s)
+        if (event === 'INITIAL_SESSION') setUser(s?.user ?? null)
         return
       }
 
       setSession(s)
       setUser(s?.user ?? null)
+
       if (s?.user) {
-        if (event === 'INITIAL_SESSION') return
+        if (event === 'SIGNED_IN' && loadId > 0) return
         const id = ++loadId
         loadCompanyData(s.user.id, s.user.email || '').finally(() => {
           if (id === loadId) setLoading(false)
         })
       } else {
+        loadId = 0
         setCompanyUser(null)
         setCompany(null)
         setIsSuperAdmin(false)
