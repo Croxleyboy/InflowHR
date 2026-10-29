@@ -301,6 +301,24 @@ export default function EnterpriseAIChat() {
 
   const isDesktop = layoutMode === 'desktop'
 
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setIsClosing(true)
+      if (layoutMode === 'mobile') document.body.style.overflow = ''
+      setTimeout(() => {
+        setIsOpen(false)
+        setIsClosing(false)
+        fabRef.current?.focus()
+      }, 220)
+    }
+  }, [layoutMode])
+
+  useEffect(() => {
+    if (!isOpen) return
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, handleKeyDown])
+
   if (!features.enterprise_ai || !features.employee_help) return null
 
   function scrollToBottom() {
@@ -341,15 +359,6 @@ export default function EnterpriseAIChat() {
       fabRef.current?.focus()
     }, 220)
   }
-
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape' && isOpen) handleClose()
-  }, [isOpen])
-
-  useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [handleKeyDown])
 
   function handleNewChat() {
     setMessages([{
