@@ -1058,7 +1058,10 @@ export default function AdminSubscriptions() {
                   {/* Individual Add-ons */}
                   {individualAddons.length > 0 && (
                     <div style={{ background: '#f3e5f5', border: '2px solid #8e24aa', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: '#6a1b9a', marginBottom: 10 }}>Individual Add-ons</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: '#6a1b9a' }}>Individual Add-ons</div>
+                        <span style={{ fontSize: 11, color: '#8e8e8e', fontStyle: 'italic' }}>toggles save automatically</span>
+                      </div>
                       {individualAddons.map(addon => {
                         const enabled = isFeatureEnabled(addon.feature_key)
                         return (
