@@ -82,6 +82,7 @@ export default function AdminHelp() {
   const [handbookMarkdown, setHandbookMarkdown] = useState('')
   const [handbookVersion, setHandbookVersion] = useState('1.0')
   const [handbookSaving, setHandbookSaving] = useState(false)
+  const [handbookOverlaps, setHandbookOverlaps] = useState<{ id: number; question: string; matchedSection: string }[]>([])
 
   const loadArticles = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -184,10 +185,63 @@ export default function AdminHelp() {
       return
     }
 
-    showToast(`${sections.length} handbook sections saved. Both AI assistants will now use them.`, 'success')
     setHandbookMarkdown('')
     setHandbookSaving(false)
     loadHandbook()
+
+    const handbookKeywords = sections.flatMap(s => {
+      const words = s.title.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(w => w.length > 3)
+      return words
+    })
+    const policyTerms = new Set(handbookKeywords)
+
+    const { data: allArticles } = await supabase
+      .from('help_articles')
+      .select('id, question, keywords, data_query, is_active, company_id')
+      .or(`company_id.is.null,company_id.eq.${selectedCompanyId}`)
+      .eq('is_active', true)
+
+    const overlapping = (allArticles || []).filter(a => {
+      if (a.data_query) return false
+      const articleText = `${a.question} ${a.keywords || ''}`.toLowerCase()
+      const matchCount = [...policyTerms].filter(term => articleText.includes(term)).length
+      return matchCount >= 2
+    })
+
+    if (overlapping.length > 0) {
+      const companyOverlaps = overlapping.filter(a => a.company_id === selectedCompanyId)
+      if (companyOverlaps.length > 0) {
+        const ids = companyOverlaps.map(a => a.id)
+        await supabase
+          .from('help_articles')
+          .update({ is_active: false })
+          .in('id', ids)
+        loadArticles()
+      }
+
+      const globalOverlaps = overlapping.filter(a => !a.company_id)
+
+      const overlapDetails = overlapping.map(a => {
+        const articleText = `${a.question} ${a.keywords || ''}`.toLowerCase()
+        const matched = [...policyTerms].filter(term => articleText.includes(term))
+        const matchedSection = sections.find(s => {
+          const sWords = s.title.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(w => w.length > 3)
+          return sWords.some(w => matched.includes(w))
+        })
+        return { id: a.id, question: a.question, matchedSection: matchedSection?.title || 'Multiple sections' }
+      })
+      setHandbookOverlaps(overlapDetails)
+
+      const deactivated = companyOverlaps.length
+      const globalCount = globalOverlaps.length
+      let msg = `${sections.length} handbook sections saved.`
+      if (deactivated > 0) msg += ` ${deactivated} overlapping company FAQ article${deactivated > 1 ? 's' : ''} automatically deactivated.`
+      if (globalCount > 0) msg += ` ${globalCount} global article${globalCount > 1 ? 's' : ''} overlap but can only be managed by a super admin.`
+      showToast(msg, 'success')
+    } else {
+      setHandbookOverlaps([])
+      showToast(`${sections.length} handbook sections saved. Both AI assistants will now use them.`, 'success')
+    }
   }
 
   async function handleHandbookDelete() {
@@ -196,6 +250,7 @@ export default function AdminHelp() {
     const { error } = await supabase.from('handbook_sections').delete().eq('company_id', selectedCompanyId)
     if (error) { showToast('Failed to remove handbook.', 'error'); return }
     showToast('Handbook sections removed.', 'success')
+    setHandbookOverlaps([])
     loadHandbook()
   }
 
@@ -619,6 +674,46 @@ export default function AdminHelp() {
                   <div className="admin-help-metric-label">Active</div>
                 </div>
               </div>
+
+              {handbookOverlaps.length > 0 && (
+                <div className="admin-help-metrics-section" style={{ marginBottom: '1.5rem', background: 'var(--warning-bg, #fffbeb)', border: '1px solid var(--warning-border, #fbbf24)', borderRadius: '8px', padding: '1rem 1.25rem' }}>
+                  <h3 style={{ color: 'var(--warning-text, #92400e)', marginBottom: '0.5rem' }}>FAQ Overlap Detected</h3>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--warning-text, #92400e)', marginBottom: '0.75rem' }}>
+                    The following FAQ articles cover topics now in your handbook. Company articles were automatically deactivated to avoid conflicting answers. Global articles can only be managed by a super admin.
+                  </p>
+                  <table className="admin-help-table" style={{ fontSize: '0.8125rem' }}>
+                    <thead>
+                      <tr><th>FAQ Article</th><th>Overlaps With</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                      {handbookOverlaps.map(o => {
+                        const art = [...articles, ...globalArticles].find(a => a.id === o.id)
+                        const isGlobal = art && !art.company_id
+                        return (
+                          <tr key={o.id}>
+                            <td>{o.question}</td>
+                            <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #6b7280)' }}>{o.matchedSection}</td>
+                            <td>
+                              {isGlobal ? (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #6b7280)' }}>Global (unchanged)</span>
+                              ) : (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--warning-text, #92400e)' }}>Deactivated</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  <button
+                    className="admin-btn admin-btn-secondary"
+                    style={{ marginTop: '0.75rem', fontSize: '0.8125rem' }}
+                    onClick={() => setHandbookOverlaps([])}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
 
               <div className="admin-help-metrics-section">
                 <h3>Loaded Sections</h3>
