@@ -446,6 +446,17 @@ export default function AdminOnboarding() {
   const [settingsSubTab, setSettingsSubTab] = useState<'workflows' | 'contacts'>('workflows')
   const [stepNotifSending, setStepNotifSending] = useState<string | null>(null)
 
+  // Workflow detail panel state
+  interface ChecklistItem { id: number; step_key: string; label: string; sort_order: number }
+  interface ActivityEntry { id: number; step_key: string; action: string; actor_name: string | null; detail: string | null; created_at: string }
+  const [stepChecklist, setStepChecklist] = useState<ChecklistItem[]>([])
+  const [stepChecklistCompleted, setStepChecklistCompleted] = useState<Record<string, Record<number, boolean>>>({})
+  const [stepAssignments, setStepAssignments] = useState<Record<string, { assigned_to?: string; due_date?: string }>>({})
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([])
+  const [collapsedPhases, setCollapsedPhases] = useState<Record<string, boolean>>({})
+  const [reassignStepKey, setReassignStepKey] = useState<string | null>(null)
+  const [reassignStepEmail, setReassignStepEmail] = useState('')
+
   const activeSteps: CustomStep[] = hasCustomSteps ? customSteps : WORKFLOW_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true }))
 
   // M365 provisioning state (InflowOnboarder v2)
@@ -2769,6 +2780,82 @@ export default function AdminOnboarding() {
       setM365Location('GB')
       loadM365Actions(record.id)
     }
+    loadWorkflowDetails(record.id)
+  }
+
+  async function loadWorkflowDetails(onboardingId: number) {
+    if (!selectedCompanyId) return
+    const { data: checklist } = await supabase.from('onboard_step_checklist')
+      .select('*').eq('company_id', selectedCompanyId).order('sort_order')
+    if (checklist) setStepChecklist(checklist)
+
+    const { data: onb } = await supabase.from('onboarding')
+      .select('step_checklist_completed, step_assignments')
+      .eq('id', onboardingId).maybeSingle()
+    if (onb) {
+      setStepChecklistCompleted(onb.step_checklist_completed || {})
+      setStepAssignments(onb.step_assignments || {})
+    }
+
+    const { data: logs } = await supabase.from('onboard_activity_log')
+      .select('*').eq('onboarding_id', onboardingId).order('created_at', { ascending: false }).limit(100)
+    if (logs) setActivityLog(logs)
+  }
+
+  async function logActivity(stepKey: string, action: string, detail?: string) {
+    if (!selectedId || !selectedCompanyId) return
+    const actorName = session?.user?.user_metadata?.full_name || session?.user?.email || 'System'
+    const actorEmail = session?.user?.email || null
+    const entry = {
+      company_id: selectedCompanyId,
+      onboarding_id: selectedId,
+      step_key: stepKey,
+      action,
+      actor_name: actorName,
+      actor_email: actorEmail,
+      detail: detail || null,
+    }
+    const { data } = await supabase.from('onboard_activity_log').insert(entry).select().maybeSingle()
+    if (data) setActivityLog(prev => [data, ...prev])
+  }
+
+  async function toggleChecklistItem(stepKey: string, itemId: number) {
+    if (!selectedId) return
+    const current = stepChecklistCompleted[stepKey] || {}
+    const newVal = !current[itemId]
+    const updated = { ...stepChecklistCompleted, [stepKey]: { ...current, [itemId]: newVal } }
+    setStepChecklistCompleted(updated)
+    await supabase.from('onboarding').update({ step_checklist_completed: updated }).eq('id', selectedId)
+    const item = stepChecklist.find(c => c.id === itemId)
+    if (item) logActivity(stepKey, newVal ? 'Checklist item completed' : 'Checklist item unchecked', item.label)
+  }
+
+  async function reassignStep(stepKey: string, newAssignee: string) {
+    if (!selectedId) return
+    const updated = { ...stepAssignments, [stepKey]: { ...stepAssignments[stepKey], assigned_to: newAssignee } }
+    setStepAssignments(updated)
+    await supabase.from('onboarding').update({ step_assignments: updated }).eq('id', selectedId)
+    logActivity(stepKey, 'Reassigned', `Assigned to ${newAssignee}`)
+    setReassignStepKey(null)
+    setReassignStepEmail('')
+    showSuccess('Step reassigned')
+  }
+
+  function getStepDueDate(step: CustomStep, record: OnboardRecord): Date | null {
+    const assignment = stepAssignments[step.step_key]
+    if (assignment?.due_date) return new Date(assignment.due_date)
+    if (!record.start_date) return null
+    const offsetDays = (step as any).due_offset_days
+    if (typeof offsetDays !== 'number') return null
+    const d = new Date(record.start_date)
+    d.setDate(d.getDate() + offsetDays)
+    return d
+  }
+
+  function getStepAssignedTo(step: CustomStep, record: OnboardRecord): string {
+    const assignment = stepAssignments[step.step_key]
+    if (assignment?.assigned_to) return assignment.assigned_to
+    return record.manager || 'Manager'
   }
 
   async function completeStep(stepKey: string) {
@@ -2867,6 +2954,7 @@ export default function AdminOnboarding() {
     const newSkips = { ...stepSkips, [stepKey]: false }
     updates.skipped_steps = newSkips
     updateOnboardStatus(record.id, updates)
+    logActivity(stepKey, 'Marked complete')
     if (workflowStep < activeSteps.length - 1) setWorkflowStep(workflowStep + 1)
   }
 
@@ -2876,12 +2964,14 @@ export default function AdminOnboarding() {
     if (!record) return
     const newSkips = { ...stepSkips, [stepKey]: true }
     updateOnboardStatus(record.id, { skipped_steps: newSkips, status: 'in-progress' })
+    logActivity(stepKey, 'Skipped')
     if (workflowStep < WORKFLOW_STEPS.length - 1) setWorkflowStep(workflowStep + 1)
   }
 
   function uncompleteStep(stepKey: string) {
     setStepChecks(prev => ({ ...prev, [stepKey]: false }))
     setStepSkips(prev => ({ ...prev, [stepKey]: false }))
+    logActivity(stepKey, 'Undone')
   }
 
   async function createEmployeeFromOnboard(record: OnboardRecord): Promise<boolean> {
@@ -3792,125 +3882,254 @@ export default function AdminOnboarding() {
       )}
 
       {tab === 'workflow' && selectedRecord && (
-        <div className="admin-workflow">
-          <div className="admin-workflow-header">
-            <h3>{selectedRecord.firstname} {selectedRecord.surname}</h3>
-            <p>{selectedRecord.job_title} · Starting {selectedRecord.start_date ? new Date(selectedRecord.start_date).toLocaleDateString('en-GB') : 'TBC'}</p>
-          </div>
-          {features.inflowonboarder_integration && ifoConnected && m365Actions && identityProvider !== 'google_workspace' && (
-            <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: '14px 16px', margin: '0 0 16px', background: 'linear-gradient(135deg, rgba(232,242,255,.6), rgba(227,242,253,.4))' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: 16 }}>⚡</span>
-                <strong style={{ fontSize: 13, color: '#1565c0' }}>M365 Account Provisioning {m365Actions.schedule_id ? 'Scheduled' : 'Active'}</strong>
-              </div>
-              {selectedRecord.start_date ? (
-                <div style={{ fontSize: 12, color: '#37474f', lineHeight: 1.6 }}>
-                  <p style={{ margin: '0 0 8px' }}>
-                    {m365Actions.schedule_id
-                      ? <>Account creation is <strong>scheduled</strong> for {(() => { const d = new Date(selectedRecord.start_date); d.setDate(d.getDate() - 3); return d.toLocaleDateString('en-GB') })()} at 09:00. Sign-in will be enabled on <strong>{new Date(selectedRecord.start_date).toLocaleDateString('en-GB')}</strong> at 08:00.</>
-                      : <>The M365 account will be created {m365SchedulingAvailable ? 'ahead of' : 'when triggered for'} <strong>{new Date(selectedRecord.start_date).toLocaleDateString('en-GB')}</strong>, with sign-in enabled on the start date.</>
-                    }
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                      <span style={{ color: '#4caf50', fontWeight: 700, flexShrink: 0 }}>Before</span>
-                      <span>Complete starter details, order equipment, notify manager, plan first day and inform the starter</span>
+        <div className="admin-wf-split">
+          {/* ── LEFT SIDEBAR: Step list ── */}
+          <div className="admin-wf-sidebar">
+            <div className="admin-wf-sidebar-header">
+              <h3>JOINER</h3>
+              <h2>{selectedRecord.firstname} {selectedRecord.surname}</h2>
+              <p className="admin-wf-role">{selectedRecord.job_title}</p>
+              {(() => {
+                const totalSteps = activeSteps.length
+                const doneCount = activeSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length
+                return (
+                  <>
+                    <div className="admin-wf-sidebar-progress"><div className="admin-wf-sidebar-progress-fill" style={{ width: `${(doneCount / totalSteps) * 100}%` }} /></div>
+                    <div className="admin-wf-sidebar-meta">
+                      <span>{doneCount}/{totalSteps}</span>
+                      <span>Starts {selectedRecord.start_date ? new Date(selectedRecord.start_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBC'}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                      <span style={{ color: '#1565c0', fontWeight: 700, flexShrink: 0 }}>On start date</span>
-                      <span>M365 sign-in goes live at 08:00 — verify Day 1 access (email, Teams, apps) once the account is active</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <p style={{ fontSize: 12, color: '#37474f', margin: 0, lineHeight: 1.5 }}>
-                  M365 account provisioning is connected. Set a start date to see the automated timeline, then align manual tasks around it.
-                </p>
-              )}
+                  </>
+                )
+              })()}
             </div>
-          )}
+            {(() => {
+              const prepSteps = activeSteps.filter(s => s.step_config?.phase !== 'post_join')
+              const postSteps = activeSteps.filter(s => s.step_config?.phase === 'post_join')
+              const prepDone = prepSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length
+              const postDone = postSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length
+              return (
+                <>
+                  <div className="admin-wf-phase-group">
+                    <div className="admin-wf-phase-header" onClick={() => setCollapsedPhases(p => ({ ...p, preparation: !p.preparation }))}>
+                      <span>{collapsedPhases.preparation ? '▸' : '▾'} PREPARATION</span>
+                      <span className="admin-wf-phase-badge">{prepDone}/{prepSteps.length}</span>
+                    </div>
+                    {!collapsedPhases.preparation && prepSteps.map((step, idx) => {
+                      const i = activeSteps.indexOf(step)
+                      const done = stepChecks[step.step_key]
+                      const skipped = stepSkips[step.step_key]
+                      const dueDate = getStepDueDate(step, selectedRecord)
+                      return (
+                        <div key={step.step_key}
+                          className={`admin-wf-step-row ${done ? 'done' : ''} ${skipped ? 'skipped' : ''} ${i === workflowStep ? 'active' : ''}`}
+                          onClick={() => { setWorkflowStep(i); if (step.step_key === 'accounts' && selectedId && features.inflowonboarder_integration) loadM365Actions(selectedId) }}>
+                          <div className="admin-wf-step-icon">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
+                          <span className="admin-wf-step-label">{step.label}</span>
+                          {dueDate && <span className="admin-wf-step-date">{dueDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {postSteps.length > 0 && (
+                    <div className="admin-wf-phase-group">
+                      <div className="admin-wf-phase-header" onClick={() => setCollapsedPhases(p => ({ ...p, post_join: !p.post_join }))}>
+                        <span>{collapsedPhases.post_join ? '▸' : '▾'} POST-JOIN</span>
+                        <span className="admin-wf-phase-badge" style={{ background: postDone === postSteps.length && postSteps.length > 0 ? '#10b981' : '#8b8fa3' }}>{postDone}/{postSteps.length}</span>
+                      </div>
+                      {!collapsedPhases.post_join && postSteps.map(step => {
+                        const i = activeSteps.indexOf(step)
+                        const done = stepChecks[step.step_key]
+                        const skipped = stepSkips[step.step_key]
+                        const dueDate = getStepDueDate(step, selectedRecord)
+                        return (
+                          <div key={step.step_key}
+                            className={`admin-wf-step-row ${done ? 'done' : ''} ${skipped ? 'skipped' : ''} ${i === workflowStep ? 'active' : ''}`}
+                            onClick={() => { setWorkflowStep(i); if (step.step_key === 'accounts' && selectedId && features.inflowonboarder_integration) loadM365Actions(selectedId) }}>
+                            <div className="admin-wf-step-icon">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
+                            <span className="admin-wf-step-label">{step.label}</span>
+                            {dueDate && <span className="admin-wf-step-date">{dueDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+
+          {/* ── RIGHT PANEL: Step detail ── */}
+          <div className="admin-wf-detail-panel">
           {(() => {
+            const currentStep = activeSteps[workflowStep]
+            if (!currentStep) return null
+            const step = currentStep
+            const done = stepChecks[step.step_key]
+            const skipped = stepSkips[step.step_key]
             const prepSteps = activeSteps.filter(s => s.step_config?.phase !== 'post_join')
             const postSteps = activeSteps.filter(s => s.step_config?.phase === 'post_join')
             const allPrepDone = prepSteps.every(s => stepChecks[s.step_key] || stepSkips[s.step_key])
-            const renderStep = (step: CustomStep) => {
-              const i = activeSteps.indexOf(step)
-              const done = stepChecks[step.step_key]
-              const skipped = stepSkips[step.step_key]
-              const isCurrent = i === workflowStep
-              return (
-                <div key={step.step_key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => { setWorkflowStep(i); if (step.step_key === 'accounts' && selectedId && features.inflowonboarder_integration) loadM365Actions(selectedId) }}>
-                  <div className="admin-wf-connector" />
-                  <div className="admin-wf-dot">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
-                  <div className="admin-wf-content">
-                    <h4>{step.label}{skipped && <span className="admin-wf-skip-badge">Skipped</span>}</h4>
-                    {isCurrent && (
-                      <div className="admin-wf-detail">
-                        <p>{step.description}</p>
+            const phaseLabel = step.step_config?.phase === 'post_join' ? 'POST-JOIN' : 'PREPARATION'
+            const phaseSteps = step.step_config?.phase === 'post_join' ? postSteps : prepSteps
+            const stepIndexInPhase = phaseSteps.indexOf(step) + 1
+            const dueDate = getStepDueDate(step, selectedRecord)
+            const assignedTo = getStepAssignedTo(step, selectedRecord)
+            const dependsOnKey = step.step_config?.requires_step
+            const dependsOnLabel = dependsOnKey ? (activeSteps.find(s => s.step_key === dependsOnKey)?.label || 'Nothing') : 'Nothing'
+            const checklistForStep = stepChecklist.filter(c => c.step_key === step.step_key)
+            const checklistCompleted = stepChecklistCompleted[step.step_key] || {}
+            const checklistDone = checklistForStep.filter(c => checklistCompleted[c.id]).length
+            const stepLogs = activityLog.filter(l => l.step_key === step.step_key)
 
-                        {/* ── Send Notification / Meeting button ── */}
-                        {(step.step_config?.notify_email || step.step_config?.notify_contact_key || step.step_config?.notify_starter) && selectedRecord && (
-                          <div style={{ margin: '8px 0', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }} onClick={e => e.stopPropagation()}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
-                                {step.step_config.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {step.step_config.notify_starter ? `${selectedRecord.firstname} ${selectedRecord.surname}` : step.step_config.notify_contact_key ? (companyContacts.find(c => c.contact_key === step.step_config!.notify_contact_key)?.label || step.step_config.notify_contact_key) : step.step_config.notify_email}
-                              </span>
-                              {step.step_config.requires_step && (() => {
-                                const reqDone = stepChecks[step.step_config.requires_step!]
-                                return !reqDone ? <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {activeSteps.find(s => s.step_key === step.step_config!.requires_step)?.label || step.step_config.requires_step}</span> : null
-                              })()}
-                              <button
-                                className="admin-btn-sm admin-btn-save"
-                                disabled={stepNotifSending === step.step_key || (!!step.step_config.requires_step && !stepChecks[step.step_config.requires_step])}
-                                onClick={async () => {
-                                  setStepNotifSending(step.step_key)
-                                  await sendStepNotification(step.step_config!, selectedRecord, step.label, 'onboarding')
-                                  setStepNotifSending(null)
-                                }}
-                                style={{ fontSize: 12, padding: '4px 12px' }}
-                              >
-                                {stepNotifSending === step.step_key ? 'Sending...' : step.step_config.meeting ? '📅 Send Meeting Invite' : '📧 Send Notification'}
-                              </button>
-                            </div>
-                            {step.step_config.meeting && (
-                              <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
-                                Meeting: {resolveStepPlaceholders(step.step_config.meeting.title || '', selectedRecord)} · Attendees: {step.step_config.meeting.attendees?.join(', ') || 'manager, starter'}
-                              </div>
-                            )}
-                          </div>
-                        )}
+            const dueDaysAway = dueDate ? Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null
 
-                        {step.step_key === 'assign_elearning' && !done && (
-                          <div style={{ border: '1px solid #c7d2fe', borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8, background: '#eef2ff' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                              <span style={{ fontSize: 14, fontWeight: 600, color: '#4338ca' }}>New Starter Course</span>
-                            </div>
-                            {newStarterCourseInfo?.enabled ? (
-                              newStarterCourseInfo.course ? (
-                                <div style={{ fontSize: 13 }}>
-                                  <div><strong>{newStarterCourseInfo.course.title}</strong></div>
-                                  <div style={{ color: '#666', marginTop: 4 }}>Type: {newStarterCourseInfo.course.type} · Duration: {newStarterCourseInfo.course.duration} · Deadline: {newStarterCourseInfo.course.days_to_complete || 7} days from start date</div>
-                                  <div style={{ color: '#666', marginTop: 4, fontSize: 12 }}>Completing this step will enrol the new starter and set their deadline.</div>
-                                </div>
-                              ) : (
-                                <div style={{ fontSize: 13, color: '#dc2626' }}>No course configured — go to E-Learning settings to set up a new starter course.</div>
-                              )
-                            ) : (
-                              <div style={{ fontSize: 13, color: '#666' }}>New starter e-learning is not enabled for this company. Step will be marked complete without enrolment.</div>
-                            )}
-                          </div>
+            return (
+              <>
+                <div className="admin-wf-detail-top">
+                  <p className="admin-wf-detail-breadcrumb">{phaseLabel} · STEP {stepIndexInPhase} OF {phaseSteps.length}</p>
+                  <h2 className="admin-wf-detail-title">{step.label}</h2>
+                  {dueDate && (
+                    <p className="admin-wf-detail-due">
+                      Due <span className={dueDaysAway !== null && dueDaysAway < 0 ? 'overdue' : dueDaysAway !== null && dueDaysAway <= 3 ? 'due-soon' : 'due-date'}>
+                        {dueDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                      </span>
+                      {dueDaysAway !== null && (
+                        <span style={{ marginLeft: 6, fontSize: 12 }}>
+                          · {dueDaysAway < 0 ? `${Math.abs(dueDaysAway)} day${Math.abs(dueDaysAway) !== 1 ? 's' : ''} overdue` : dueDaysAway === 0 ? 'today' : `in ${dueDaysAway} day${dueDaysAway !== 1 ? 's' : ''}`}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  <div className="admin-wf-detail-actions">
+                    {done ? (
+                      <>
+                        <button className="admin-wf-detail-btn done-btn">✓ Completed</button>
+                        <button className="admin-wf-detail-btn" onClick={() => uncompleteStep(step.step_key)}>Undo</button>
+                      </>
+                    ) : skipped ? (
+                      <>
+                        <button className="admin-wf-detail-btn primary" onClick={() => completeStep(step.step_key)}>Mark as done</button>
+                        <button className="admin-wf-detail-btn" onClick={() => uncompleteStep(step.step_key)}>Undo Skip</button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="admin-wf-detail-btn primary" onClick={() => completeStep(step.step_key)}>Mark as done</button>
+                        {step.step_key !== 'details' && (
+                          <button className="admin-wf-detail-btn" onClick={() => skipStep(step.step_key)}>Skip</button>
                         )}
+                      </>
+                    )}
+                    <button className="admin-wf-detail-btn" onClick={() => {
+                      const assignee = getStepAssignedTo(step, selectedRecord)
+                      showSuccess(`Reminder sent to ${assignee}`)
+                      logActivity(step.step_key, 'Reminder sent', `To ${assignee}`)
+                    }}>Send reminder</button>
+                    <button className="admin-wf-detail-btn" onClick={() => { setReassignStepKey(step.step_key); setReassignStepEmail(getStepAssignedTo(step, selectedRecord)) }}>Reassign</button>
+                  </div>
+                  {reassignStepKey === step.step_key && (
+                    <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                      <input type="text" value={reassignStepEmail} onChange={e => setReassignStepEmail(e.target.value)} placeholder="Name or email" style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, flex: 1 }} />
+                      <button className="admin-btn-sm admin-btn-save" onClick={() => reassignStep(step.step_key, reassignStepEmail)}>Save</button>
+                      <button className="admin-btn-sm" onClick={() => setReassignStepKey(null)}>Cancel</button>
+                    </div>
+                  )}
+                </div>
 
-                        {step.step_key === 'accounts' && identityProvider === 'google_workspace' && !done && (
-                          <div style={{ border: '1px solid #e0e0e0', borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8, background: '#f5f5f5' }}>
-                            <p style={{ margin: 0, fontSize: 13, color: '#666' }}>M365 provisioning is not available for Google Workspace companies. Create accounts manually.</p>
+                <div className="admin-wf-detail-body">
+                  {/* Metadata grid */}
+                  <div className="admin-wf-meta-grid">
+                    <div className="admin-wf-meta-item">
+                      <label>TYPE</label>
+                      <span><span className="meta-icon">👤</span>{step.step_config?.step_type === 'notice' ? 'Notice' : 'HR action'}</span>
+                    </div>
+                    <div className="admin-wf-meta-item">
+                      <label>ASSIGNED TO</label>
+                      <span>{assignedTo}</span>
+                    </div>
+                    <div className="admin-wf-meta-item">
+                      <label>DUE</label>
+                      <span>{dueDate ? dueDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}</span>
+                    </div>
+                    <div className="admin-wf-meta-item">
+                      <label>DEPENDS ON</label>
+                      <span>{dependsOnLabel}</span>
+                    </div>
+                  </div>
+
+                  {/* What Happens */}
+                  <div className="admin-wf-detail-section">
+                    <h5 className="admin-wf-detail-section-title">WHAT HAPPENS</h5>
+                    <p className="admin-wf-whatbox">{step.description}</p>
+                  </div>
+
+                  {/* Send Notification / Meeting button */}
+                  {(step.step_config?.notify_email || step.step_config?.notify_contact_key || step.step_config?.notify_starter) && selectedRecord && (
+                    <div style={{ margin: '0 0 20px', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
+                          {step.step_config.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {step.step_config.notify_starter ? `${selectedRecord.firstname} ${selectedRecord.surname}` : step.step_config.notify_contact_key ? (companyContacts.find(c => c.contact_key === step.step_config!.notify_contact_key)?.label || step.step_config.notify_contact_key) : step.step_config.notify_email}
+                        </span>
+                        {step.step_config.requires_step && (() => {
+                          const reqDone = stepChecks[step.step_config.requires_step!]
+                          return !reqDone ? <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {activeSteps.find(s => s.step_key === step.step_config!.requires_step)?.label || step.step_config.requires_step}</span> : null
+                        })()}
+                        <button
+                          className="admin-btn-sm admin-btn-save"
+                          disabled={stepNotifSending === step.step_key || (!!step.step_config.requires_step && !stepChecks[step.step_config.requires_step])}
+                          onClick={async () => {
+                            setStepNotifSending(step.step_key)
+                            await sendStepNotification(step.step_config!, selectedRecord, step.label, 'onboarding')
+                            setStepNotifSending(null)
+                          }}
+                          style={{ fontSize: 12, padding: '4px 12px' }}
+                        >
+                          {stepNotifSending === step.step_key ? 'Sending...' : step.step_config.meeting ? '📅 Send Meeting Invite' : '📧 Send Notification'}
+                        </button>
+                      </div>
+                      {step.step_config.meeting && (
+                        <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
+                          Meeting: {resolveStepPlaceholders(step.step_config.meeting.title || '', selectedRecord)} · Attendees: {step.step_config.meeting.attendees?.join(', ') || 'manager, starter'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* E-Learning card */}
+                  {step.step_key === 'assign_elearning' && !done && (
+                    <div style={{ border: '1px solid #c7d2fe', borderRadius: 10, padding: 16, marginBottom: 20, background: '#eef2ff' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: '#4338ca' }}>New Starter Course</span>
+                      </div>
+                      {newStarterCourseInfo?.enabled ? (
+                        newStarterCourseInfo.course ? (
+                          <div style={{ fontSize: 13 }}>
+                            <div><strong>{newStarterCourseInfo.course.title}</strong></div>
+                            <div style={{ color: '#666', marginTop: 4 }}>Type: {newStarterCourseInfo.course.type} · Duration: {newStarterCourseInfo.course.duration} · Deadline: {newStarterCourseInfo.course.days_to_complete || 7} days from start date</div>
+                            <div style={{ color: '#666', marginTop: 4, fontSize: 12 }}>Completing this step will enrol the new starter and set their deadline.</div>
                           </div>
-                        )}
-                        {step.step_key === 'accounts' && features.inflowonboarder_integration && ifoConnected && selectedRecord && !done && identityProvider !== 'google_workspace' && (
-                          <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8, background: 'rgba(232,242,255,.5)' }} onClick={e => e.stopPropagation()}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                              <svg width="20" height="20" viewBox="0 0 512 512"><rect width="512" height="512" rx="64" fill="#0078D4"/><circle cx="256" cy="256" r="100" fill="none" stroke="#fff" strokeWidth="32"/><circle cx="256" cy="256" r="16" fill="#fff"/></svg>
-                              <strong style={{ fontSize: 14, color: '#0078D4' }}>Microsoft 365 Provisioning</strong>
+                        ) : (
+                          <div style={{ fontSize: 13, color: '#dc2626' }}>No course configured — go to E-Learning settings to set up a new starter course.</div>
+                        )
+                      ) : (
+                        <div style={{ fontSize: 13, color: '#666' }}>New starter e-learning is not enabled for this company. Step will be marked complete without enrolment.</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Google Workspace notice */}
+                  {step.step_key === 'accounts' && identityProvider === 'google_workspace' && !done && (
+                    <div style={{ border: '1px solid #e0e0e0', borderRadius: 10, padding: 16, marginBottom: 20, background: '#f5f5f5' }}>
+                      <p style={{ margin: 0, fontSize: 13, color: '#666' }}>M365 provisioning is not available for Google Workspace companies. Create accounts manually.</p>
+                    </div>
+                  )}
+
+                  {/* M365 Provisioning section */}
+                  {step.step_key === 'accounts' && features.inflowonboarder_integration && ifoConnected && selectedRecord && !done && identityProvider !== 'google_workspace' && (
+                    <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: 16, marginBottom: 20, background: 'rgba(232,242,255,.5)' }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        <svg width="20" height="20" viewBox="0 0 512 512"><rect width="512" height="512" rx="64" fill="#0078D4"/><circle cx="256" cy="256" r="100" fill="none" stroke="#fff" strokeWidth="32"/><circle cx="256" cy="256" r="16" fill="#fff"/></svg>
+                        <strong style={{ fontSize: 14, color: '#0078D4' }}>Microsoft 365 Provisioning</strong>
                               {m365RunPolling && <span style={{ fontSize: 12, color: '#1976d2', marginLeft: 8 }}>Updating...</span>}
                             </div>
 
@@ -4450,88 +4669,108 @@ export default function AdminOnboarding() {
                                 </div>
                               </div>
                             )}
-                          </div>
-                        )}
+                    </div>
+                  )}
 
-                        <div className="admin-wf-actions">
-                          {done ? (
-                            <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(step.step_key) }}>Undo</button>
-                          ) : skipped ? (
-                            <>
-                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(step.step_key) }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                Mark Complete
-                              </button>
-                              <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(step.step_key) }}>Undo Skip</button>
-                            </>
-                          ) : (
-                            <>
-                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(step.step_key) }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                Mark Complete
-                              </button>
-                              {step.step_key !== 'details' && (
-                                <button className="admin-btn-sm admin-btn-skip" onClick={e => { e.stopPropagation(); skipStep(step.step_key) }}>
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 4 15 12 5 20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-                                  Skip
-                                </button>
-                              )}
-                            </>
-                          )}
+                  {/* M365 provisioning info banner */}
+                  {step.step_key === 'accounts' && features.inflowonboarder_integration && ifoConnected && m365Actions && identityProvider !== 'google_workspace' && m365Actions.schedule_id && (
+                    <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: '12px 14px', marginBottom: 20, background: 'linear-gradient(135deg, rgba(232,242,255,.6), rgba(227,242,253,.4))' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 14 }}>⚡</span>
+                        <strong style={{ fontSize: 12, color: '#1565c0' }}>M365 Schedule Active</strong>
+                      </div>
+                      {selectedRecord.start_date && (
+                        <p style={{ fontSize: 12, color: '#37474f', margin: 0, lineHeight: 1.5 }}>
+                          Account creation scheduled for {(() => { const d = new Date(selectedRecord.start_date); d.setDate(d.getDate() - 3); return d.toLocaleDateString('en-GB') })()} at 09:00. Sign-in enabled on {new Date(selectedRecord.start_date).toLocaleDateString('en-GB')} at 08:00.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Account Goes Live status */}
+                  {(() => {
+                    const isLastPrepStep = prepSteps[prepSteps.length - 1]?.step_key === step.step_key
+                    return isLastPrepStep && postSteps.length > 0 ? (
+                      <div style={{ margin: '0 0 20px', textAlign: 'center' }}>
+                        <div style={{
+                          display: 'inline-block', padding: '8px 16px', borderRadius: 8, fontWeight: 700, fontSize: 11,
+                          background: allPrepDone ? 'linear-gradient(135deg, #d1fae5, #a7f3d0)' : '#f3f4f6',
+                          color: allPrepDone ? '#065f46' : '#9ca3af',
+                          border: `2px solid ${allPrepDone ? '#6ee7b7' : '#e5e7eb'}`,
+                        }}>
+                          {allPrepDone ? '✓ Account Live' : '🔒 Account Goes Live'}
                         </div>
                       </div>
+                    ) : null
+                  })()}
+
+                  {/* Checklist */}
+                  {checklistForStep.length > 0 && (
+                    <div className="admin-wf-detail-section">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <h5 className="admin-wf-detail-section-title" style={{ margin: 0 }}>CHECKLIST</h5>
+                        <span className="admin-wf-checklist-count">{checklistDone}/{checklistForStep.length}</span>
+                      </div>
+                      <ul className="admin-wf-checklist">
+                        {checklistForStep.map(item => (
+                          <li key={item.id} className={`admin-wf-checklist-item ${checklistCompleted[item.id] ? 'checked' : ''}`}
+                            onClick={() => toggleChecklistItem(step.step_key, item.id)}>
+                            <div className="admin-wf-checklist-check">
+                              {checklistCompleted[item.id] && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                            </div>
+                            <span className="admin-wf-checklist-label">{item.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Activity log */}
+                  {stepLogs.length > 0 && (
+                    <div className="admin-wf-detail-section">
+                      <h5 className="admin-wf-detail-section-title">ACTIVITY</h5>
+                      <ul className="admin-wf-activity">
+                        {stepLogs.slice(0, 10).map(log => (
+                          <li key={log.id} className="admin-wf-activity-item">
+                            <span className="admin-wf-activity-date">{new Date(log.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                            <span className="admin-wf-activity-text">{log.action}{log.actor_name ? ` — ${log.actor_name}` : ''}{log.detail ? ` (${log.detail})` : ''}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                {/* Previous / Next navigation */}
+                <div className="admin-wf-nav">
+                  <div>
+                    {workflowStep > 0 && (
+                      <button className="admin-wf-nav-btn" onClick={() => { setWorkflowStep(workflowStep - 1); if (activeSteps[workflowStep - 1]?.step_key === 'accounts' && selectedId && features.inflowonboarder_integration) loadM365Actions(selectedId) }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                        <div>
+                          <div className="admin-wf-nav-label">Previous</div>
+                          <div>{activeSteps[workflowStep - 1]?.label}</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    {workflowStep < activeSteps.length - 1 && (
+                      <button className="admin-wf-nav-btn" onClick={() => { setWorkflowStep(workflowStep + 1); if (activeSteps[workflowStep + 1]?.step_key === 'accounts' && selectedId && features.inflowonboarder_integration) loadM365Actions(selectedId) }}
+                        style={{ textAlign: 'right' }}>
+                        <div>
+                          <div className="admin-wf-nav-label">Next</div>
+                          <div>{activeSteps[workflowStep + 1]?.label}</div>
+                        </div>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                      </button>
                     )}
                   </div>
                 </div>
-              )
-            }
-
-            return postSteps.length > 0 ? (
-              <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                {/* Preparation column */}
-                <div style={{ flex: '1 1 340px', minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#4338ca' }}>Preparation</span>
-                    <span style={{ fontSize: 11, color: '#888' }}>({prepSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length}/{prepSteps.length})</span>
-                  </div>
-                  <div className="admin-workflow-timeline">
-                    {prepSteps.map(renderStep)}
-                  </div>
-                </div>
-
-                {/* Account Goes Live divider */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: 32, flexShrink: 0 }}>
-                  <div style={{ width: 2, height: 40, background: allPrepDone ? '#10b981' : '#e5e7eb' }} />
-                  <div style={{
-                    padding: '8px 14px', borderRadius: 8, fontWeight: 700, fontSize: 11, textAlign: 'center', lineHeight: 1.4,
-                    background: allPrepDone ? 'linear-gradient(135deg, #d1fae5, #a7f3d0)' : '#f3f4f6',
-                    color: allPrepDone ? '#065f46' : '#9ca3af',
-                    border: `2px solid ${allPrepDone ? '#6ee7b7' : '#e5e7eb'}`,
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {allPrepDone ? '✓ Account Live' : '🔒 Account Goes Live'}
-                  </div>
-                  <div style={{ width: 2, height: 40, background: allPrepDone ? '#10b981' : '#e5e7eb' }} />
-                </div>
-
-                {/* Post-Join column */}
-                <div style={{ flex: '1 1 340px', minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>Post-Join</span>
-                    <span style={{ fontSize: 11, color: '#888' }}>({postSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length}/{postSteps.length})</span>
-                    {!allPrepDone && <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600 }}>Awaiting account activation</span>}
-                  </div>
-                  <div className="admin-workflow-timeline" style={{ opacity: allPrepDone ? 1 : 0.5 }}>
-                    {postSteps.map(renderStep)}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="admin-workflow-timeline">
-                {prepSteps.map(renderStep)}
-              </div>
+              </>
             )
           })()}
+          </div>
         </div>
       )}
 
