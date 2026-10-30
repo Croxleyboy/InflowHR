@@ -1583,8 +1583,10 @@ export default function AdminOnboarding() {
   }
 
   function getFunctionGating(funcId: string): { blocked: boolean; message: string; reason?: string } {
-    const fc = ifoSettings?.functions_cache?.[funcId]
-    if (!fc) return { blocked: false, message: '' }
+    const cache = ifoSettings?.functions_cache
+    if (!cache) return { blocked: false, message: '' }
+    const fc = cache[funcId]
+    if (!fc) return { blocked: true, message: `Not available in your InflowOnboarder configuration` }
     if (fc.suspended) return { blocked: true, message: `Temporarily suspended by the InflowOnboarder service`, reason: fc.suspendedReason }
     if (!fc.enabled) return { blocked: true, message: `Switched off for your organisation in InflowOnboarder` }
     if (!fc.inPlan) return { blocked: true, message: `Not in your InflowOnboarder plan` }
@@ -4203,7 +4205,17 @@ export default function AdminOnboarding() {
                                     )}
                                   </div>
                                 )}
-                                {!m365Actions.pass_status && (m365Actions.run_id || m365Actions.schedule_id) && m365Actions.run_status !== 'failed' && (
+                                {m365Actions.pass_status === 'blocked' && (
+                                  <div style={{ marginTop: 10, border: '1px solid #ef9a9a', borderRadius: 8, padding: 12, background: 'rgba(255,235,238,.5)' }}>
+                                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#c62828', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      ⚠ Sign-In Blocked
+                                    </p>
+                                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#b71c1c' }}>
+                                      {selectedRecord?.firstname} {selectedRecord?.surname} can't sign in yet: {(m365Actions as any).pass_error_detail?.message || 'a pass issue is blocking the schedule'}. An InflowOnboarder admin needs to fix this, or change the schedule to drop the pass.
+                                    </p>
+                                  </div>
+                                )}
+                                {m365Actions.pass_status === 'skipped' && m365Actions.run_status !== 'failed' && (
                                   <div style={{ marginTop: 10, border: '1px solid #ffcc80', borderRadius: 8, padding: 12, background: 'rgba(255,243,224,.4)' }}>
                                     <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#e65100', display: 'flex', alignItems: 'center', gap: 6 }}>
                                       ⚠ No First-Day Pass
