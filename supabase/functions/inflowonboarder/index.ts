@@ -839,6 +839,7 @@ Deno.serve(async (req) => {
                 onboarding_id, company_id, run_id: runId, run_status: runStatus,
                 run_error: null, run_result: null, approval_status: null,
                 attempt_count_run: (attempt || 0) + 1, is_v1_legacy: false,
+                pass_status: 'skipped',
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'onboarding_id' })
               await audit(sb, company_id, userId, 'inflowonboarder_start_run', { onboarding_id, runId, runStatus, passWarning })
@@ -1225,6 +1226,7 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       }
       if (scheduleOptions.issuePass) schedUpsert.pass_status = 'pending'
+      else if (schedPassWarning) schedUpsert.pass_status = 'skipped'
       await sb.from('onboarding_m365_actions').upsert(schedUpsert, { onConflict: 'onboarding_id' })
 
       await audit(sb, company_id, userId, 'inflowonboarder_create_schedule', { onboarding_id, scheduleId: sched.id, issuePass: !!scheduleOptions.issuePass, ...(schedPassWarning ? { passWarning: schedPassWarning } : {}) })
@@ -1543,6 +1545,13 @@ Deno.serve(async (req) => {
         userPrincipalName: m365Row.m365_upn,
         displayName: empName,
       }, idempotencyKey)
+
+      if (res.status === 409) {
+        const errCode = (res.data as any)?.error?.code
+        if (['passes_off', 'passes_not_connected', 'passes_setup_incomplete', 'function_suspended'].includes(errCode)) {
+          return json({ error: friendlyError(errCode) }, 409)
+        }
+      }
 
       const errResp = handleEngineError(sb, company_id, res)
       if (errResp) return errResp

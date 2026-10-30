@@ -95,8 +95,11 @@ async function processEvent(sb: ReturnType<typeof getSupabase>, event: ScheduleE
     return
   }
 
+  const selectCols = isJoiner
+    ? 'schedule_id, schedule_updated_at, company_id, schedule_options, pass_status'
+    : 'schedule_id, schedule_updated_at, company_id'
   const { data: existing } = await sb.from(table)
-    .select('schedule_id, schedule_updated_at, company_id')
+    .select(selectCols)
     .eq(idColumn, recordId)
     .maybeSingle()
 
@@ -156,22 +159,34 @@ async function processEvent(sb: ReturnType<typeof getSupabase>, event: ScheduleE
   if (type === 'schedule.stage_completed' && isJoiner) {
     const completedStage = stages?.find(s => s.name === 'enable_sign_in' && s.status === 'completed')
     const stageResult = completedStage?.result as any
-    if (stageResult?.passId) {
-      await sb.from('onboarding_m365_actions').update({
-        pass_id: stageResult.passId,
-        pass_expires_at: stageResult.expiresAt,
-        pass_status: 'ready',
-        updated_at: new Date().toISOString(),
-      }).eq('onboarding_id', recordId)
-      await createTapReadyNotification(sb, existing.company_id, recordId, stageResult.expiresAt)
+    if (completedStage) {
+      if (stageResult?.passId) {
+        await sb.from('onboarding_m365_actions').update({
+          pass_id: stageResult.passId,
+          pass_expires_at: stageResult.expiresAt,
+          pass_status: 'ready',
+          pass_error_detail: null,
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', recordId)
+        await createTapReadyNotification(sb, existing.company_id, recordId, stageResult.expiresAt)
+      } else if ((existing as any).schedule_options?.issuePass) {
+        await sb.from('onboarding_m365_actions').update({
+          pass_status: 'skipped',
+          pass_error_detail: null,
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', recordId)
+      }
     }
   }
 
   if (type === 'schedule.blocked' && isJoiner) {
     const errCode = (data.error as any)?.code
-    if (errCode === 'passes_off' || errCode === 'passes_not_connected' || errCode === 'passes_setup_incomplete' || errCode === 'function_suspended') {
+    const passBlockCodes = ['passes_off', 'passes_not_connected', 'passes_setup_incomplete']
+    const schedAskedForPass = !!(existing as any).schedule_options?.issuePass
+    if (schedAskedForPass && (passBlockCodes.includes(errCode) || (errCode === 'function_suspended' && (data.error as any)?.function === 'passes'))) {
       await sb.from('onboarding_m365_actions').update({
-        pass_status: 'error',
+        pass_status: 'blocked',
+        pass_error_detail: data.error || null,
         updated_at: new Date().toISOString(),
       }).eq('onboarding_id', recordId)
     }
@@ -305,7 +320,8 @@ async function processRunEvent(sb: ReturnType<typeof getSupabase>, event: any) {
     const issuePassStep = steps?.find((s: any) => s.name === 'issue_pass')
     if (issuePassStep?.status === 'failed' && !steps?.some((s: any) => s.name !== 'issue_pass' && s.status === 'failed')) {
       updates.run_status = 'completed'
-      updates.pass_status = 'error'
+      updates.pass_status = 'skipped'
+      updates.pass_error_detail = issuePassStep.error || issuePassStep.result?.error || null
     }
   }
 
