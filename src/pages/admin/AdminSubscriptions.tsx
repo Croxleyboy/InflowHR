@@ -218,32 +218,41 @@ export default function AdminSubscriptions() {
     if (!selectedCompanyId) return
     setSavingFeature(packKey)
 
-    if (customPrices[packKey] && customPrices[packKey] !== '') {
-      await supabase
-        .from('company_features')
-        .upsert(
-          { company_id: selectedCompanyId, feature_key: packKey, custom_price: parseFloat(customPrices[packKey]) },
-          { onConflict: 'company_id,feature_key' }
-        )
-    }
-
-    const { data, error } = await callRpcDirect('enable_pack', {
-      p_company_id: selectedCompanyId,
-      p_pack_key: packKey,
-    })
-    if (error) {
-      showError(`Failed to enable pack: ${(error as any)?.message || 'Unknown error'}`)
-    } else {
-      const result = data as Record<string, any>
-      const label = packKey === 'pack_a' ? 'People Operations' : 'Pro Integrations'
-      if (result?.exempt) {
-        showSuccess(`${label} enabled (no pro-rata — exempt)`)
-      } else {
-        showSuccess(`${label} enabled — pro-rata charge: ${formatCurrency(result?.pro_rata_amount || 0, currency)}`)
+    try {
+      if (customPrices[packKey] && customPrices[packKey] !== '') {
+        const { error: priceErr } = await supabase
+          .from('company_features')
+          .upsert(
+            { company_id: selectedCompanyId, feature_key: packKey, is_enabled: false, custom_price: parseFloat(customPrices[packKey]) },
+            { onConflict: 'company_id,feature_key', ignoreDuplicates: false }
+          )
+        if (priceErr) {
+          showError(`Failed to save custom price: ${priceErr.message}`)
+          setSavingFeature(null)
+          return
+        }
       }
+
+      const { data, error } = await callRpcDirect('enable_pack', {
+        p_company_id: selectedCompanyId,
+        p_pack_key: packKey,
+      })
+      if (error) {
+        showError(`Failed to enable pack: ${error}`)
+      } else {
+        const result = data as Record<string, any>
+        const label = packKey === 'pack_a' ? 'People Operations' : 'Pro Integrations'
+        if (result?.exempt) {
+          showSuccess(`${label} enabled (no pro-rata — exempt)`)
+        } else {
+          showSuccess(`${label} enabled — pro-rata charge: ${formatCurrency(result?.pro_rata_amount || 0, currency)}`)
+        }
+      }
+      await loadCompanyFeatures(selectedCompanyId)
+      await loadChangeLog(selectedCompanyId)
+    } catch (err: unknown) {
+      showError(`Failed to enable pack: ${err instanceof Error ? err.message : String(err)}`)
     }
-    await loadCompanyFeatures(selectedCompanyId)
-    await loadChangeLog(selectedCompanyId)
     setSavingFeature(null)
   }
 
@@ -265,7 +274,7 @@ export default function AdminSubscriptions() {
       p_pack_key: packKey,
     })
     if (error) {
-      showError(`Failed to cancel pack: ${(error as any)?.message || 'Unknown error'}`)
+      showError(`Failed to cancel pack: ${error}`)
     } else {
       const result = data as Record<string, any>
       if (result?.cancel_type === 'grace_immediate') {
