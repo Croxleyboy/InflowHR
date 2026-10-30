@@ -40,6 +40,10 @@ interface AllCompanyStats {
   todaySpaceBookings: number
   totalLeavers: number
   totalMovers: number
+  completedOnboarders: number
+  pendingOnboarders: number
+  completedOffboarders: number
+  pendingOffboarders: number
 }
 
 interface CompanyStats {
@@ -88,7 +92,7 @@ export default function AdminDashboard() {
   async function loadSuperAdminStats() {
     setLoading(true)
     const todayStr = new Date().toISOString().slice(0, 10)
-    const [metricsRes, compRes, featRes, annRes, benRes, notifRes, unreadNotifRes, actionNotifRes, kudosRes, kudosLikesRes, surveyDepRes, otoRes, otoCompRes, goalsRes, activeGoalsRes, bookingsRes, todayBookingsRes, leaverRes, moverRes] = await Promise.all([
+    const [metricsRes, compRes, featRes, annRes, benRes, notifRes, unreadNotifRes, actionNotifRes, kudosRes, kudosLikesRes, surveyDepRes, otoRes, otoCompRes, goalsRes, activeGoalsRes, bookingsRes, todayBookingsRes, leaverRes, moverRes, compOnbRes, pendOnbRes, compOffRes, pendOffRes] = await Promise.all([
       supabase.rpc('get_all_company_metrics'),
       supabase.from('companies').select('id', { count: 'exact', head: true }),
       supabase.from('company_features').select('feature_key, company_id').eq('is_enabled', true),
@@ -108,6 +112,10 @@ export default function AdminDashboard() {
       supabase.from('space_bookings').select('id', { count: 'exact', head: true }).eq('booking_date', todayStr),
       supabase.from('offboarding').select('id', { count: 'exact', head: true }),
       supabase.from('role_changes').select('id', { count: 'exact', head: true }),
+      supabase.from('onboarding').select('id', { count: 'exact', head: true }).eq('is_complete', true),
+      supabase.from('onboarding').select('id', { count: 'exact', head: true }).eq('is_complete', false),
+      supabase.from('offboarding').select('id', { count: 'exact', head: true }).eq('is_complete', true),
+      supabase.from('offboarding').select('id', { count: 'exact', head: true }).eq('is_complete', false),
     ])
     const metrics = (metricsRes.data || []) as { employee_count: number; total_employees: number; open_tickets: number; pending_onboarding: number }[]
     const totalEmployees = metrics.reduce((s, m) => s + (m.total_employees || 0), 0)
@@ -155,6 +163,10 @@ export default function AdminDashboard() {
       todaySpaceBookings: todayBookingsRes.count ?? 0,
       totalLeavers: leaverRes.count ?? 0,
       totalMovers: moverRes.count ?? 0,
+      completedOnboarders: compOnbRes.count ?? 0,
+      pendingOnboarders: pendOnbRes.count ?? 0,
+      completedOffboarders: compOffRes.count ?? 0,
+      pendingOffboarders: pendOffRes.count ?? 0,
     })
     setLoading(false)
 
@@ -747,6 +759,73 @@ function CompanyDash({
   )
 }
 
+function IfoDonutChart({ stats }: { stats: AllCompanyStats }) {
+  const segments = [
+    { label: 'Onboarders Completed', value: stats.completedOnboarders, color: '#e53935' },
+    { label: 'Onboarders Pending', value: stats.pendingOnboarders, color: '#7e57c2' },
+    { label: 'Offboarders Completed', value: stats.completedOffboarders, color: '#ce93d8' },
+    { label: 'Offboarders Pending', value: stats.pendingOffboarders, color: '#f8bbd0' },
+    { label: 'Movers / Persona Actions', value: stats.totalMovers, color: '#ffe0b2' },
+  ]
+  const total = segments.reduce((s, seg) => s + seg.value, 0)
+  const cx = 90, cy = 90, outerR = 80, innerR = 52, gap = 0.02
+
+  let paths: { d: string; color: string }[] = []
+  if (total > 0) {
+    let angle = -Math.PI / 2
+    for (const seg of segments) {
+      if (seg.value === 0) continue
+      const sweep = (seg.value / total) * Math.PI * 2 - gap
+      if (sweep <= 0) continue
+      const x1o = cx + outerR * Math.cos(angle)
+      const y1o = cy + outerR * Math.sin(angle)
+      const x2o = cx + outerR * Math.cos(angle + sweep)
+      const y2o = cy + outerR * Math.sin(angle + sweep)
+      const x1i = cx + innerR * Math.cos(angle + sweep)
+      const y1i = cy + innerR * Math.sin(angle + sweep)
+      const x2i = cx + innerR * Math.cos(angle)
+      const y2i = cy + innerR * Math.sin(angle)
+      const large = sweep > Math.PI ? 1 : 0
+      paths.push({
+        d: `M${x1o},${y1o} A${outerR},${outerR} 0 ${large} 1 ${x2o},${y2o} L${x1i},${y1i} A${innerR},${innerR} 0 ${large} 0 ${x2i},${y2i} Z`,
+        color: seg.color,
+      })
+      angle += sweep + gap
+    }
+  }
+
+  return (
+    <div className="sa-chart-panel">
+      <h4 className="sa-chart-title">InflowOnboarder</h4>
+      <p className="sa-chart-subtitle">Actions completed & pending</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: 8 }}>
+        <div style={{ position: 'relative', width: 180, height: 180, flexShrink: 0 }}>
+          <svg width="180" height="180" viewBox="0 0 180 180">
+            {total === 0 ? (
+              <circle cx={cx} cy={cy} r={(outerR + innerR) / 2} fill="none" stroke="#eeeef4" strokeWidth={outerR - innerR} />
+            ) : (
+              paths.map((p, i) => <path key={i} d={p.d} fill={p.color} />)
+            )}
+          </svg>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+            <span style={{ fontSize: 28, fontWeight: 800, color: '#1e1e2d', lineHeight: 1 }}>{total}</span>
+            <span style={{ fontSize: 10, fontWeight: 600, color: '#9b9cb5', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 }}>Total</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+          {segments.map(seg => (
+            <div key={seg.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 12, height: 12, borderRadius: 2, background: seg.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{seg.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#1e1e2d', marginLeft: 'auto' }}>{seg.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompanyStats; navigate: (p: string) => void; archives: ArchiveFile[]; trends: Record<string, TrendPoint[]> }) {
   const [aiMonthly, setAiMonthly] = useState<{ month: string; tokens: number; queries: number; cost: number }[]>([])
   const [aiCompanies, setAiCompanies] = useState<{ name: string; queries: number; tokens: number; cost: number }[]>([])
@@ -855,59 +934,68 @@ function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompa
         <p>All-company metrics across InflowHR</p>
       </div>
 
-      {/* AI Helper Costs — hero panel */}
-      <div className="sa-chart-panel" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
-          <div>
-            <h3 className="sa-chart-title">AI Helper Costs</h3>
-            <p className="sa-chart-subtitle">GPT-4o-mini · last 12 months</p>
-          </div>
-          <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-            <div style={{ textAlign: 'right' }}>
-              <div className="sa-chart-hero-label">This Month</div>
-              <div className="sa-chart-hero" style={{ color: '#7c5cfc' }}>£{totalAiCostMonth.toFixed(2)}</div>
-              <div style={{ fontSize: 11, color: '#9b9cb5', marginTop: 2 }}>{totalAiQueriesMonth.toLocaleString()} queries</div>
+      {/* AI Helper + Employee Growth — side by side */}
+      <div style={{ display: 'flex', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div className="sa-chart-panel" style={{ flex: '1 1 340px', minWidth: 0, marginBottom: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+            <div>
+              <h3 className="sa-chart-title">AI Helper Costs</h3>
+              <p className="sa-chart-subtitle">GPT-4o-mini · last 12 months</p>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="sa-chart-hero-label">Annual Total</div>
-              <div className="sa-chart-hero" style={{ color: '#1e1e2d' }}>£{totalAiCostYear.toFixed(2)}</div>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+              <div style={{ textAlign: 'right' }}>
+                <div className="sa-chart-hero-label">This Month</div>
+                <div className="sa-chart-hero" style={{ color: '#7c5cfc', fontSize: 18 }}>£{totalAiCostMonth.toFixed(2)}</div>
+                <div style={{ fontSize: 10, color: '#9b9cb5', marginTop: 1 }}>{totalAiQueriesMonth.toLocaleString()} queries</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="sa-chart-hero-label">Annual Total</div>
+                <div className="sa-chart-hero" style={{ color: '#1e1e2d', fontSize: 18 }}>£{totalAiCostYear.toFixed(2)}</div>
+              </div>
             </div>
           </div>
+          <svg width="100%" viewBox="0 0 360 60" style={{ display: 'block', marginBottom: 4 }}>
+            <defs>
+              <linearGradient id="ai-bar-hot" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#7c5cfc" />
+                <stop offset="100%" stopColor="#a78bfa" />
+              </linearGradient>
+              <linearGradient id="ai-bar-cool" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#c4b5fd" stopOpacity="0.7" />
+                <stop offset="100%" stopColor="#ddd6fe" stopOpacity="0.4" />
+              </linearGradient>
+            </defs>
+            {aiMonthly.map((m, i) => {
+              const maxCost = Math.max(...aiMonthly.map(x => x.cost), 0.01)
+              const bw = 360 / aiMonthly.length
+              const pad = bw * 0.15
+              const barH = Math.max((m.cost / maxCost) * 36, 2)
+              const isLast = i === aiMonthly.length - 1
+              const r = Math.min((bw - pad * 2) / 2, 4)
+              return (
+                <g key={i}>
+                  <rect x={i * bw + pad} y={42 - barH} width={bw - pad * 2} height={barH} rx={r} ry={r} fill={isLast ? 'url(#ai-bar-hot)' : 'url(#ai-bar-cool)'}>
+                    <title>{m.month}: £{m.cost.toFixed(2)} ({m.queries} queries)</title>
+                  </rect>
+                  <text x={i * bw + bw / 2} y={54} textAnchor="middle" fontSize="8" fill="#9b9cb5" fontWeight="500">{m.month.split(' ')[0]}</text>
+                </g>
+              )
+            })}
+          </svg>
+          <button
+            onClick={() => setShowAiPopup(true)}
+            style={{ marginTop: 4, background: 'none', border: 'none', color: '#7c5cfc', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+          >
+            View company breakdown →
+          </button>
         </div>
-        <svg width="100%" viewBox="0 0 480 80" style={{ display: 'block', marginBottom: 4 }}>
-          <defs>
-            <linearGradient id="ai-bar-hot" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#7c5cfc" />
-              <stop offset="100%" stopColor="#a78bfa" />
-            </linearGradient>
-            <linearGradient id="ai-bar-cool" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#c4b5fd" stopOpacity="0.7" />
-              <stop offset="100%" stopColor="#ddd6fe" stopOpacity="0.4" />
-            </linearGradient>
-          </defs>
-          {aiMonthly.map((m, i) => {
-            const maxCost = Math.max(...aiMonthly.map(x => x.cost), 0.01)
-            const bw = 480 / aiMonthly.length
-            const pad = bw * 0.15
-            const barH = Math.max((m.cost / maxCost) * 50, 2)
-            const isLast = i === aiMonthly.length - 1
-            const r = Math.min((bw - pad * 2) / 2, 5)
-            return (
-              <g key={i}>
-                <rect x={i * bw + pad} y={58 - barH} width={bw - pad * 2} height={barH} rx={r} ry={r} fill={isLast ? 'url(#ai-bar-hot)' : 'url(#ai-bar-cool)'}>
-                  <title>{m.month}: £{m.cost.toFixed(2)} ({m.queries} queries)</title>
-                </rect>
-                <text x={i * bw + bw / 2} y={72} textAnchor="middle" fontSize="9" fill="#9b9cb5" fontWeight="500">{m.month.split(' ')[0]}</text>
-              </g>
-            )
-          })}
-        </svg>
-        <button
-          onClick={() => setShowAiPopup(true)}
-          style={{ marginTop: 6, background: 'none', border: 'none', color: '#7c5cfc', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}
-        >
-          View company breakdown →
-        </button>
+        {trends['employees'] && trends['employees'].length > 1 && (
+          <div className="sa-chart-panel" style={{ flex: '1 1 340px', minWidth: 0, marginBottom: 0 }}>
+            <h4 className="sa-chart-title">Employee Growth</h4>
+            <p className="sa-chart-subtitle">6-month trend</p>
+            <LargeChart data={trends['employees']} color="#7c5cfc" type="line" />
+          </div>
+        )}
       </div>
 
       {/* AI Company Breakdown Popup */}
@@ -962,8 +1050,9 @@ function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompa
       {/* Trend charts — 2-up grid with upgraded panels */}
       {Object.keys(trends).length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14, marginTop: 14 }}>
+          {/* InflowOnboarder donut chart — replaces Employee Growth position */}
+          <IfoDonutChart stats={stats} />
           {[
-            { title: 'Employee Growth', sub: '6-month trend', key: 'employees', color: '#7c5cfc', type: 'line' as const },
             { title: 'New Onboarders', sub: 'per month', key: 'onboarders', color: '#a78bfa', type: 'bar' as const },
             { title: 'Notifications', sub: 'per month', key: 'notifications', color: '#818cf8', type: 'bar' as const },
             { title: 'Kudos Given', sub: 'per month', key: 'kudos', color: '#f59e0b', type: 'bar' as const },
