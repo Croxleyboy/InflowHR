@@ -716,25 +716,89 @@ function CompanyDash({
 }
 
 function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompanyStats; navigate: (p: string) => void; archives: ArchiveFile[]; trends: Record<string, TrendPoint[]> }) {
+  const [aiMonthly, setAiMonthly] = useState<{ month: string; tokens: number; queries: number; cost: number }[]>([])
+  const [aiCompanies, setAiCompanies] = useState<{ name: string; queries: number; tokens: number; cost: number }[]>([])
+  const [showAiPopup, setShowAiPopup] = useState(false)
+
+  useEffect(() => {
+    loadAiCosts()
+  }, [])
+
+  async function loadAiCosts() {
+    const now = new Date()
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    const monthly: { month: string; tokens: number; queries: number; cost: number }[] = []
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+      const startStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+      const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`
+      const { data } = await supabase.from('ai_help_usage')
+        .select('query_count, total_tokens')
+        .gte('query_date', startStr)
+        .lte('query_date', endStr)
+      const tokens = (data || []).reduce((s, r) => s + (r.total_tokens || 0), 0)
+      const queries = (data || []).reduce((s, r) => s + (r.query_count || 0), 0)
+      const cost = tokens * 0.00000075
+      monthly.push({ month: `${MONTHS[d.getMonth()]} ${d.getFullYear().toString().slice(2)}`, tokens, queries, cost })
+    }
+    setAiMonthly(monthly)
+
+    const thisStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    const thisEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    const thisEndStr = `${thisEnd.getFullYear()}-${String(thisEnd.getMonth() + 1).padStart(2, '0')}-${String(thisEnd.getDate()).padStart(2, '0')}`
+    const { data: thisMonth } = await supabase.from('ai_help_usage')
+      .select('company_id, query_count, total_tokens')
+      .gte('query_date', thisStart)
+      .lte('query_date', thisEndStr)
+
+    const companyMap: Record<string, { queries: number; tokens: number }> = {}
+    for (const r of (thisMonth || [])) {
+      if (!companyMap[r.company_id]) companyMap[r.company_id] = { queries: 0, tokens: 0 }
+      companyMap[r.company_id].queries += r.query_count || 0
+      companyMap[r.company_id].tokens += r.total_tokens || 0
+    }
+
+    const companyIds = Object.keys(companyMap)
+    if (companyIds.length > 0) {
+      const { data: companies } = await supabase.from('companies')
+        .select('id, name')
+        .in('id', companyIds)
+      const nameMap: Record<string, string> = {}
+      for (const c of (companies || [])) nameMap[c.id] = c.name
+      const list = companyIds.map(id => ({
+        name: nameMap[id] || id.slice(0, 8),
+        queries: companyMap[id].queries,
+        tokens: companyMap[id].tokens,
+        cost: companyMap[id].tokens * 0.00000075,
+      })).sort((a, b) => b.cost - a.cost)
+      setAiCompanies(list)
+    }
+  }
+
   const surveyCompletionRate = stats.totalSurveyRecipients > 0 ? Math.round((stats.totalSurveyResponses / stats.totalSurveyRecipients) * 100) : 0
   const otoCompletionRate = stats.totalOneToOnes > 0 ? Math.round((stats.completedOneToOnes / stats.totalOneToOnes) * 100) : 0
 
-  const cards: { label: string; value: number; color: string; path: string; subtitle?: string; suffix?: string; chart?: 'line' | 'bar'; chartData?: TrendPoint[] }[] = [
-    { label: 'Total Employees', value: stats.totalEmployees, color: '#1565c0', path: '/admin/employees', chart: 'line', chartData: trends.employees },
-    { label: 'Companies', value: stats.totalCompanies, color: '#2e7d32', path: '/admin/subscriptions' },
-    { label: 'New Onboarders', value: stats.totalOnboarders, color: '#e91e63', path: '/admin/onboarding', chart: 'bar', chartData: trends.onboarders },
-    { label: 'Leavers', value: stats.totalLeavers, color: '#8e24aa', path: '/admin/onboarding' },
-    { label: 'Movers', value: stats.totalMovers, color: '#00838f', path: '/admin/onboarding' },
-    { label: 'Notifications', value: stats.totalNotifications, color: '#5c6bc0', path: '/admin/employees', subtitle: `${stats.unreadNotifications} unread`, chart: 'line', chartData: trends.notifications },
-    { label: 'Pending Actions', value: stats.actionNotifications, color: '#d84315', path: '/admin/employees', subtitle: 'unread action items' },
-    { label: 'Kudos Given', value: stats.totalKudos, color: '#fbc02d', path: '/admin/kudos', subtitle: `${stats.totalKudosLikes} likes`, chart: 'bar', chartData: trends.kudos },
-    { label: 'Surveys', value: stats.totalSurveyDeployments, color: '#26a69a', path: '/admin/surveys', subtitle: `${surveyCompletionRate}% completion` },
-    { label: 'Performance 1:1s', value: stats.totalOneToOnes, color: '#c62828', path: '/admin/performance', subtitle: `${otoCompletionRate}% completed` },
-    { label: 'Goals', value: stats.totalGoals, color: '#ef6c00', path: '/admin/performance', subtitle: `${stats.activeGoals} active` },
-    { label: 'Room Bookings', value: stats.totalSpaceBookings, color: '#4527a0', path: '/admin/space-management', subtitle: `${stats.todaySpaceBookings} today`, chart: 'bar', chartData: trends.bookings },
-    { label: 'Announcements', value: stats.totalAnnouncements, color: '#00897b', path: '/admin/announcements' },
-    { label: 'Tickets Raised', value: stats.totalTickets, color: '#37474f', path: '/admin/tickets', chart: 'bar', chartData: trends.tickets },
-    { label: 'Benefit Types', value: stats.totalBenefitTypes, color: '#6a1b9a', path: '/admin/benefits' },
+  const totalAiCostYear = aiMonthly.reduce((s, m) => s + m.cost, 0)
+  const totalAiQueriesMonth = aiMonthly.length > 0 ? aiMonthly[aiMonthly.length - 1].queries : 0
+  const totalAiCostMonth = aiMonthly.length > 0 ? aiMonthly[aiMonthly.length - 1].cost : 0
+
+  const cards: { label: string; value: string; color: string; path: string; sub?: string }[] = [
+    { label: 'Employees', value: String(stats.totalEmployees), color: '#1565c0', path: '/admin/employees' },
+    { label: 'Companies', value: String(stats.totalCompanies), color: '#2e7d32', path: '/admin/subscriptions' },
+    { label: 'Onboarders', value: String(stats.totalOnboarders), color: '#e91e63', path: '/admin/onboarding' },
+    { label: 'Leavers', value: String(stats.totalLeavers), color: '#8e24aa', path: '/admin/onboarding' },
+    { label: 'Movers', value: String(stats.totalMovers), color: '#00838f', path: '/admin/onboarding' },
+    { label: 'Notifications', value: String(stats.totalNotifications), color: '#5c6bc0', path: '/admin/employees', sub: `${stats.unreadNotifications} unread` },
+    { label: 'Actions', value: String(stats.actionNotifications), color: '#d84315', path: '/admin/employees', sub: 'pending' },
+    { label: 'Kudos', value: String(stats.totalKudos), color: '#fbc02d', path: '/admin/kudos', sub: `${stats.totalKudosLikes} likes` },
+    { label: 'Surveys', value: String(stats.totalSurveyDeployments), color: '#26a69a', path: '/admin/surveys', sub: `${surveyCompletionRate}%` },
+    { label: '1:1 Meetings', value: String(stats.totalOneToOnes), color: '#c62828', path: '/admin/performance', sub: `${otoCompletionRate}% done` },
+    { label: 'Goals', value: String(stats.totalGoals), color: '#ef6c00', path: '/admin/performance', sub: `${stats.activeGoals} active` },
+    { label: 'Room Bookings', value: String(stats.totalSpaceBookings), color: '#4527a0', path: '/admin/space-management', sub: `${stats.todaySpaceBookings} today` },
+    { label: 'Announcements', value: String(stats.totalAnnouncements), color: '#00897b', path: '/admin/announcements' },
+    { label: 'Tickets', value: String(stats.totalTickets), color: '#37474f', path: '/admin/tickets' },
+    { label: 'Benefits', value: String(stats.totalBenefitTypes), color: '#6a1b9a', path: '/admin/benefits' },
   ]
 
   const featureSubs = [
@@ -759,31 +823,98 @@ function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompa
         <p>All-company metrics across InflowHR</p>
       </div>
 
-      <div className="cd-grid">
-        {cards.map(c => (
-          <button key={c.label} className="cd-card" onClick={() => navigate(c.path)}>
-            <div className="cd-card-top">
-              <div className="cd-card-meta">
-                <span className="cd-card-label">{c.label}</span>
-                <span className="cd-card-value" style={{ color: c.color }}>
-                  {c.value}{c.suffix || ''}
-                </span>
-              </div>
-              <div className="cd-card-icon" style={{ background: c.color }}>
-                <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{c.value}{c.suffix || ''}</span>
-              </div>
+      {/* AI Helper Costs — top row */}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1e1e2d' }}>AI Helper Costs</div>
+            <div style={{ fontSize: 12, color: '#8b8fa3' }}>GPT-4o-mini · last 12 months</div>
+          </div>
+          <div style={{ display: 'flex', gap: 20, alignItems: 'baseline' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#8b8fa3', textTransform: 'uppercase', fontWeight: 600 }}>This Month</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#1565c0' }}>£{totalAiCostMonth.toFixed(2)}</div>
+              <div style={{ fontSize: 10, color: '#8b8fa3' }}>{totalAiQueriesMonth.toLocaleString()} queries</div>
             </div>
-            {c.subtitle && (
-              <div style={{ fontSize: 12, color: '#8b8fa3', marginTop: 6 }}>{c.subtitle}</div>
-            )}
-            {c.chart && c.chartData && c.chartData.length > 1 && (
-              <div className="cd-card-chart">
-                {c.chart === 'line'
-                  ? <MiniLineChart data={c.chartData} color={c.color} />
-                  : <MiniBarChart data={c.chartData} color={c.color} />
-                }
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#8b8fa3', textTransform: 'uppercase', fontWeight: 600 }}>Annual Total</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#2e7d32' }}>£{totalAiCostYear.toFixed(2)}</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 40, marginBottom: 6 }}>
+          {aiMonthly.map((m, i) => {
+            const maxCost = Math.max(...aiMonthly.map(x => x.cost), 0.01)
+            const h = Math.max((m.cost / maxCost) * 36, 2)
+            return (
+              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <div style={{ width: '100%', height: h, background: i === aiMonthly.length - 1 ? '#1565c0' : '#bbdefb', borderRadius: 2 }} title={`${m.month}: £${m.cost.toFixed(2)} (${m.queries} queries)`} />
               </div>
+            )
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 2 }}>
+          {aiMonthly.map((m, i) => (
+            <div key={i} style={{ flex: 1, fontSize: 8, color: '#8b8fa3', textAlign: 'center' }}>{m.month.split(' ')[0]}</div>
+          ))}
+        </div>
+        <button
+          onClick={() => setShowAiPopup(true)}
+          style={{ marginTop: 8, background: 'none', border: 'none', color: '#1565c0', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+        >
+          View company breakdown →
+        </button>
+      </div>
+
+      {/* AI Company Breakdown Popup */}
+      {showAiPopup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowAiPopup(false)}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 24, maxWidth: 560, width: '90%', maxHeight: '70vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>AI Helper — Company Breakdown (This Month)</h3>
+              <button onClick={() => setShowAiPopup(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#666' }}>×</button>
+            </div>
+            {aiCompanies.length === 0 ? (
+              <p style={{ color: '#8b8fa3', fontSize: 13 }}>No AI usage this month.</p>
+            ) : (
+              <table className="admin-table" style={{ fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th>Company</th>
+                    <th style={{ textAlign: 'right' }}>Queries</th>
+                    <th style={{ textAlign: 'right' }}>Tokens</th>
+                    <th style={{ textAlign: 'right' }}>Est. Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aiCompanies.map((c, i) => (
+                    <tr key={i}>
+                      <td><strong>{c.name}</strong></td>
+                      <td style={{ textAlign: 'right' }}>{c.queries.toLocaleString()}</td>
+                      <td style={{ textAlign: 'right' }}>{c.tokens.toLocaleString()}</td>
+                      <td style={{ textAlign: 'right' }}>£{c.cost.toFixed(4)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 700, borderTop: '2px solid #e5e7eb' }}>
+                    <td>Total</td>
+                    <td style={{ textAlign: 'right' }}>{aiCompanies.reduce((s, c) => s + c.queries, 0).toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>{aiCompanies.reduce((s, c) => s + c.tokens, 0).toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>£{aiCompanies.reduce((s, c) => s + c.cost, 0).toFixed(4)}</td>
+                  </tr>
+                </tbody>
+              </table>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Condensed stat cards — 6 per row */}
+      <div className="sa-grid">
+        {cards.map(c => (
+          <button key={c.label} className="sa-card" onClick={() => navigate(c.path)} style={{ borderLeft: `3px solid ${c.color}` }}>
+            <span className="sa-card-label">{c.label}</span>
+            <span className="sa-card-value" style={{ color: c.color }}>{c.value}</span>
+            {c.sub && <span className="sa-card-sub">{c.sub}</span>}
           </button>
         ))}
       </div>

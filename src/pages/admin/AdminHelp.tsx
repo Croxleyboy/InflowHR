@@ -318,6 +318,28 @@ export default function AdminHelp() {
       updated_at: new Date().toISOString(),
     }
 
+    // ── Check for handbook overlap before saving ──
+    const faqWords = `${payload.question} ${payload.keywords} ${payload.answer}`
+      .toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(w => w.length > 3)
+    const faqTerms = [...new Set(faqWords)]
+
+    if (faqTerms.length > 0) {
+      const searchTerms = faqTerms.slice(0, 8).join(' | ')
+      const { data: hbMatches } = await supabase.from('handbook_sections')
+        .select('section_number, title')
+        .or(`company_id.is.null,company_id.eq.${selectedCompanyId}`)
+        .eq('is_active', true)
+        .textSearch('search_vector', searchTerms)
+        .limit(3)
+
+      if (hbMatches && hbMatches.length > 0) {
+        const sectionList = hbMatches.map(s => `Section ${s.section_number}: ${s.title}`).join(', ')
+        if (!confirm(`This FAQ topic may already be covered by the employee handbook (${sectionList}). The handbook takes priority for AI responses.\n\nSave this FAQ anyway?`)) {
+          return
+        }
+      }
+    }
+
     if (editingId) {
       const { error } = await supabase.from('help_articles').update(payload).eq('id', editingId)
       if (error) { showToast('Failed to update article.', 'error'); return }
