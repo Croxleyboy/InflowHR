@@ -324,7 +324,7 @@ export default function AdminOnboarding() {
   const currency = company?.currency || 'GBP'
   const { selectedCompanyId, selectedCompany, refreshCompanies } = useAdminCompany()
   const { fyStartMonth } = useLanguage()
-  const { showError, showSuccess } = useToast()
+  const { showError, showSuccess, showWarning } = useToast()
   const { features } = useFeatures()
   const location = useLocation()
   const [records, setRecords] = useState<OnboardRecord[]>([])
@@ -491,6 +491,8 @@ export default function AdminOnboarding() {
     passes_enabled: boolean
     passes_ready: boolean
     passes_status_detail: string | null
+    passes_available: boolean
+    functions_cache: Record<string, { enabled: boolean; suspended: boolean; suspendedReason?: string; inPlan: boolean; available?: boolean }> | null
   }
   const [m365Actions, setM365Actions] = useState<M365Actions | null>(null)
   const [m365Upn, setM365Upn] = useState('')
@@ -1580,6 +1582,15 @@ export default function AdminOnboarding() {
     showSuccess('Record deleted')
   }
 
+  function getFunctionGating(funcId: string): { blocked: boolean; message: string; reason?: string } {
+    const fc = ifoSettings?.functions_cache?.[funcId]
+    if (!fc) return { blocked: false, message: '' }
+    if (fc.suspended) return { blocked: true, message: `Temporarily suspended by the InflowOnboarder service`, reason: fc.suspendedReason }
+    if (!fc.enabled) return { blocked: true, message: `Switched off for your organisation in InflowOnboarder` }
+    if (!fc.inPlan) return { blocked: true, message: `Not in your InflowOnboarder plan` }
+    return { blocked: false, message: '' }
+  }
+
   // ── M365 provisioning helpers (v2 workflow runs) ────────────────────────
 
   async function callIfo(action: string, body: Record<string, unknown> = {}) {
@@ -1728,7 +1739,7 @@ export default function AdminOnboarding() {
     const [{ data }, { data: ifo }, { data: wt }, { data: schedulingFlag }] = await Promise.all([
       supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle(),
       supabase.from('inflowonboarder_integrations')
-        .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache, passes_enabled, passes_ready, passes_status_detail')
+        .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache, passes_enabled, passes_ready, passes_status_detail, passes_available, functions_cache')
         .eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
         .eq('onboard_id', onboardingId).in('record_type', ['M365 Provisioning', 'M365 Scheduling']).order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -1779,6 +1790,8 @@ export default function AdminOnboarding() {
         passes_enabled: ifo.passes_enabled === true,
         passes_ready: ifo.passes_ready === true,
         passes_status_detail: ifo.passes_status_detail || null,
+        passes_available: ifo.passes_available !== false,
+        functions_cache: ifo.functions_cache || null,
       })
       const templates = Array.isArray(ifo.schedule_templates_cache) ? ifo.schedule_templates_cache : []
       const hasJoiner = templates.some((t: any) => t.id === 'hr.joiner' || t.templateId === 'hr.joiner')
@@ -1835,7 +1848,7 @@ export default function AdminOnboarding() {
           approver_email: ifo?.approver_email || '',
           approved_at: wt?.updated_at || data.approved_at || new Date().toISOString(),
           attempt: data.attempt_count_run || 0,
-          ...(ifo?.passes_ready === true ? { issuePass: true } : {}),
+          ...(ifo?.passes_ready === true && ifo?.passes_available !== false ? { issuePass: true } : {}),
         })
         if (result && !result.use_run_now) {
           const { data: synced } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
@@ -1883,6 +1896,7 @@ export default function AdminOnboarding() {
     const result = await callIfo('start-run', {
       onboarding_id: record.id,
       attempt: m365Actions?.attempt_count_run || 0,
+      issuePass: m365IssuePass && ifoSettings?.passes_ready && ifoSettings?.passes_available !== false,
       input: {
         givenName: record.firstname,
         surname: record.surname,
@@ -1896,7 +1910,11 @@ export default function AdminOnboarding() {
     })
     setM365Starting(false)
     if (result?.run_id) {
-      showSuccess('M365 provisioning workflow started')
+      if (result.pass_warning) {
+        showWarning(`${record.firstname} ${record.surname}'s account is being set up without a first-day pass: ${result.pass_warning}. They'll need another way to sign in on their first day.`)
+      } else {
+        showSuccess('M365 provisioning workflow started')
+      }
       await loadM365Actions(record.id)
       if (result.status === 'checking_licence') {
         m365PollRun(result.run_id, record.id)
@@ -2176,7 +2194,7 @@ export default function AdminOnboarding() {
       approver_email: ifoSettings?.approver_email || '',
       approved_at: m365Actions.approved_at || new Date().toISOString(),
       attempt: m365Actions.attempt_count_run || 0,
-      ...(ifoSettings?.passes_ready && m365IssuePass ? { issuePass: true } : {}),
+      ...(ifoSettings?.passes_ready && ifoSettings?.passes_available !== false && m365IssuePass ? { issuePass: true } : {}),
     })
     setM365ScheduleCreating(false)
     if (result) {
@@ -2184,7 +2202,11 @@ export default function AdminOnboarding() {
         showError(result.error || 'Start date is too close — use Run Now instead')
         setM365ScheduleMode('now')
       } else {
-        showSuccess(result.recovered ? 'Existing schedule synced' : 'Schedule created')
+        if (result.pass_warning) {
+          showWarning(`${record.firstname} ${record.surname}'s account is being set up without a first-day pass: ${result.pass_warning}. They'll need another way to sign in on their first day.`)
+        } else {
+          showSuccess(result.recovered ? 'Existing schedule synced' : 'Schedule created')
+        }
         if (result.id && m365Actions) {
           setM365Actions({ ...m365Actions, schedule_id: result.id, schedule_status: result.status || 'scheduled', schedule_message: result.message, schedule_stages: result.stages, schedule_next_due_at: result.nextDueAt })
         }
@@ -3909,8 +3931,20 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
+                            {/* Function gating — joiners blocked */}
+                            {!m365Actions?.is_v1_legacy && (!m365Actions || (!m365Actions.run_id && !m365Actions.run_status && !m365Actions.schedule_id && !m365Actions.schedule_status)) && ifoSettings?.functions_cache?.joiners && (!ifoSettings.functions_cache.joiners.enabled || ifoSettings.functions_cache.joiners.suspended || !ifoSettings.functions_cache.joiners.inPlan) && (
+                              <div style={{ marginBottom: 12, padding: 12, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
+                                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#e65100' }}>
+                                  {ifoSettings.functions_cache.joiners.suspended ? 'Joiner provisioning is temporarily suspended' : !ifoSettings.functions_cache.joiners.enabled ? 'Joiner provisioning is switched off in InflowOnboarder' : 'Joiner provisioning requires the JML Management plan in InflowOnboarder'}
+                                </p>
+                                {ifoSettings.functions_cache.joiners.suspended && ifoSettings.functions_cache.joiners.suspendedReason && (
+                                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>{ifoSettings.functions_cache.joiners.suspendedReason}</p>
+                                )}
+                              </div>
+                            )}
+
                             {/* No run yet — start form or schedule */}
-                            {!m365Actions?.is_v1_legacy && (!m365Actions || (!m365Actions.run_id && !m365Actions.run_status && !m365Actions.schedule_id && !m365Actions.schedule_status)) && (
+                            {!m365Actions?.is_v1_legacy && (!m365Actions || (!m365Actions.run_id && !m365Actions.run_status && !m365Actions.schedule_id && !m365Actions.schedule_status)) && !(ifoSettings?.functions_cache?.joiners && (!ifoSettings.functions_cache.joiners.enabled || ifoSettings.functions_cache.joiners.suspended || !ifoSettings.functions_cache.joiners.inPlan)) && (
                               <div style={{ marginBottom: 12 }}>
                                 {m365SchedulingAvailable && (
                                   <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderRadius: 6, overflow: 'hidden', border: '1px solid #90caf9', width: 'fit-content' }}>
@@ -3952,6 +3986,12 @@ export default function AdminOnboarding() {
                                       <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Country</label>
                                       <input className="admin-input" value={m365Location} onChange={e => setM365Location(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} maxLength={2} />
                                     </div>
+                                    {ifoSettings?.passes_ready && ifoSettings?.passes_available !== false && (
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                                        <input type="checkbox" checked={m365IssuePass} onChange={e => setM365IssuePass(e.target.checked)} />
+                                        Give {selectedRecord.firstname} a first-day sign-in pass (collected once by {selectedRecord.manager || 'their manager'})
+                                      </label>
+                                    )}
                                     <button className="admin-btn-sm admin-btn-save" disabled={m365Starting || m365RunPolling || !m365Upn}
                                       onClick={e => { e.stopPropagation(); m365StartRun(selectedRecord) }}
                                       style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
@@ -4163,6 +4203,23 @@ export default function AdminOnboarding() {
                                     )}
                                   </div>
                                 )}
+                                {!m365Actions.pass_status && (m365Actions.run_id || m365Actions.schedule_id) && m365Actions.run_status !== 'failed' && (
+                                  <div style={{ marginTop: 10, border: '1px solid #ffcc80', borderRadius: 8, padding: 12, background: 'rgba(255,243,224,.4)' }}>
+                                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#e65100', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      ⚠ No First-Day Pass
+                                    </p>
+                                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#bf360c' }}>
+                                      {selectedRecord?.firstname} {selectedRecord?.surname}'s account is being set up without a first-day pass. They'll need another way to sign in on their first day.
+                                    </p>
+                                    {m365Actions.m365_user_id && ifoSettings?.passes_ready && ifoSettings?.passes_available !== false && (
+                                      <button className="admin-btn-sm" disabled={tapRequesting}
+                                        onClick={() => tapRequestNewPass(selectedRecord!.id)}
+                                        style={{ marginTop: 8, background: '#e65100', color: '#fff', border: 'none' }}>
+                                        {tapRequesting ? (tapJobPolling ? 'Creating pass...' : 'Requesting...') : 'Request a New Pass'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )}
 
@@ -4182,7 +4239,7 @@ export default function AdminOnboarding() {
                                     <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                       <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Schedule approved — ready to create</p>
                                     </div>
-                                    {ifoSettings?.passes_ready ? (
+                                    {ifoSettings?.passes_ready && ifoSettings?.passes_available !== false ? (
                                       <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 13, cursor: 'pointer' }}>
                                         <input type="checkbox" checked={m365IssuePass} onChange={e => setM365IssuePass(e.target.checked)} />
                                         Give {selectedRecord.firstname} a first-day sign-in pass (collected once by {selectedRecord.manager || 'their manager'})
@@ -4885,8 +4942,15 @@ export default function AdminOnboarding() {
                                 {leaverM365RunPolling && <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>Updating...</span>}
                               </div>
 
+                              {/* Function gating — leavers blocked */}
+                              {(() => { const g = getFunctionGating('leavers'); return g.blocked && !leaverM365Actions?.run_id && !leaverM365Actions?.schedule_id ? (
+                                <div style={{ marginBottom: 12, padding: 12, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
+                                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#e65100' }}>Leaver provisioning: {g.message}</p>
+                                  {g.reason && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>{g.reason}</p>}
+                                </div>
+                              ) : null })()}
                               {/* No run yet — start or schedule */}
-                              {!leaverM365Actions?.run_id && !leaverM365Actions?.schedule_id && !leaverM365Actions?.schedule_status && (
+                              {!leaverM365Actions?.run_id && !leaverM365Actions?.schedule_id && !leaverM365Actions?.schedule_status && !getFunctionGating('leavers').blocked && (
                                 <div>
                                   {leaverSchedulingAvailable && (
                                     <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderRadius: 6, overflow: 'hidden', border: '1px solid #90caf9', width: 'fit-content' }}>
@@ -5724,7 +5788,13 @@ export default function AdminOnboarding() {
         <div>
           <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 20 }}>
             <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#e65100' }}>Start Role Change</h3>
-            <div style={{ marginBottom: 16 }}>
+            {(() => { const g = getFunctionGating('movers'); return g.blocked ? (
+              <div style={{ marginBottom: 12, padding: 12, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#e65100' }}>Mover provisioning: {g.message}</p>
+                {g.reason && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>{g.reason}</p>}
+              </div>
+            ) : null })()}
+            <div style={{ marginBottom: 16, display: getFunctionGating('movers').blocked ? 'none' : undefined }}>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Search Employee</label>
               <input
                 type="text"
@@ -5761,7 +5831,7 @@ export default function AdminOnboarding() {
               )}
             </div>
 
-            {moverSelectedEmployee && (
+            {moverSelectedEmployee && !getFunctionGating('movers').blocked && (
               <div>
                 <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, marginBottom: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -6472,8 +6542,15 @@ export default function AdminOnboarding() {
                               )
                             })()}
 
+                            {/* Persona function gating */}
+                            {(() => { const g = getFunctionGating('personas'); return g.blocked ? (
+                              <div style={{ marginBottom: 8, padding: 10, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
+                                <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#e65100' }}>Persona changes: {g.message}</p>
+                                {g.reason && <p style={{ margin: '4px 0 0', fontSize: 11, color: '#bf360c' }}>{g.reason}</p>}
+                              </div>
+                            ) : null })()}
                             {/* Action buttons */}
-                            {!personaStatus && !personaCheckResult && (
+                            {!personaStatus && !personaCheckResult && !getFunctionGating('personas').blocked && (
                               <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
                                 onClick={async () => {
                                   const checkResult = await callIfoMover('check-persona', {

@@ -66,6 +66,34 @@ async function verifyAdmin(
   return { userId: user.id, userEmail: user.email! }
 }
 
+// ── Auth helper: admin, HR, or the starter's line manager ──────────────────
+
+async function verifyAdminOrManager(
+  sb: ReturnType<typeof getSupabase>,
+  authHeader: string | null,
+  companyId: string,
+  onboardingId: number,
+): Promise<{ userId: string; userEmail: string } | Response> {
+  if (!authHeader) return json({ error: 'Unauthorized' }, 401)
+  const { data: { user }, error } = await sb.auth.getUser(authHeader.replace('Bearer ', ''))
+  if (error || !user) return json({ error: 'Unauthorized' }, 401)
+  const { data: sa } = await sb.from('super_admins').select('id').eq('email', user.email).maybeSingle()
+  if (sa) return { userId: user.id, userEmail: user.email! }
+  const { data: cu } = await sb.from('company_users').select('role, employee_id').eq('auth_user_id', user.id).eq('company_id', companyId).eq('is_active', true).maybeSingle()
+  if (!cu) return json({ error: 'Access denied' }, 403)
+  if (cu.role === 'admin' || cu.role === 'hr') return { userId: user.id, userEmail: user.email! }
+  if (cu.employee_id) {
+    const { data: onb } = await sb.from('onboardings')
+      .select('employee_id, employees!inner(manager_id)')
+      .eq('id', onboardingId)
+      .maybeSingle()
+    if (onb && (onb as any).employees?.manager_id === cu.employee_id) {
+      return { userId: user.id, userEmail: user.email! }
+    }
+  }
+  return json({ error: 'Only the line manager, HR, or an admin can view passes' }, 403)
+}
+
 // ── Engine HTTP calls ───────────────────────────────────────────────────────
 
 async function engineFetch(
@@ -263,6 +291,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   schedule_busy: 'The schedule is currently running and cannot be changed.',
   passes_off: 'First-day passes are switched off in InflowOnboarder.',
   passes_not_connected: 'First-day passes are being set up in InflowOnboarder.',
+  passes_setup_incomplete: 'First-day passes are being set up in InflowOnboarder.',
   function_suspended: 'First-day passes are temporarily suspended by the InflowOnboarder service.',
   pass_gone: 'This pass is no longer available.',
   plan_required: 'This feature needs the JML Management plan in InflowOnboarder.',
@@ -315,6 +344,11 @@ function handleEngineError(
   if (res.status === 429) return json({ error: friendlyError('rate_limited') }, 429)
   if (res.status >= 500) return json({ error: 'InflowOnboarder is temporarily unavailable. Please try again shortly.' }, 503)
 
+  if (res.status === 409 && code === 'plan_required') {
+    const engineMsg = errData?.error?.message || ERROR_MESSAGES.plan_required
+    return json({ error: `${engineMsg} You can add the plan in InflowOnboarder › Account and subscription.` }, 409)
+  }
+
   if (res.status === 409 && code === 'run_exists') {
     return json({ error: friendlyError('run_exists'), run_id: errData?.error?.runId }, 409)
   }
@@ -343,7 +377,13 @@ Deno.serve(async (req) => {
 
     if (!company_id || !action) return json({ error: 'Missing company_id or action' }, 400)
 
-    const authResult = await verifyAdmin(sb, authHeader, company_id)
+    const passActions = ['reveal-pass', 'request-new-pass']
+    let authResult: { userId: string; userEmail: string } | Response
+    if (passActions.includes(action) && body.onboarding_id) {
+      authResult = await verifyAdminOrManager(sb, authHeader, company_id, body.onboarding_id)
+    } else {
+      authResult = await verifyAdmin(sb, authHeader, company_id)
+    }
     if (authResult instanceof Response) return authResult
     const { userId, userEmail } = authResult
 
@@ -479,6 +519,8 @@ Deno.serve(async (req) => {
       let passesEnabled = config.passes_enabled || false
       let passesReady = config.passes_ready || false
       let passesStatusDetail = config.passes_status_detail || null
+      let passesAvailable = config.passes_available !== false
+      let functionsCacheOut: Record<string, unknown> | null = config.functions_cache || null
       if (status === 'connected_ready') {
         if (MOCK_MODE) {
           const mockPasses = mockPassesStatus()
@@ -499,11 +541,25 @@ Deno.serve(async (req) => {
             passesStatusDetail = 'API key missing passes scope'
           }
 
-          // Check /v1/functions for suspension state
+          // Check /v1/functions for all function gating state (Item 3 + Item 5)
           const funcsRes = await engineFetch(apiKey, 'GET', '/v1/functions')
           if (funcsRes.ok) {
             const funcs = Array.isArray(funcsRes.data) ? funcsRes.data : (funcsRes.data as any)?.functions || []
-            const passesFunc = funcs.find((f: any) => f.id === 'passes')
+            const knownIds = ['joiners', 'movers', 'leavers', 'personas', 'reports', 'passes']
+            const functionsCache: Record<string, { enabled: boolean; suspended: boolean; suspendedReason?: string; inPlan: boolean; available?: boolean }> = {}
+            for (const f of funcs) {
+              if (!knownIds.includes(f.id)) continue
+              functionsCache[f.id] = {
+                enabled: f.enabled === true,
+                suspended: f.suspended === true,
+                ...(f.suspendedReason ? { suspendedReason: f.suspendedReason } : {}),
+                inPlan: f.inPlan === true,
+                ...(f.available !== undefined ? { available: f.available } : {}),
+              }
+            }
+            functionsCacheOut = functionsCache
+
+            const passesFunc = functionsCache.passes
             if (passesFunc) {
               if (passesFunc.suspended) {
                 passesEnabled = false
@@ -520,6 +576,9 @@ Deno.serve(async (req) => {
                 passesReady = false
                 passesStatusDetail = 'Requires the JML Management plan'
               }
+              if (passesFunc.available === false) {
+                passesAvailable = false
+              }
             }
           }
         }
@@ -533,6 +592,9 @@ Deno.serve(async (req) => {
         passes_enabled: passesEnabled,
         passes_ready: passesReady,
         passes_status_detail: passesStatusDetail,
+        passes_available: passesAvailable,
+        functions_cache: functionsCacheOut,
+        functions_cached_at: functionsCacheOut ? new Date().toISOString() : config.functions_cached_at,
       }
       if (scheduleTemplates !== config.schedule_templates_cache) {
         updateData.schedule_templates_cache = scheduleTemplates
@@ -569,6 +631,8 @@ Deno.serve(async (req) => {
         passes_enabled: passesEnabled,
         passes_ready: passesReady,
         passes_status_detail: passesStatusDetail,
+        passes_available: passesAvailable,
+        functions_cache: functionsCacheOut,
       })
     }
 
@@ -708,7 +772,7 @@ Deno.serve(async (req) => {
 
     // ── start-run (joiner) ─────────────────────────────────────────────────
     if (action === 'start-run') {
-      const { onboarding_id, input, attempt } = body
+      const { onboarding_id, input, attempt, issuePass } = body
       if (!onboarding_id) return json({ error: 'Missing onboarding_id' }, 400)
       if (!input?.displayName || !input?.userPrincipalName || !input?.usageLocation) {
         return json({ error: 'Missing required fields: displayName, userPrincipalName, usageLocation' }, 400)
@@ -726,6 +790,7 @@ Deno.serve(async (req) => {
       const idempotencyKey = `starter-${onboarding_id}-start-run-${Date.now()}`
       let runId: string
       let runStatus: string
+      let passWarning: string | null = null
 
       let runError: unknown = null
       if (MOCK_MODE) {
@@ -756,10 +821,33 @@ Deno.serve(async (req) => {
         if (config.licence_manager_name && config.licence_manager_email) {
           engineBody.licenceContact = { name: config.licence_manager_name, email: config.licence_manager_email }
         }
+        if (issuePass && config.passes_ready) engineBody.issuePass = true
         const res = await engineFetch(apiKey, 'POST', '/v1/workflows/m365.joiner/runs', engineBody, idempotencyKey)
 
         if (res.status === 409) {
           const errData = res.data as any
+          const errCode = errData?.error?.code
+          if (['passes_off', 'passes_not_connected', 'passes_setup_incomplete', 'function_suspended'].includes(errCode) && engineBody.issuePass) {
+            delete engineBody.issuePass
+            passWarning = friendlyError(errCode)
+            const retryRes = await engineFetch(apiKey, 'POST', '/v1/workflows/m365.joiner/runs', engineBody, `${idempotencyKey}-nopass`)
+            if (retryRes.ok) {
+              const retryData = retryRes.data as any
+              runId = retryData.id || retryData.runId
+              runStatus = retryData.status || 'checking_licence'
+              await sb.from('onboarding_m365_actions').upsert({
+                onboarding_id, company_id, run_id: runId, run_status: runStatus,
+                run_error: null, run_result: null, approval_status: null,
+                attempt_count_run: (attempt || 0) + 1, is_v1_legacy: false,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'onboarding_id' })
+              await audit(sb, company_id, userId, 'inflowonboarder_start_run', { onboarding_id, runId, runStatus, passWarning })
+              return json({ run_id: runId, status: runStatus, pass_warning: passWarning })
+            }
+            const retryErr = handleEngineError(sb, company_id, retryRes)
+            if (retryErr) return retryErr
+          }
+
           const existingRunId = errData?.error?.runId
           if (existingRunId) {
             const checkRes = await engineFetch(apiKey, 'GET', `/v1/workflows/runs/${existingRunId}`)
@@ -806,8 +894,8 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'onboarding_id' })
 
-      await audit(sb, company_id, userId, 'inflowonboarder_start_run', { onboarding_id, runId, runStatus })
-      return json({ run_id: runId, status: runStatus })
+      await audit(sb, company_id, userId, 'inflowonboarder_start_run', { onboarding_id, runId, runStatus, passWarning })
+      return json({ run_id: runId, status: runStatus, ...(passWarning ? { pass_warning: passWarning } : {}) })
     }
 
     // ── check-run (joiner) ─────────────────────────────────────────────────
@@ -838,6 +926,11 @@ Deno.serve(async (req) => {
           updates.run_result = runData.result
           updates.m365_user_id = runData.result.userId
           updates.m365_upn = runData.result.userPrincipalName
+          if (runData.result.passId) {
+            updates.pass_id = runData.result.passId
+            updates.pass_expires_at = runData.result.expiresAt || runData.result.passExpiresAt
+            updates.pass_status = 'ready'
+          }
         }
         if (runData.status === 'failed' && runData.error) {
           updates.run_error = runData.error
@@ -1065,8 +1158,10 @@ Deno.serve(async (req) => {
 
       let res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
 
+      let schedPassWarning: string | null = null
       const errCode409 = res.status === 409 ? (res.data as any)?.error?.code : null
-      if ((errCode409 === 'passes_off' || errCode409 === 'function_suspended') && scheduleOptions.issuePass) {
+      if (['passes_off', 'passes_not_connected', 'passes_setup_incomplete', 'function_suspended'].includes(errCode409) && scheduleOptions.issuePass) {
+        schedPassWarning = friendlyError(errCode409!)
         delete scheduleOptions.issuePass
         engineBody.options = scheduleOptions
         res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, `${idempotencyKey}-nop`)
@@ -1132,8 +1227,8 @@ Deno.serve(async (req) => {
       if (scheduleOptions.issuePass) schedUpsert.pass_status = 'pending'
       await sb.from('onboarding_m365_actions').upsert(schedUpsert, { onConflict: 'onboarding_id' })
 
-      await audit(sb, company_id, userId, 'inflowonboarder_create_schedule', { onboarding_id, scheduleId: sched.id, issuePass: !!scheduleOptions.issuePass })
-      return json(sched)
+      await audit(sb, company_id, userId, 'inflowonboarder_create_schedule', { onboarding_id, scheduleId: sched.id, issuePass: !!scheduleOptions.issuePass, ...(schedPassWarning ? { passWarning: schedPassWarning } : {}) })
+      return json({ ...sched, ...(schedPassWarning ? { pass_warning: schedPassWarning } : {}) })
     }
 
     // ── get-schedule (joiner) ─────────────────────────────────────────────

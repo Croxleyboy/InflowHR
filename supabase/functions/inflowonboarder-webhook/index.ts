@@ -169,7 +169,7 @@ async function processEvent(sb: ReturnType<typeof getSupabase>, event: ScheduleE
 
   if (type === 'schedule.blocked' && isJoiner) {
     const errCode = (data.error as any)?.code
-    if (errCode === 'passes_off' || errCode === 'passes_not_connected' || errCode === 'function_suspended') {
+    if (errCode === 'passes_off' || errCode === 'passes_not_connected' || errCode === 'passes_setup_incomplete' || errCode === 'function_suspended') {
       await sb.from('onboarding_m365_actions').update({
         pass_status: 'error',
         updated_at: new Date().toISOString(),
@@ -267,6 +267,55 @@ async function createLeaverReminder(
   }
 }
 
+// ── Handle workflow.run.updated — passId from immediate runs (Item 2) ────
+
+async function processRunEvent(sb: ReturnType<typeof getSupabase>, event: any) {
+  const { data } = event
+  const { runId, externalRef, status, result, error: runError } = data || {}
+  if (!runId || !externalRef) return
+
+  const onboardingId = externalRef.startsWith('starter-')
+    ? parseInt(externalRef.slice('starter-'.length), 10)
+    : parseInt(externalRef, 10)
+  if (isNaN(onboardingId)) return
+
+  const { data: existing } = await sb.from('onboarding_m365_actions')
+    .select('run_id, company_id')
+    .eq('onboarding_id', onboardingId)
+    .maybeSingle()
+  if (!existing) return
+
+  const updates: Record<string, unknown> = {
+    run_status: status,
+    updated_at: new Date().toISOString(),
+  }
+  if (status === 'completed' && result) {
+    updates.run_result = result
+    if (result.userId) updates.m365_user_id = result.userId
+    if (result.userPrincipalName) updates.m365_upn = result.userPrincipalName
+    if (result.passId) {
+      updates.pass_id = result.passId
+      updates.pass_expires_at = result.expiresAt || result.passExpiresAt
+      updates.pass_status = 'ready'
+    }
+  }
+  if (status === 'failed' && runError) {
+    updates.run_error = runError
+    const steps = result?.steps || data?.steps
+    const issuePassStep = steps?.find((s: any) => s.name === 'issue_pass')
+    if (issuePassStep?.status === 'failed' && !steps?.some((s: any) => s.name !== 'issue_pass' && s.status === 'failed')) {
+      updates.run_status = 'completed'
+      updates.pass_status = 'error'
+    }
+  }
+
+  await sb.from('onboarding_m365_actions').update(updates).eq('onboarding_id', onboardingId)
+
+  if (result?.passId && existing.company_id) {
+    await createTapReadyNotification(sb, existing.company_id, onboardingId, result.expiresAt || result.passExpiresAt)
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -315,6 +364,11 @@ Deno.serve(async (req) => {
     }
 
     const event: ScheduleEvent = JSON.parse(bodyText)
+
+    if (event.type === 'workflow.run.updated') {
+      await processRunEvent(sb, event)
+      return json({ received: true })
+    }
 
     if (!event.type || !event.data?.scheduleId || !event.data?.externalRef) {
       return json({ error: 'Invalid event payload' }, 400)
