@@ -174,9 +174,19 @@ Deno.serve(async (req) => {
       .select('id').eq('auth_user_id', user.id).eq('company_id', company_id).maybeSingle()
     if (!cu && !superAdmin) return json({ error: 'Not a member of this company' }, 403)
 
-    const { data: emp } = await sb.from('employees')
+    let { data: emp } = await sb.from('employees')
       .select('id').eq('auth_user_id', user.id).eq('company_id', company_id).maybeSingle()
-    if (!emp && !superAdmin) return json({ error: 'Employee not found' }, 404)
+
+    if (!emp && user.email) {
+      const { data: empByEmail } = await sb.from('employees')
+        .select('id').eq('email', user.email).eq('company_id', company_id).maybeSingle()
+      if (empByEmail) {
+        await sb.from('employees').update({ auth_user_id: user.id }).eq('id', empByEmail.id)
+        emp = empByEmail
+      }
+    }
+
+    if (!emp && !cu && !superAdmin) return json({ error: 'Employee not found' }, 404)
 
     const { data: feature } = await sb.from('company_features')
       .select('is_enabled, monthly_query_limit, monthly_queries_used, usage_period_start')
