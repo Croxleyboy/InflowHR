@@ -215,8 +215,6 @@ export default function AdminIntegrations() {
   const [aiHelpStats, setAiHelpStats] = useState<{ total: number; today: number } | null>(null)
   const [aiMonthlyLimit, setAiMonthlyLimit] = useState<number | null>(null)
   const [aiMonthlyUsed, setAiMonthlyUsed] = useState(0)
-  const [aiLimitInput, setAiLimitInput] = useState('')
-  const [aiLimitSaving, setAiLimitSaving] = useState(false)
   // Enterprise AI state
   const [eaiEnabled, setEaiEnabled] = useState(false)
   const [eaiIntegration, setEaiIntegration] = useState<EnterpriseAIIntegration | null>(null)
@@ -312,7 +310,6 @@ export default function AdminIntegrations() {
       const monthStart = new Date().toISOString().slice(0, 8) + '01'
       setAiMonthlyLimit(mLimit)
       setAiMonthlyUsed(periodStart && periodStart < monthStart ? 0 : mUsed)
-      setAiLimitInput(mLimit !== null ? String(mLimit) : '')
     } else {
       setTeamsSubscribed(false)
       setAiHelpEnabled(false)
@@ -1332,36 +1329,9 @@ export default function AdminIntegrations() {
                       Approaching monthly limit ({Math.round((aiMonthlyUsed / aiMonthlyLimit) * 100)}% used)
                     </p>
                   )}
-                  {isSuperAdmin && (
-                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <label style={{ fontSize: 12, color: 'var(--text-muted, #888)', whiteSpace: 'nowrap' }}>Monthly limit:</label>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="Unlimited"
-                        value={aiLimitInput}
-                        onChange={e => setAiLimitInput(e.target.value)}
-                        style={{ width: 100, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border, #ddd)', fontSize: 13 }}
-                      />
-                      <button
-                        className="admin-btn admin-btn-sm"
-                        disabled={aiLimitSaving}
-                        onClick={async () => {
-                          setAiLimitSaving(true)
-                          const newLimit = aiLimitInput.trim() === '' ? null : parseInt(aiLimitInput)
-                          await supabase.from('company_features').update({ monthly_query_limit: newLimit }).eq('company_id', companyId).eq('feature_key', 'ai_help_agent')
-                          setAiMonthlyLimit(newLimit)
-                          setAiLimitSaving(false)
-                          showSuccess(newLimit !== null ? `Monthly AI limit set to ${newLimit} queries` : 'Monthly AI limit removed (unlimited)')
-                        }}
-                      >
-                        {aiLimitSaving ? 'Saving...' : 'Set'}
-                      </button>
-                    </div>
-                  )}
-                  {!isSuperAdmin && aiMonthlyLimit === null && (
+                  {aiMonthlyLimit === null && (
                     <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-muted, #888)' }}>
-                      Contact your super admin to set a monthly query limit.
+                      {isSuperAdmin ? 'Set the monthly query limit in Subscriptions → Company Features.' : 'Contact your super admin to set a monthly query limit.'}
                     </p>
                   )}
                 </div>

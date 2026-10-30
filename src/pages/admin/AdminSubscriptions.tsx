@@ -45,6 +45,10 @@ interface CompanyFeature {
   cancellation_scheduled: boolean
   cancellation_effective_date: string | null
   created_at: string
+  monthly_query_limit: number | null
+  monthly_queries_used: number | null
+  monthly_tokens_used: number | null
+  usage_period_start: string | null
 }
 
 const CORE_FEATURES = [
@@ -96,6 +100,13 @@ export default function AdminSubscriptions() {
   const [savedDashboardStyle, setSavedDashboardStyle] = useState<'default' | 'slim'>('default')
   const [monthlyPlatformFee, setMonthlyPlatformFee] = useState('30.00')
   const [savedMonthlyPlatformFee, setSavedMonthlyPlatformFee] = useState('30.00')
+
+  // AI usage management state
+  const [aiMonthlyLimit, setAiMonthlyLimit] = useState<number | null>(null)
+  const [aiMonthlyUsed, setAiMonthlyUsed] = useState(0)
+  const [aiMonthlyTokens, setAiMonthlyTokens] = useState(0)
+  const [aiLimitInput, setAiLimitInput] = useState('')
+  const [aiLimitSaving, setAiLimitSaving] = useState(false)
 
   // Feature change log state
   const [changeLog, setChangeLog] = useState<FeatureChangeLog[]>([])
@@ -165,6 +176,25 @@ export default function AdminSubscriptions() {
     })
     setCustomPrices(prices)
     setSavedPrices({ ...prices })
+
+    const aiFeature = features.find(f => f.feature_key === 'ai_help_agent')
+    if (aiFeature) {
+      const mLimit = aiFeature.monthly_query_limit ?? null
+      const mUsed = aiFeature.monthly_queries_used || 0
+      const mTokens = aiFeature.monthly_tokens_used || 0
+      const periodStart = aiFeature.usage_period_start
+      const monthStart = new Date().toISOString().slice(0, 8) + '01'
+      setAiMonthlyLimit(mLimit)
+      setAiMonthlyUsed(periodStart && periodStart < monthStart ? 0 : mUsed)
+      setAiMonthlyTokens(periodStart && periodStart < monthStart ? 0 : mTokens)
+      setAiLimitInput(mLimit !== null ? String(mLimit) : '')
+    } else {
+      setAiMonthlyLimit(null)
+      setAiMonthlyUsed(0)
+      setAiMonthlyTokens(0)
+      setAiLimitInput('')
+    }
+
     setFeaturesLoading(false)
   }
 
@@ -1094,6 +1124,90 @@ export default function AdminSubscriptions() {
                           </div>
                         )
                       })}
+                    </div>
+                  )}
+
+                  {/* AI Usage Management */}
+                  {isFeatureEnabled('ai_help_agent') && (
+                    <div style={{ background: 'rgba(237,233,254,.5)', border: '2px solid #7c3aed', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#7c3aed', marginBottom: 12 }}>AI Help Agent — Usage &amp; Limits</div>
+
+                      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 24, fontWeight: 700, color: '#1a1a2e' }}>{aiMonthlyUsed}</div>
+                          <div style={{ fontSize: 12, color: '#666' }}>Queries this month</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 24, fontWeight: 700, color: '#1a1a2e' }}>{aiMonthlyTokens.toLocaleString()}</div>
+                          <div style={{ fontSize: 12, color: '#666' }}>Tokens used</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 24, fontWeight: 700, color: '#1a1a2e' }}>
+                            {currencySymbol(currency)}{((aiMonthlyTokens / 1_000_000) * 0.60).toFixed(4)}
+                          </div>
+                          <div style={{ fontSize: 12, color: '#666' }}>Estimated cost (GPT-4o-mini)</div>
+                        </div>
+                      </div>
+
+                      {aiMonthlyLimit !== null && (
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: aiMonthlyUsed >= aiMonthlyLimit ? '#dc2626' : '#7c3aed' }}>
+                              {aiMonthlyUsed} / {aiMonthlyLimit} queries
+                            </span>
+                            <span style={{ fontSize: 12, color: '#888' }}>({Math.round((aiMonthlyUsed / aiMonthlyLimit) * 100)}%)</span>
+                          </div>
+                          <div style={{ height: 8, borderRadius: 4, background: 'rgba(0,0,0,.08)', overflow: 'hidden' }}>
+                            <div style={{
+                              height: '100%',
+                              borderRadius: 4,
+                              width: `${Math.min(100, (aiMonthlyUsed / aiMonthlyLimit) * 100)}%`,
+                              background: aiMonthlyUsed >= aiMonthlyLimit ? '#dc2626' : aiMonthlyUsed >= aiMonthlyLimit * 0.8 ? '#f59e0b' : '#7c3aed',
+                              transition: 'width 0.3s ease',
+                            }} />
+                          </div>
+                          {aiMonthlyUsed >= aiMonthlyLimit && (
+                            <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600, marginTop: 4 }}>
+                              Monthly limit reached — AI queries disabled until next month
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, paddingTop: 12, borderTop: '1px solid #c4b5fd' }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: '#5b21b6', whiteSpace: 'nowrap' }}>Monthly query limit:</label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Unlimited"
+                          value={aiLimitInput}
+                          onChange={e => setAiLimitInput(e.target.value)}
+                          style={{ width: 120, padding: '6px 10px', borderRadius: 6, border: '1px solid #c4b5fd', fontSize: 14 }}
+                        />
+                        <button
+                          className="admin-btn admin-btn-sm"
+                          disabled={aiLimitSaving}
+                          onClick={async () => {
+                            if (!selectedCompanyId) return
+                            setAiLimitSaving(true)
+                            const newLimit = aiLimitInput.trim() === '' ? null : parseInt(aiLimitInput)
+                            await supabase.from('company_features').update({ monthly_query_limit: newLimit }).eq('company_id', selectedCompanyId).eq('feature_key', 'ai_help_agent')
+                            setAiMonthlyLimit(newLimit)
+                            setAiLimitSaving(false)
+                            showSuccess(newLimit !== null ? `Monthly AI limit set to ${newLimit} queries` : 'Monthly AI limit removed (unlimited)')
+                          }}
+                        >
+                          {aiLimitSaving ? 'Saving...' : 'Set Limit'}
+                        </button>
+                      </div>
+
+                      <div style={{ marginTop: 10, fontSize: 12, color: '#666', lineHeight: 1.6 }}>
+                        <strong>Cost reference:</strong> GPT-4o-mini pricing is ~$0.15/million input + $0.60/million output tokens.
+                        Average query uses ~800 tokens total ≈ $0.0004 per query.
+                        {aiMonthlyLimit !== null && (
+                          <span> At {aiMonthlyLimit} queries/month, estimated max cost: {currencySymbol(currency)}{(aiMonthlyLimit * 0.0004).toFixed(2)}/month.</span>
+                        )}
+                      </div>
                     </div>
                   )}
 

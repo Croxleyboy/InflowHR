@@ -323,6 +323,36 @@ ${faqContext}${handbookContext}`
 
     if (!msg) return json({ error: 'No response from AI service' }, 502)
 
+    // ── Track token usage ──
+    const usage = openaiData.usage
+    if (usage) {
+      const totalTokens = usage.total_tokens || 0
+      const promptTokens = usage.prompt_tokens || 0
+      const completionTokens = usage.completion_tokens || 0
+
+      if (totalTokens > 0) {
+        await sb.rpc('increment_ai_token_usage', { p_company_id: company_id, p_tokens: totalTokens })
+      }
+
+      if (emp) {
+        const today = new Date().toISOString().slice(0, 10)
+        const { data: currentUsage } = await sb.from('ai_help_usage')
+          .select('total_tokens, prompt_tokens, completion_tokens')
+          .eq('company_id', company_id)
+          .eq('employee_id', emp.id)
+          .eq('query_date', today)
+          .maybeSingle()
+
+        if (currentUsage) {
+          await sb.from('ai_help_usage').update({
+            total_tokens: (currentUsage.total_tokens || 0) + totalTokens,
+            prompt_tokens: (currentUsage.prompt_tokens || 0) + promptTokens,
+            completion_tokens: (currentUsage.completion_tokens || 0) + completionTokens,
+          }).eq('company_id', company_id).eq('employee_id', emp.id).eq('query_date', today)
+        }
+      }
+    }
+
     if (msg.tool_calls && msg.tool_calls.length > 0) {
       const tc = msg.tool_calls[0]
       const VALID_TOOLS = DATA_TOOLS.map(t => t.function.name)
