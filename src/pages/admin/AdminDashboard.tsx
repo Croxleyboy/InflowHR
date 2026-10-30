@@ -92,9 +92,12 @@ export default function AdminDashboard() {
   async function loadSuperAdminStats() {
     setLoading(true)
     const todayStr = new Date().toISOString().slice(0, 10)
+    const { data: subCos } = await supabase.from('companies').select('id').eq('is_trial', false)
+    const subIds = (subCos || []).map(c => c.id)
+
     const [metricsRes, compRes, featRes, annRes, benRes, notifRes, unreadNotifRes, actionNotifRes, kudosRes, kudosLikesRes, surveyDepRes, otoRes, otoCompRes, goalsRes, activeGoalsRes, bookingsRes, todayBookingsRes, leaverRes, moverRes, compOnbRes, pendOnbRes, compOffRes, pendOffRes] = await Promise.all([
       supabase.rpc('get_all_company_metrics'),
-      supabase.from('companies').select('id', { count: 'exact', head: true }),
+      supabase.from('companies').select('id', { count: 'exact', head: true }).eq('is_trial', false),
       supabase.from('company_features').select('feature_key, company_id').eq('is_enabled', true),
       supabase.from('announcements').select('id', { count: 'exact', head: true }),
       supabase.from('benefit_types').select('id', { count: 'exact', head: true }),
@@ -110,12 +113,12 @@ export default function AdminDashboard() {
       supabase.from('performance_goals').select('id', { count: 'exact', head: true }).eq('status', 'active'),
       supabase.from('space_bookings').select('id', { count: 'exact', head: true }),
       supabase.from('space_bookings').select('id', { count: 'exact', head: true }).eq('booking_date', todayStr),
-      supabase.from('offboarding').select('id', { count: 'exact', head: true }),
-      supabase.from('role_changes').select('id', { count: 'exact', head: true }),
-      supabase.from('onboarding').select('id', { count: 'exact', head: true }).eq('is_complete', true),
-      supabase.from('onboarding').select('id', { count: 'exact', head: true }).eq('is_complete', false),
-      supabase.from('offboarding').select('id', { count: 'exact', head: true }).eq('is_complete', true),
-      supabase.from('offboarding').select('id', { count: 'exact', head: true }).eq('is_complete', false),
+      supabase.from('offboarding').select('id', { count: 'exact', head: true }).in('company_id', subIds),
+      supabase.from('role_changes').select('id', { count: 'exact', head: true }).in('company_id', subIds),
+      supabase.from('onboarding').select('id', { count: 'exact', head: true }).eq('is_complete', true).in('company_id', subIds),
+      supabase.from('onboarding').select('id', { count: 'exact', head: true }).eq('is_complete', false).in('company_id', subIds),
+      supabase.from('offboarding').select('id', { count: 'exact', head: true }).eq('is_complete', true).in('company_id', subIds),
+      supabase.from('offboarding').select('id', { count: 'exact', head: true }).eq('is_complete', false).in('company_id', subIds),
     ])
     const metrics = (metricsRes.data || []) as { employee_count: number; total_employees: number; open_tickets: number; pending_onboarding: number }[]
     const totalEmployees = metrics.reduce((s, m) => s + (m.total_employees || 0), 0)
@@ -768,29 +771,25 @@ function IfoDonutChart({ stats }: { stats: AllCompanyStats }) {
     { label: 'Movers / Persona Actions', value: stats.totalMovers, color: '#ffe0b2' },
   ]
   const total = segments.reduce((s, seg) => s + seg.value, 0)
-  const cx = 90, cy = 90, outerR = 80, innerR = 52, gap = 0.02
+  const cx = 90, cy = 90, midR = 66, strokeW = 26, gapAngle = 0.06
 
-  let paths: { d: string; color: string }[] = []
+  const activeSegments = segments.filter(s => s.value > 0)
+  const arcs: { d: string; color: string }[] = []
   if (total > 0) {
     let angle = -Math.PI / 2
-    for (const seg of segments) {
-      if (seg.value === 0) continue
-      const sweep = (seg.value / total) * Math.PI * 2 - gap
-      if (sweep <= 0) continue
-      const x1o = cx + outerR * Math.cos(angle)
-      const y1o = cy + outerR * Math.sin(angle)
-      const x2o = cx + outerR * Math.cos(angle + sweep)
-      const y2o = cy + outerR * Math.sin(angle + sweep)
-      const x1i = cx + innerR * Math.cos(angle + sweep)
-      const y1i = cy + innerR * Math.sin(angle + sweep)
-      const x2i = cx + innerR * Math.cos(angle)
-      const y2i = cy + innerR * Math.sin(angle)
+    for (const seg of activeSegments) {
+      const sweep = (seg.value / total) * Math.PI * 2 - (activeSegments.length > 1 ? gapAngle : 0)
+      if (sweep <= 0) { angle += (seg.value / total) * Math.PI * 2; continue }
+      const x1 = cx + midR * Math.cos(angle)
+      const y1 = cy + midR * Math.sin(angle)
+      const x2 = cx + midR * Math.cos(angle + sweep)
+      const y2 = cy + midR * Math.sin(angle + sweep)
       const large = sweep > Math.PI ? 1 : 0
-      paths.push({
-        d: `M${x1o},${y1o} A${outerR},${outerR} 0 ${large} 1 ${x2o},${y2o} L${x1i},${y1i} A${innerR},${innerR} 0 ${large} 0 ${x2i},${y2i} Z`,
+      arcs.push({
+        d: `M${x1},${y1} A${midR},${midR} 0 ${large} 1 ${x2},${y2}`,
         color: seg.color,
       })
-      angle += sweep + gap
+      angle += sweep + gapAngle
     }
   }
 
@@ -802,9 +801,9 @@ function IfoDonutChart({ stats }: { stats: AllCompanyStats }) {
         <div style={{ position: 'relative', width: 180, height: 180, flexShrink: 0 }}>
           <svg width="180" height="180" viewBox="0 0 180 180">
             {total === 0 ? (
-              <circle cx={cx} cy={cy} r={(outerR + innerR) / 2} fill="none" stroke="#eeeef4" strokeWidth={outerR - innerR} />
+              <circle cx={cx} cy={cy} r={midR} fill="none" stroke="#eeeef4" strokeWidth={strokeW} />
             ) : (
-              paths.map((p, i) => <path key={i} d={p.d} fill={p.color} />)
+              arcs.map((a, i) => <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={strokeW} strokeLinecap="round" />)
             )}
           </svg>
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
@@ -897,9 +896,6 @@ function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompa
   const cards: { label: string; value: string; color: string; path: string; sub?: string }[] = [
     { label: 'Employees', value: String(stats.totalEmployees), color: '#1565c0', path: '/admin/employees' },
     { label: 'Companies', value: String(stats.totalCompanies), color: '#2e7d32', path: '/admin/subscriptions' },
-    { label: 'Onboarders', value: String(stats.totalOnboarders), color: '#e91e63', path: '/admin/onboarding' },
-    { label: 'Leavers', value: String(stats.totalLeavers), color: '#8e24aa', path: '/admin/onboarding' },
-    { label: 'Movers', value: String(stats.totalMovers), color: '#00838f', path: '/admin/onboarding' },
     { label: 'Notifications', value: String(stats.totalNotifications), color: '#5c6bc0', path: '/admin/employees', sub: `${stats.unreadNotifications} unread` },
     { label: 'Actions', value: String(stats.actionNotifications), color: '#d84315', path: '/admin/employees', sub: 'pending' },
     { label: 'Kudos', value: String(stats.totalKudos), color: '#fbc02d', path: '/admin/kudos', sub: `${stats.totalKudosLikes} likes` },
