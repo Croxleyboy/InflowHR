@@ -42,6 +42,15 @@ const SETUP_STEPS: SetupStep[] = [
   },
   {
     number: 4,
+    title: 'Set Up AI Helper & Company Handbook',
+    summary: 'Load your employee handbook and enable AI-powered answers for your team.',
+    details: 'Navigate to Admin > Employee Help and create FAQ articles covering the questions your employees ask most often — organise them by category and keep them up to date as policies change. Switch to the Handbook tab and load your company employee handbook (paste markdown or upload a .md/.txt file with a version number). The handbook is split on section headings and stored securely — both AI assistants search it to answer policy questions with your actual figures, notice periods, and section references. If your subscription includes Pack B, go to Admin > Integrations and enable the AI Help Agent toggle. The agent uses a tiered strategy: first it searches your FAQ articles for an exact match, then your handbook sections for policy questions, and finally generates a helpful answer from your knowledge base. Each employee gets 20 AI-assisted queries per day. No employee personal data is ever sent to external services — the system is fully GDPR-compliant.',
+    icon: '<path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>',
+    page: '/admin/help',
+    feature: 'employee_help',
+  },
+  {
+    number: 5,
     title: 'Configure Expense Settings',
     summary: 'Set up cost centres and expense types for your company.',
     details: 'Go to the Expenses page and select the Settings tab. Review the default cost centres and expense types — add any that are specific to your company and remove those that do not apply. These settings control the dropdown options your employees see when submitting expense claims and line items.',
@@ -50,7 +59,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'expenses',
   },
   {
-    number: 5,
+    number: 6,
     title: 'Set Up Leave Policies',
     summary: 'Configure leave allowances, weekend rules, and carryover.',
     details: 'On the Leave page, review and adjust the leave allowance deductions for each leave type. Decide whether your company counts weekends as working days (most do not). Set your carryover policy — whether unused leave days roll over to the next year and if so, how many. These settings apply to all employees and determine how leave balances are calculated.',
@@ -59,7 +68,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'leave',
   },
   {
-    number: 6,
+    number: 7,
     title: 'Configure Leaver Policy',
     summary: 'Set bank holiday treatment, leave payout, clawback, and pension rate.',
     details: 'Navigate to Settings > Leaver Policy to configure how your company handles departing employees. Set bank holiday treatment (additional or pro-rata), specify whether unused leave is paid out or forfeited, enable or disable clawback for overused leave, and enter your employer pension contribution rate. These settings feed directly into the leaver financial calculator used during offboarding.',
@@ -67,7 +76,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/company-details',
   },
   {
-    number: 7,
+    number: 8,
     title: 'Connect Payroll Provider',
     summary: 'Link Xero or Sage for payslips, or run payroll in standalone mode.',
     details: 'Navigate to Admin > Integrations and connect your payroll provider — Xero or Sage — using the Configure button on the relevant card. Both are included in the Core subscription at no extra cost. Once connected, the payroll wizard enters Connected mode automatically: it pushes overtime and variable hours to your provider and guides you through manual items. If you do not connect a provider, the wizard runs in Standalone mode and generates estimate payslips with approximate tax/NI (not HMRC-certified). See the User Guide Payroll section for the full connected vs standalone walkthrough.',
@@ -77,7 +86,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'payslips',
   },
   {
-    number: 8,
+    number: 9,
     title: 'Set Up E-Learning Courses',
     summary: 'Select core courses, assign departments, and create company-specific content.',
     details: 'On the E-Learning page, browse the catalogue of core courses available. Enable the courses you want your employees to complete, and for each course select which departments should be assigned. You can also create new company-specific courses tailored to your organisation — these appear alongside the core catalogue for your employees.',
@@ -86,7 +95,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'elearning',
   },
   {
-    number: 9,
+    number: 10,
     title: 'Configure New Starter E-Learning',
     summary: 'Enable and assign an induction course for new employees.',
     details: 'On the E-Learning page, switch to the New Starter Course tab. Enable the new starter e-learning toggle, then either select an existing course or click "Create Default Course" to generate a pre-configured induction course with a 7-day deadline. This course is automatically assigned to new employees during onboarding when the "Assign New Starter E-Learning" workflow step is completed. Employee progress is tracked on their dashboard reminders.',
@@ -94,15 +103,6 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/elearning',
     optional: true,
     feature: 'elearning',
-  },
-  {
-    number: 10,
-    title: 'Set Up Employee Help',
-    summary: 'Create FAQ articles and optionally connect the AI Help Agent.',
-    details: 'On the Employee Help page, create FAQ articles that your employees can search when they have questions. Organise articles by category and keep them up to date as policies change. If your subscription includes the AI Help Agent, navigate to Integrations and enable it — the agent uses your FAQ articles and company policies to answer employee questions automatically, with a fallback to HR tickets when it cannot help.',
-    icon: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
-    page: '/admin/help',
-    feature: 'employee_help',
   },
   {
     number: 11,
@@ -211,8 +211,8 @@ const SETUP_STEPS: SetupStep[] = [
 ]
 
 const PHASE_MAP: { label: string; color: string; bg: string; range: [number, number] }[] = [
-  { label: 'Foundation', color: '#2563eb', bg: '#dbeafe', range: [1, 3] },
-  { label: 'Core Services', color: '#059669', bg: '#dcfce7', range: [4, 10] },
+  { label: 'Foundation', color: '#2563eb', bg: '#dbeafe', range: [1, 4] },
+  { label: 'Core Services', color: '#059669', bg: '#dcfce7', range: [5, 10] },
   { label: 'Communications', color: '#d97706', bg: '#fef3c7', range: [11, 12] },
   { label: 'Advanced Features', color: '#7c3aed', bg: '#ede9fe', range: [13, 19] },
   { label: 'Administration', color: '#dc2626', bg: '#fee2e2', range: [20, 22] },
