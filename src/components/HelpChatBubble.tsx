@@ -198,9 +198,24 @@ function getSignificantWords(text: string): string[] {
     .filter(w => w.length > 2 && !STOP_WORDS.has(w))
 }
 
-function articleMatchesQuery(article: HelpArticle, queryWords: string[]): boolean {
-  const searchText = `${article.question} ${article.keywords} ${article.answer}`.toLowerCase()
-  return queryWords.some(w => searchText.includes(w))
+function scoreArticleRelevance(article: HelpArticle, queryWords: string[]): number {
+  const question = article.question.toLowerCase()
+  const keywords = article.keywords.toLowerCase()
+  const answer = article.answer.toLowerCase()
+  let score = 0
+  let matched = 0
+  for (const w of queryWords) {
+    const inQ = question.includes(w)
+    const inK = keywords.includes(w)
+    const inA = answer.includes(w)
+    if (inQ) score += 3
+    else if (inK) score += 2
+    else if (inA) score += 0.5
+    if (inQ || inK || inA) matched++
+  }
+  const matchRatio = matched / queryWords.length
+  if (matchRatio < 0.4) return 0
+  return score * matchRatio
 }
 
 async function executeDataQuery(queryKey: string, employeeId: string, companyId: string, currency: string, params: Record<string, unknown> = {}): Promise<string> {
@@ -519,6 +534,7 @@ export default function HelpChatBubble() {
   const [userScrolled, setUserScrolled] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<Record<number, 'up' | 'down'>>({})
+  const [hasHandbook, setHasHandbook] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -550,6 +566,15 @@ export default function HelpChatBubble() {
     if (userScrolled) return
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80)
   }, [userScrolled])
+
+  useEffect(() => {
+    if (!companyId) return
+    supabase.from('handbook_sections')
+      .select('id', { count: 'exact', head: true })
+      .or(`company_id.is.null,company_id.eq.${companyId}`)
+      .eq('is_active', true)
+      .then(({ count }) => setHasHandbook((count || 0) > 0))
+  }, [companyId])
 
   useEffect(() => {
     if (!isOpen) return
@@ -645,8 +670,11 @@ export default function HelpChatBubble() {
       .limit(10)
 
     if (data && data.length > 0) {
-      const relevant = data.filter(a => articleMatchesQuery(a, expandedWords))
-      if (relevant.length > 0) return relevant.slice(0, 5)
+      const scored = data
+        .map(a => ({ article: a, score: scoreArticleRelevance(a, expandedWords) }))
+        .filter(s => s.score > 0)
+        .sort((a, b) => b.score - a.score)
+      if (scored.length > 0) return scored.slice(0, 5).map(s => s.article)
     }
 
     const ilikeFilters = expandedWords.map(w =>
@@ -687,18 +715,11 @@ export default function HelpChatBubble() {
       return true
     })
 
-    const scored = unique.map(a => {
-      const text = `${a.question} ${a.keywords} ${a.answer}`.toLowerCase()
-      const matchCount = expandedWords.filter(w => text.includes(w)).length
-      return { article: a, score: matchCount }
-    })
+    const scored = unique
+      .map(a => ({ article: a, score: scoreArticleRelevance(a, expandedWords) }))
       .filter(s => s.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
-
-    if (scored.length > 0 && scored[0].score === 0) {
-      return []
-    }
 
     return scored.map(s => s.article)
   }
@@ -763,6 +784,17 @@ export default function HelpChatBubble() {
     }).then()
   }
 
+  async function callAiAgent(q: string, contextMode: 'handbook_only' | 'faq_only' | 'full' = 'full'): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const res = await fetch(`${supabaseUrl}/functions/v1/ai-help-agent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session!.access_token}` },
+      body: JSON.stringify({ company_id: companyId, query: q, context_mode: contextMode }),
+    })
+    const data = await res.json()
+    return { ok: res.ok, data }
+  }
+
   async function handleSubmit(e?: React.FormEvent) {
     if (e) e.preventDefault()
     const q = query.trim()
@@ -773,8 +805,8 @@ export default function HelpChatBubble() {
 
     setMessages(prev => [...prev, { role: 'user', text: q }])
 
+    // ── Tier 1: FAQ text search (zero AI cost) ──
     const articles = await searchArticles(q)
-
     if (articles.length > 0) {
       logSearch(q, true, articles.length, articles[0]?.id || null)
       setMessages(prev => [...prev, {
@@ -783,17 +815,59 @@ export default function HelpChatBubble() {
         articles,
         askAiQuery: features.ai_help_agent && session ? q : undefined,
       }])
-    } else if (hasDataIntent(q) && features.ai_help_agent && session) {
+      setLoading(false)
+      scrollToBottom()
+      return
+    }
+
+    // ── Tier 2+: AI-powered responses ──
+    if (features.ai_help_agent && session) {
       try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-        const res = await fetch(`${supabaseUrl}/functions/v1/ai-help-agent`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-          body: JSON.stringify({ company_id: companyId, query: q }),
-        })
-        const data = await res.json()
-        if (res.ok && data.tool_call && employeeId && companyId) {
-          const result = await executeDataQuery(data.tool_call, employeeId, companyId, currency, data.params || {})
+        // Personal data queries go straight to AI with full context
+        if (hasDataIntent(q)) {
+          const { ok, data } = await callAiAgent(q, 'full')
+          if (ok && data.tool_call && employeeId && companyId) {
+            const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
+            if (result) {
+              logSearch(q, true, 0, null, true)
+              setMessages(prev => [...prev, { role: 'bot', text: result }])
+            } else {
+              logSearch(q, false, 0, null, true)
+              setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
+            }
+            setLoading(false)
+            scrollToBottom()
+            return
+          }
+          if (ok && data.answer) {
+            logSearch(q, true, 0, null, true)
+            setMessages(prev => [...prev, { role: 'bot', text: data.answer as string }])
+            setLoading(false)
+            scrollToBottom()
+            return
+          }
+        }
+
+        // Tier 2: Handbook search (if company has handbook — smaller prompt, ~75% fewer tokens)
+        if (hasHandbook) {
+          const { ok, data } = await callAiAgent(q, 'handbook_only')
+          if (ok && data.answer && !(data.answer as string).includes("I'm not able to help")) {
+            logSearch(q, true, 0, null, true)
+            setMessages(prev => [...prev, {
+              role: 'bot',
+              text: data.answer as string,
+              sourcePolicy: 'handbook',
+            }])
+            setLoading(false)
+            scrollToBottom()
+            return
+          }
+        }
+
+        // Tier 3: AI with FAQ context (full fallback)
+        const { ok, data } = await callAiAgent(q, hasHandbook ? 'faq_only' : 'full')
+        if (ok && data.tool_call && employeeId && companyId) {
+          const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
           if (result) {
             logSearch(q, true, 0, null, true)
             setMessages(prev => [...prev, { role: 'bot', text: result }])
@@ -801,60 +875,51 @@ export default function HelpChatBubble() {
             logSearch(q, false, 0, null, true)
             setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
           }
-        } else if (res.ok && data.answer) {
+          setLoading(false)
+          scrollToBottom()
+          return
+        }
+        if (ok && data.answer) {
           logSearch(q, true, 0, null, true)
-          setMessages(prev => [...prev, { role: 'bot', text: data.answer }])
-        } else {
-          logSearch(q, false, 0, null)
-          setMessages(prev => [...prev, {
-            role: 'bot',
-            text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
-          }])
-          setShowChips(true)
+          setMessages(prev => [...prev, { role: 'bot', text: data.answer as string }])
+          setLoading(false)
+          scrollToBottom()
+          return
         }
       } catch {
-        logSearch(q, false, 0, null)
-        setMessages(prev => [...prev, {
-          role: 'bot',
-          text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
-        }])
-        setShowChips(true)
-      }
-    } else {
-      const queryWords = getSignificantWords(q)
-      const inferredCat = inferCategory(queryWords)
-
-      if (inferredCat) {
-        const catArticles = await searchCategoryArticles(inferredCat)
-        const catLabel = CATEGORIES.find(c => c.key === inferredCat)?.label || inferredCat
-
-        if (catArticles.length > 0) {
-          logSearch(q, true, catArticles.length, catArticles[0]?.id || null)
-          setMessages(prev => [...prev, {
-            role: 'bot',
-            text: `I didn't find an exact match, but here are some ${catLabel.toLowerCase()} articles that might help:`,
-            articles: catArticles,
-            askAiQuery: features.ai_help_agent && session ? q : undefined,
-          }])
-        } else {
-          logSearch(q, false, 0, null)
-          setMessages(prev => [...prev, {
-            role: 'bot',
-            text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
-            askAiQuery: features.ai_help_agent && session ? q : undefined,
-          }])
-          setShowChips(true)
-        }
-      } else {
-        logSearch(q, false, 0, null)
-        setMessages(prev => [...prev, {
-          role: 'bot',
-          text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
-          askAiQuery: features.ai_help_agent && session ? q : undefined,
-        }])
-        setShowChips(true)
+        // Fall through to category inference below
       }
     }
+
+    // ── Tier 4: Category inference fallback (no AI) ──
+    const queryWords = getSignificantWords(q)
+    const inferredCat = inferCategory(queryWords)
+
+    if (inferredCat) {
+      const catArticles = await searchCategoryArticles(inferredCat)
+      const catLabel = CATEGORIES.find(c => c.key === inferredCat)?.label || inferredCat
+
+      if (catArticles.length > 0) {
+        logSearch(q, true, catArticles.length, catArticles[0]?.id || null)
+        setMessages(prev => [...prev, {
+          role: 'bot',
+          text: `I didn't find an exact match, but here are some ${catLabel.toLowerCase()} articles that might help:`,
+          articles: catArticles,
+          askAiQuery: features.ai_help_agent && session ? q : undefined,
+        }])
+        setLoading(false)
+        scrollToBottom()
+        return
+      }
+    }
+
+    logSearch(q, false, 0, null)
+    setMessages(prev => [...prev, {
+      role: 'bot',
+      text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
+      askAiQuery: features.ai_help_agent && session ? q : undefined,
+    }])
+    setShowChips(true)
     setLoading(false)
     scrollToBottom()
   }
@@ -881,24 +946,18 @@ export default function HelpChatBubble() {
     setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, askAiQuery: undefined } : m))
 
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const res = await fetch(`${supabaseUrl}/functions/v1/ai-help-agent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ company_id: companyId, query: originalQuery }),
-      })
-      const data = await res.json()
-      if (res.ok && data.tool_call && employeeId && companyId) {
-        const result = await executeDataQuery(data.tool_call, employeeId, companyId, currency, data.params || {})
+      const { ok, data } = await callAiAgent(originalQuery, 'full')
+      if (ok && data.tool_call && employeeId && companyId) {
+        const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
         if (result) {
           logSearch(originalQuery, true, 0, null, true)
           setMessages(prev => [...prev, { role: 'bot', text: result }])
         } else {
           setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
         }
-      } else if (res.ok && data.answer) {
+      } else if (ok && data.answer) {
         logSearch(originalQuery, true, 0, null, true)
-        setMessages(prev => [...prev, { role: 'bot', text: data.answer }])
+        setMessages(prev => [...prev, { role: 'bot', text: data.answer as string }])
       } else {
         setMessages(prev => [...prev, {
           role: 'bot',
