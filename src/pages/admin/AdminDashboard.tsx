@@ -308,28 +308,34 @@ function MiniLineChart({ data, color, height = 48 }: { data: TrendPoint[]; color
   const w = 160
   const h = height
   const pad = 4
+  const uid = `mini-lg-${color.replace('#', '')}`
   const pts = data.map((d, i) => ({
     x: pad + (i / (data.length - 1)) * (w - pad * 2),
-    y: pad + (1 - d.value / max) * (h - pad * 2),
+    y: pad + (1 - d.value / max) * (h - pad * 2 - 10),
   }))
-  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-  const area = line + ` L${pts[pts.length - 1].x},${h} L${pts[0].x},${h} Z`
+  const smoothLine = pts.reduce((acc, p, i) => {
+    if (i === 0) return `M${p.x},${p.y}`
+    const prev = pts[i - 1]
+    const cpx = (prev.x + p.x) / 2
+    return acc + ` C${cpx},${prev.y} ${cpx},${p.y} ${p.x},${p.y}`
+  }, '')
+  const area = smoothLine + ` L${pts[pts.length - 1].x},${h - 10} L${pts[0].x},${h - 10} Z`
 
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
       <defs>
-        <linearGradient id={`grad-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+        <linearGradient id={uid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
           <stop offset="100%" stopColor={color} stopOpacity="0.02" />
         </linearGradient>
       </defs>
-      <path d={area} fill={`url(#grad-${color.replace('#', '')})`} />
-      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={area} fill={`url(#${uid})`} />
+      <path d={smoothLine} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" />
       {pts.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={i === pts.length - 1 ? 3.5 : 0} fill={color} />
+        <circle key={i} cx={p.x} cy={p.y} r={i === pts.length - 1 ? 3 : 0} fill={i === pts.length - 1 ? '#fff' : 'none'} stroke={i === pts.length - 1 ? color : 'none'} strokeWidth="2" />
       ))}
       {data.map((d, i) => (
-        <text key={i} x={pts[i].x} y={h - 1} textAnchor="middle" fontSize="8" fill="#8b8fa3">{d.label}</text>
+        <text key={i} x={pts[i].x} y={h - 1} textAnchor="middle" fontSize="8" fill="#9b9cb5" fontWeight="500">{d.label}</text>
       ))}
     </svg>
   )
@@ -340,17 +346,25 @@ function MiniBarChart({ data, color, height = 48 }: { data: TrendPoint[]; color:
   const max = Math.max(...data.map(d => d.value), 1)
   const w = 160
   const h = height
-  const barW = Math.min(16, (w - 8) / data.length - 3)
+  const barW = Math.min(14, (w - 8) / data.length - 3)
+  const r = Math.min(barW / 2, 4)
 
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id={`mini-bar-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} />
+          <stop offset="100%" stopColor={color} stopOpacity="0.5" />
+        </linearGradient>
+      </defs>
       {data.map((d, i) => {
         const x = 4 + i * ((w - 8) / data.length) + ((w - 8) / data.length - barW) / 2
-        const barH = (d.value / max) * (h - 16)
+        const barH = Math.max((d.value / max) * (h - 16), 2)
+        const isLast = i === data.length - 1
         return (
           <g key={i}>
-            <rect x={x} y={h - 12 - barH} width={barW} height={barH} rx={3} fill={i === data.length - 1 ? color : color + '80'} />
-            <text x={x + barW / 2} y={h - 1} textAnchor="middle" fontSize="8" fill="#8b8fa3">{d.label}</text>
+            <rect x={x} y={h - 12 - barH} width={barW} height={barH} rx={r} ry={r} fill={isLast ? `url(#mini-bar-${color.replace('#', '')})` : color + '40'} />
+            <text x={x + barW / 2} y={h - 1} textAnchor="middle" fontSize="8" fill="#9b9cb5" fontWeight="500">{d.label}</text>
           </g>
         )
       })}
@@ -361,14 +375,15 @@ function MiniBarChart({ data, color, height = 48 }: { data: TrendPoint[]; color:
 function LargeChart({ data, color, type }: { data: TrendPoint[]; color: string; type: 'line' | 'bar' }) {
   if (data.length < 2) return null
   const max = Math.max(...data.map(d => d.value), 1)
-  const w = 360
-  const h = 140
-  const padL = 36
-  const padR = 12
-  const padT = 8
-  const padB = 22
+  const w = 400
+  const h = 160
+  const padL = 38
+  const padR = 14
+  const padT = 24
+  const padB = 26
   const chartW = w - padL - padR
   const chartH = h - padT - padB
+  const uid = `sa-${color.replace('#', '')}-${type}`
 
   const gridLines = 4
   const gridVals = Array.from({ length: gridLines + 1 }, (_, i) => Math.round((max / gridLines) * i))
@@ -378,60 +393,77 @@ function LargeChart({ data, color, type }: { data: TrendPoint[]; color: string; 
       x: padL + (i / (data.length - 1)) * chartW,
       y: padT + (1 - d.value / max) * chartH,
     }))
-    const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-    const area = line + ` L${pts[pts.length - 1].x},${padT + chartH} L${pts[0].x},${padT + chartH} Z`
+    const smoothLine = pts.reduce((acc, p, i) => {
+      if (i === 0) return `M${p.x},${p.y}`
+      const prev = pts[i - 1]
+      const cpx = (prev.x + p.x) / 2
+      return acc + ` C${cpx},${prev.y} ${cpx},${p.y} ${p.x},${p.y}`
+    }, '')
+    const area = smoothLine + ` L${pts[pts.length - 1].x},${padT + chartH} L${pts[0].x},${padT + chartH} Z`
 
     return (
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+        <defs>
+          <linearGradient id={uid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
         {gridVals.map((v, i) => {
           const y = padT + (1 - v / max) * chartH
           return (
             <g key={i}>
-              <line x1={padL} y1={y} x2={w - padR} y2={y} stroke="#e8e8ef" strokeWidth="1" />
-              <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#8b8fa3">{v}</text>
+              <line x1={padL} y1={y} x2={w - padR} y2={y} stroke="#eeeef4" strokeWidth="1" />
+              <text x={padL - 8} y={y + 3.5} textAnchor="end" fontSize="9.5" fill="#b0b2c6" fontWeight="500">{v}</text>
             </g>
           )
         })}
-        <defs>
-          <linearGradient id={`lg-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-          </linearGradient>
-        </defs>
-        <path d={area} fill={`url(#lg-${color.replace('#', '')})`} />
-        <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={area} fill={`url(#${uid})`} />
+        <path d={smoothLine} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
         {pts.map((p, i) => (
           <g key={i}>
-            <circle cx={p.x} cy={p.y} r={3.5} fill="#fff" stroke={color} strokeWidth="2" />
-            <text x={p.x} y={h - 4} textAnchor="middle" fontSize="10" fill="#8b8fa3">{data[i].label}</text>
-            <text x={p.x} y={p.y - 8} textAnchor="middle" fontSize="9" fontWeight="700" fill={color}>{data[i].value}</text>
+            <circle cx={p.x} cy={p.y} r={4} fill="#fff" stroke={color} strokeWidth="2.5" />
+            <text x={p.x} y={h - 6} textAnchor="middle" fontSize="10" fill="#9b9cb5" fontWeight="500">{data[i].label}</text>
+            <text x={p.x} y={p.y - 10} textAnchor="middle" fontSize="10" fontWeight="700" fill="#1e1e2d">{data[i].value}</text>
           </g>
         ))}
       </svg>
     )
   }
 
-  const barW = Math.min(32, chartW / data.length - 8)
+  const barW = Math.min(28, chartW / data.length - 10)
+  const r = Math.min(barW / 2, 6)
   return (
     <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id={uid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="1" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.55" />
+        </linearGradient>
+        <linearGradient id={`${uid}-dim`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.45" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.18" />
+        </linearGradient>
+      </defs>
       {gridVals.map((v, i) => {
         const y = padT + (1 - v / max) * chartH
         return (
           <g key={i}>
-            <line x1={padL} y1={y} x2={w - padR} y2={y} stroke="#e8e8ef" strokeWidth="1" />
-            <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#8b8fa3">{v}</text>
+            <line x1={padL} y1={y} x2={w - padR} y2={y} stroke="#eeeef4" strokeWidth="1" />
+            <text x={padL - 8} y={y + 3.5} textAnchor="end" fontSize="9.5" fill="#b0b2c6" fontWeight="500">{v}</text>
           </g>
         )
       })}
       {data.map((d, i) => {
         const x = padL + (i + 0.5) * (chartW / data.length) - barW / 2
-        const barH = (d.value / max) * chartH
+        const barH = Math.max((d.value / max) * chartH, 2)
         const y = padT + chartH - barH
+        const isLast = i === data.length - 1
         return (
           <g key={i}>
-            <rect x={x} y={y} width={barW} height={barH} rx={4} fill={i === data.length - 1 ? color : color + '99'} />
-            <text x={x + barW / 2} y={h - 4} textAnchor="middle" fontSize="10" fill="#8b8fa3">{d.label}</text>
-            <text x={x + barW / 2} y={y - 4} textAnchor="middle" fontSize="9" fontWeight="700" fill={color}>{d.value}</text>
+            <rect x={x} y={y} width={barW} height={barH} rx={r} ry={r} fill={`url(#${isLast ? uid : uid + '-dim'})`} />
+            <text x={x + barW / 2} y={h - 6} textAnchor="middle" fontSize="10" fill="#9b9cb5" fontWeight="500">{d.label}</text>
+            <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="10" fontWeight="700" fill="#1e1e2d">{d.value}</text>
           </g>
         )
       })}
@@ -823,44 +855,56 @@ function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompa
         <p>All-company metrics across InflowHR</p>
       </div>
 
-      {/* AI Helper Costs — top row */}
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: 16, marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+      {/* AI Helper Costs — hero panel */}
+      <div className="sa-chart-panel" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#1e1e2d' }}>AI Helper Costs</div>
-            <div style={{ fontSize: 12, color: '#8b8fa3' }}>GPT-4o-mini · last 12 months</div>
+            <h3 className="sa-chart-title">AI Helper Costs</h3>
+            <p className="sa-chart-subtitle">GPT-4o-mini · last 12 months</p>
           </div>
-          <div style={{ display: 'flex', gap: 20, alignItems: 'baseline' }}>
+          <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, color: '#8b8fa3', textTransform: 'uppercase', fontWeight: 600 }}>This Month</div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#1565c0' }}>£{totalAiCostMonth.toFixed(2)}</div>
-              <div style={{ fontSize: 10, color: '#8b8fa3' }}>{totalAiQueriesMonth.toLocaleString()} queries</div>
+              <div className="sa-chart-hero-label">This Month</div>
+              <div className="sa-chart-hero" style={{ color: '#7c5cfc' }}>£{totalAiCostMonth.toFixed(2)}</div>
+              <div style={{ fontSize: 11, color: '#9b9cb5', marginTop: 2 }}>{totalAiQueriesMonth.toLocaleString()} queries</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, color: '#8b8fa3', textTransform: 'uppercase', fontWeight: 600 }}>Annual Total</div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#2e7d32' }}>£{totalAiCostYear.toFixed(2)}</div>
+              <div className="sa-chart-hero-label">Annual Total</div>
+              <div className="sa-chart-hero" style={{ color: '#1e1e2d' }}>£{totalAiCostYear.toFixed(2)}</div>
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 40, marginBottom: 6 }}>
+        <svg width="100%" viewBox="0 0 480 80" style={{ display: 'block', marginBottom: 4 }}>
+          <defs>
+            <linearGradient id="ai-bar-hot" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#7c5cfc" />
+              <stop offset="100%" stopColor="#a78bfa" />
+            </linearGradient>
+            <linearGradient id="ai-bar-cool" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#c4b5fd" stopOpacity="0.7" />
+              <stop offset="100%" stopColor="#ddd6fe" stopOpacity="0.4" />
+            </linearGradient>
+          </defs>
           {aiMonthly.map((m, i) => {
             const maxCost = Math.max(...aiMonthly.map(x => x.cost), 0.01)
-            const h = Math.max((m.cost / maxCost) * 36, 2)
+            const bw = 480 / aiMonthly.length
+            const pad = bw * 0.15
+            const barH = Math.max((m.cost / maxCost) * 50, 2)
+            const isLast = i === aiMonthly.length - 1
+            const r = Math.min((bw - pad * 2) / 2, 5)
             return (
-              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <div style={{ width: '100%', height: h, background: i === aiMonthly.length - 1 ? '#1565c0' : '#bbdefb', borderRadius: 2 }} title={`${m.month}: £${m.cost.toFixed(2)} (${m.queries} queries)`} />
-              </div>
+              <g key={i}>
+                <rect x={i * bw + pad} y={58 - barH} width={bw - pad * 2} height={barH} rx={r} ry={r} fill={isLast ? 'url(#ai-bar-hot)' : 'url(#ai-bar-cool)'}>
+                  <title>{m.month}: £{m.cost.toFixed(2)} ({m.queries} queries)</title>
+                </rect>
+                <text x={i * bw + bw / 2} y={72} textAnchor="middle" fontSize="9" fill="#9b9cb5" fontWeight="500">{m.month.split(' ')[0]}</text>
+              </g>
             )
           })}
-        </div>
-        <div style={{ display: 'flex', gap: 2 }}>
-          {aiMonthly.map((m, i) => (
-            <div key={i} style={{ flex: 1, fontSize: 8, color: '#8b8fa3', textAlign: 'center' }}>{m.month.split(' ')[0]}</div>
-          ))}
-        </div>
+        </svg>
         <button
           onClick={() => setShowAiPopup(true)}
-          style={{ marginTop: 8, background: 'none', border: 'none', color: '#1565c0', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+          style={{ marginTop: 6, background: 'none', border: 'none', color: '#7c5cfc', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}
         >
           View company breakdown →
         </button>
@@ -868,41 +912,37 @@ function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompa
 
       {/* AI Company Breakdown Popup */}
       {showAiPopup && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowAiPopup(false)}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: 24, maxWidth: 560, width: '90%', maxHeight: '70vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>AI Helper — Company Breakdown (This Month)</h3>
-              <button onClick={() => setShowAiPopup(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#666' }}>×</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(30,30,45,0.45)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowAiPopup(false)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: 28, maxWidth: 580, width: '92%', maxHeight: '70vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1e1e2d' }}>AI Helper — Company Breakdown</h3>
+              <button onClick={() => setShowAiPopup(false)} style={{ background: '#f5f3ff', border: 'none', borderRadius: 8, width: 32, height: 32, fontSize: 18, cursor: 'pointer', color: '#7c5cfc', fontWeight: 700 }}>×</button>
             </div>
             {aiCompanies.length === 0 ? (
-              <p style={{ color: '#8b8fa3', fontSize: 13 }}>No AI usage this month.</p>
+              <p style={{ color: '#9b9cb5', fontSize: 13 }}>No AI usage this month.</p>
             ) : (
-              <table className="admin-table" style={{ fontSize: 13 }}>
-                <thead>
-                  <tr>
-                    <th>Company</th>
-                    <th style={{ textAlign: 'right' }}>Queries</th>
-                    <th style={{ textAlign: 'right' }}>Tokens</th>
-                    <th style={{ textAlign: 'right' }}>Est. Cost</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {aiCompanies.map((c, i) => (
-                    <tr key={i}>
-                      <td><strong>{c.name}</strong></td>
-                      <td style={{ textAlign: 'right' }}>{c.queries.toLocaleString()}</td>
-                      <td style={{ textAlign: 'right' }}>{c.tokens.toLocaleString()}</td>
-                      <td style={{ textAlign: 'right' }}>£{c.cost.toFixed(4)}</td>
-                    </tr>
-                  ))}
-                  <tr style={{ fontWeight: 700, borderTop: '2px solid #e5e7eb' }}>
-                    <td>Total</td>
-                    <td style={{ textAlign: 'right' }}>{aiCompanies.reduce((s, c) => s + c.queries, 0).toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{aiCompanies.reduce((s, c) => s + c.tokens, 0).toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>£{aiCompanies.reduce((s, c) => s + c.cost, 0).toFixed(4)}</td>
-                  </tr>
-                </tbody>
-              </table>
+              <>
+                {aiCompanies.map((c, i) => {
+                  const maxQ = Math.max(...aiCompanies.map(x => x.queries), 1)
+                  const pct = Math.round((c.queries / maxQ) * 100)
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: i < aiCompanies.length - 1 ? '1px solid #f1f0f7' : 'none' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1e1e2d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                        <div style={{ fontSize: 11, color: '#9b9cb5' }}>{c.queries.toLocaleString()} queries · {c.tokens.toLocaleString()} tokens</div>
+                      </div>
+                      <div style={{ width: 120, height: 8, background: '#f1f0f7', borderRadius: 4, flexShrink: 0 }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #a78bfa, #7c5cfc)', borderRadius: 4 }} />
+                      </div>
+                      <div style={{ width: 60, textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#7c5cfc', flexShrink: 0 }}>£{c.cost.toFixed(4)}</div>
+                    </div>
+                  )
+                })}
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, marginTop: 6, borderTop: '2px solid #eeeef4', fontSize: 13, fontWeight: 700, color: '#1e1e2d' }}>
+                  <span>Total</span>
+                  <span>£{aiCompanies.reduce((s, c) => s + c.cost, 0).toFixed(4)}</span>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -911,7 +951,7 @@ function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompa
       {/* Condensed stat cards — 6 per row */}
       <div className="sa-grid">
         {cards.map(c => (
-          <button key={c.label} className="sa-card" onClick={() => navigate(c.path)} style={{ borderLeft: `3px solid ${c.color}` }}>
+          <button key={c.label} className="sa-card" onClick={() => navigate(c.path)} style={{ '--sa-accent': c.color } as React.CSSProperties}>
             <span className="sa-card-label">{c.label}</span>
             <span className="sa-card-value" style={{ color: c.color }}>{c.value}</span>
             {c.sub && <span className="sa-card-sub">{c.sub}</span>}
@@ -919,37 +959,52 @@ function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompa
         ))}
       </div>
 
+      {/* Trend charts — 2-up grid with upgraded panels */}
       {Object.keys(trends).length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, marginTop: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14, marginTop: 14 }}>
           {[
-            { title: 'Employee Growth', key: 'employees', color: '#1565c0', type: 'line' as const },
-            { title: 'New Onboarders per Month', key: 'onboarders', color: '#e91e63', type: 'bar' as const },
-            { title: 'Notifications per Month', key: 'notifications', color: '#5c6bc0', type: 'bar' as const },
-            { title: 'Kudos per Month', key: 'kudos', color: '#fbc02d', type: 'bar' as const },
-            { title: 'Tickets per Month', key: 'tickets', color: '#37474f', type: 'bar' as const },
-            { title: 'Room Bookings per Month', key: 'bookings', color: '#4527a0', type: 'bar' as const },
+            { title: 'Employee Growth', sub: '6-month trend', key: 'employees', color: '#7c5cfc', type: 'line' as const },
+            { title: 'New Onboarders', sub: 'per month', key: 'onboarders', color: '#a78bfa', type: 'bar' as const },
+            { title: 'Notifications', sub: 'per month', key: 'notifications', color: '#818cf8', type: 'bar' as const },
+            { title: 'Kudos Given', sub: 'per month', key: 'kudos', color: '#f59e0b', type: 'bar' as const },
+            { title: 'Tickets Raised', sub: 'per month', key: 'tickets', color: '#64748b', type: 'bar' as const },
+            { title: 'Room Bookings', sub: 'per month', key: 'bookings', color: '#8b5cf6', type: 'bar' as const },
           ].filter(t => trends[t.key] && trends[t.key].length > 1).map(t => (
-            <div key={t.key} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8ef', padding: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1e1e2d', marginBottom: 12 }}>{t.title}</div>
+            <div key={t.key} className="sa-chart-panel">
+              <h4 className="sa-chart-title">{t.title}</h4>
+              <p className="sa-chart-subtitle">{t.sub}</p>
               <LargeChart data={trends[t.key]} color={t.color} type={t.type} />
             </div>
           ))}
         </div>
       )}
 
-      <div className="sa-dash-chart-section">
-        <h3 className="sa-dash-section-title">Feature Subscriptions by Company</h3>
-        <p className="sa-dash-section-sub">Number of companies subscribed to each feature add-on</p>
-        <div className="sa-dash-bars">
-          {featureSubs.map(f => (
-            <div key={f.label} className="sa-dash-bar-row">
-              <span className="sa-dash-bar-label">{f.label}</span>
-              <div className="sa-dash-bar-track">
-                <div className="sa-dash-bar-fill" style={{ width: `${(f.value / maxSub) * 100}%`, background: f.color }} />
-              </div>
-              <span className="sa-dash-bar-value">{f.value}</span>
+      {/* Feature Subscriptions — stacked horizontal bars with legend */}
+      <div className="sa-chart-panel" style={{ marginTop: 14 }}>
+        <h4 className="sa-chart-title">Feature Subscriptions</h4>
+        <p className="sa-chart-subtitle">Companies subscribed to each add-on</p>
+        <div className="sa-legend">
+          {featureSubs.slice(0, 6).map(f => (
+            <div key={f.label} className="sa-legend-item">
+              <span className="sa-legend-dot" style={{ background: f.color }} />
+              {f.label}
             </div>
           ))}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {featureSubs.map(f => {
+            const pct = Math.round((f.value / maxSub) * 100)
+            return (
+              <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 110, fontSize: 12, fontWeight: 500, color: '#6b6d85', flexShrink: 0, textAlign: 'right' }}>{f.label}</span>
+                <div style={{ flex: 1, height: 10, background: '#f1f0f7', borderRadius: 5, overflow: 'hidden' }}>
+                  <div style={{ width: `${(f.value / maxSub) * 100}%`, height: '100%', background: `linear-gradient(90deg, ${f.color}88, ${f.color})`, borderRadius: 5, transition: 'width 0.6s ease' }} />
+                </div>
+                <span style={{ width: 44, fontSize: 12, fontWeight: 700, color: '#1e1e2d', textAlign: 'right' }}>{f.value}</span>
+                <span style={{ width: 36, fontSize: 10, color: '#9b9cb5', textAlign: 'right' }}>{pct}%</span>
+              </div>
+            )
+          })}
         </div>
       </div>
 
