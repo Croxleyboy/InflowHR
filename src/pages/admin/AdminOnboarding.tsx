@@ -4701,8 +4701,18 @@ export default function AdminOnboarding() {
 
                             {/* Provisioning in progress — hide if schedule path active */}
                             {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'provisioning' && (
-                              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontSize: 13, color: '#1976d2' }}>Provisioning in progress — creating account, assigning licence and adding to group...</span>
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ fontSize: 13, color: '#1976d2' }}>Provisioning in progress — creating account, assigning licence and adding to group...</span>
+                                </div>
+                                <button
+                                  className="admin-btn-sm"
+                                  disabled={m365RunPolling}
+                                  style={{ marginTop: 6, fontSize: 12 }}
+                                  onClick={e => { e.stopPropagation(); m365RefreshStatus(m365Actions!.run_id!, selectedRecord.id) }}
+                                >
+                                  {m365RunPolling ? 'Checking...' : 'Re-check status'}
+                                </button>
                               </div>
                             )}
 
@@ -4711,8 +4721,16 @@ export default function AdminOnboarding() {
                               <div style={{ marginBottom: 12, background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
                                 <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Awaiting approval in InflowOnboarder</p>
                                 <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
-                                  The engine is waiting for approval. This will update automatically.
+                                  The engine is waiting for approval. This will update automatically, or re-check manually after approving.
                                 </p>
+                                <button
+                                  className="admin-btn-sm"
+                                  disabled={m365RunPolling}
+                                  style={{ marginTop: 8, fontSize: 12 }}
+                                  onClick={e => { e.stopPropagation(); m365RefreshStatus(m365Actions!.run_id!, selectedRecord.id) }}
+                                >
+                                  {m365RunPolling ? 'Checking...' : 'Re-check status'}
+                                </button>
                               </div>
                             )}
 
