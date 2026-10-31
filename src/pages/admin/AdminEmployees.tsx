@@ -9,7 +9,7 @@ import { validateNINumber, validateSortCode, validateAccountNumber } from '../..
 import { currencySymbol } from '../../lib/formatters'
 import EmployeeRecordModules from './EmployeeRecordModules'
 
-const PAGE_SIZE = 30
+const PAGE_SIZE = 15
 
 interface Employee {
   id: string
@@ -104,6 +104,8 @@ export default function AdminEmployees() {
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [recordsPage, setRecordsPage] = useState(1)
+  const [showFrozenSection, setShowFrozenSection] = useState(false)
   const [showDirectReports, setShowDirectReports] = useState(false)
 
   // Worker type settings state
@@ -603,6 +605,14 @@ export default function AdminEmployees() {
     })
   }, [alphabeticalEmployees, selectedLetter, recordsSearch])
 
+  const recordsActive = useMemo(() => recordsFiltered.filter(e => e.is_active && !e.is_frozen), [recordsFiltered])
+  const recordsFrozen = useMemo(() => recordsFiltered.filter(e => e.is_frozen), [recordsFiltered])
+  const RECORDS_PAGE_SIZE = 15
+  const recordsTotalPages = Math.max(1, Math.ceil(recordsActive.length / RECORDS_PAGE_SIZE))
+  const recordsPaginated = recordsActive.slice((recordsPage - 1) * RECORDS_PAGE_SIZE, recordsPage * RECORDS_PAGE_SIZE)
+
+  useEffect(() => { setRecordsPage(1) }, [selectedLetter, recordsSearch])
+
   const availableLetters = useMemo(() => {
     const letters = new Set<string>()
     employees.forEach(e => { if (e.first_name) letters.add(e.first_name[0].toUpperCase()) })
@@ -621,6 +631,13 @@ export default function AdminEmployees() {
   }, [employees, selectedEmployeeId])
 
   useEffect(() => { setShowDirectReports(false) }, [selectedEmployeeId])
+
+  useEffect(() => {
+    if (!selectedEmployeeId && alphabeticalEmployees.length > 0) {
+      const firstActive = alphabeticalEmployees.find(e => e.is_active && !e.is_frozen)
+      if (firstActive) setSelectedEmployeeId(firstActive.id)
+    }
+  }, [alphabeticalEmployees])
 
   const selectedIndex = useMemo(() => {
     if (!selectedEmployeeId) return -1
@@ -704,8 +721,8 @@ export default function AdminEmployees() {
             {/* Employee list */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {loading ? <div style={{ padding: 20, textAlign: 'center', color: '#999' }}>Loading...</div> : (
-                recordsFiltered.length === 0 ? <div style={{ padding: 20, textAlign: 'center', color: '#999' }}>No employees found</div> : (
-                  recordsFiltered.map(emp => (
+                recordsActive.length === 0 && recordsFrozen.length === 0 ? <div style={{ padding: 20, textAlign: 'center', color: '#999' }}>No employees found</div> : (<>
+                  {recordsPaginated.map(emp => (
                     <div
                       key={emp.id}
                       onClick={() => setSelectedEmployeeId(emp.id)}
@@ -722,12 +739,47 @@ export default function AdminEmployees() {
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.first_name} {emp.last_name}</div>
                         <div style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.job_title || emp.department || 'No role assigned'}</div>
                       </div>
-                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 600, background: empStatus(emp).bg, color: empStatus(emp).color }}>
-                        {empStatus(emp).label}
-                      </span>
                     </div>
-                  ))
-                )
+                  ))}
+                  {recordsTotalPages > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid #e0e0e0' }}>
+                      <button disabled={recordsPage <= 1} onClick={() => setRecordsPage(p => p - 1)} style={{ border: 'none', background: 'none', cursor: recordsPage <= 1 ? 'default' : 'pointer', color: recordsPage <= 1 ? '#ccc' : '#1565c0', fontSize: 12, fontWeight: 600, padding: '4px 8px' }}>‹ Prev</button>
+                      <span style={{ fontSize: 11, color: '#666' }}>{recordsPage} / {recordsTotalPages}</span>
+                      <button disabled={recordsPage >= recordsTotalPages} onClick={() => setRecordsPage(p => p + 1)} style={{ border: 'none', background: 'none', cursor: recordsPage >= recordsTotalPages ? 'default' : 'pointer', color: recordsPage >= recordsTotalPages ? '#ccc' : '#1565c0', fontSize: 12, fontWeight: 600, padding: '4px 8px' }}>Next ›</button>
+                    </div>
+                  )}
+                  {recordsFrozen.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setShowFrozenSection(v => !v)}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', border: 'none', borderBottom: '1px solid #e0e0e0', background: '#e3f2fd', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#1565c0' }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: showFrozenSection ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}><polyline points="9 18 15 12 9 6"/></svg>
+                        Frozen Employees ({recordsFrozen.length})
+                      </button>
+                      {showFrozenSection && recordsFrozen.map(emp => (
+                        <div
+                          key={emp.id}
+                          onClick={() => setSelectedEmployeeId(emp.id)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', background: selectedEmployeeId === emp.id ? '#bbdefb' : '#e3f2fd', transition: 'background 0.15s' }}
+                        >
+                          {emp.avatar_url ? (
+                            <img src={emp.avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#bbdefb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: '#1565c0' }}>
+                              {emp.first_name[0]}{emp.last_name[0]}
+                            </div>
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.first_name} {emp.last_name}</div>
+                            <div style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.job_title || emp.department || 'No role assigned'}</div>
+                          </div>
+                          <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 600, background: '#e3f2fd', color: '#1565c0' }}>Frozen</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </>)
               )}
             </div>
           </div>
