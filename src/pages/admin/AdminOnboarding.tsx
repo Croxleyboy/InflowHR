@@ -86,6 +86,7 @@ const STEP_TYPE_META: Record<string, { label: string; color: string; bg: string;
   approval:         { label: 'Approval',           color: '#dc2626', bg: '#fef2f2', icon: '✅', desc: 'Requires sign-off before workflow continues' },
   it_provisioning:  { label: 'IT / Provisioning',  color: '#6366f1', bg: '#eef2ff', icon: '💻', desc: 'IT tasks — accounts, equipment, access' },
   checklist:        { label: 'Checklist / To-Do',  color: '#64748b', bg: '#f8fafc', icon: '📋', desc: 'Simple tick-off item, no automation' },
+  survey:           { label: 'Survey',             color: '#0d9488', bg: '#f0fdfa', icon: '📊', desc: 'Assigns a survey to the starter or leaver' },
   action:           { label: 'HR Action',          color: '#7c3aed', bg: '#f5f3ff', icon: '☑️', desc: 'Manual task completed by ticking off' },
   notice:           { label: 'App Notification',   color: '#ea580c', bg: '#fff7ed', icon: '🔔', desc: 'Creates an in-app notification, auto-completes' },
 }
@@ -433,7 +434,8 @@ export default function AdminOnboarding() {
 
   // Custom workflow steps state
   interface StepConfig {
-    step_type?: 'hr_action' | 'email' | 'app_notification' | 'meeting' | 'elearning' | 'approval' | 'it_provisioning' | 'checklist' | 'action' | 'notice'
+    step_type?: 'hr_action' | 'email' | 'app_notification' | 'meeting' | 'elearning' | 'approval' | 'it_provisioning' | 'checklist' | 'survey' | 'action' | 'notice'
+    survey_id?: string
     assignee_role?: 'hr_admin' | 'line_manager' | 'it_contact' | 'starter_leaver' | 'finance' | 'custom'
     relative_due_days?: number
     relative_due_anchor?: 'start_date' | 'leave_date' | 'effective_date'
@@ -461,6 +463,8 @@ export default function AdminOnboarding() {
   const [contactsSaving, setContactsSaving] = useState(false)
   const [settingsSubTab, setSettingsSubTab] = useState<'workflows' | 'contacts' | 'guide'>('workflows')
   const [stepNotifSending, setStepNotifSending] = useState<string | null>(null)
+  const [companySurveys, setCompanySurveys] = useState<{ id: string; title: string }[]>([])
+  const [surveyAssigning, setSurveyAssigning] = useState<string | null>(null)
 
   // Workflow detail panel state
   interface ChecklistItem { id: number; step_key: string; label: string; sort_order: number }
@@ -684,6 +688,7 @@ export default function AdminOnboarding() {
       loadOffboardCustomSteps()
       loadCompanyContacts()
       loadSyncStatus()
+      supabase.from('company_surveys').select('id, title').eq('company_id', selectedCompanyId).then(({ data }) => { if (data) setCompanySurveys(data) })
       // Load identity provider settings
       supabase.from('companies').select('identity_provider, skip_licence_assignment').eq('id', selectedCompanyId).maybeSingle().then(({ data }) => {
         if (data) {
@@ -935,6 +940,48 @@ export default function AdminOnboarding() {
         return false
       }
     }
+  }
+
+  async function assignSurveyToEmployee(surveyId: string, employeeEmail: string, employeeName: string, stepKey: string) {
+    if (!selectedCompanyId || !session?.user?.id) return false
+    setSurveyAssigning(stepKey)
+    const { data: emp } = await supabase.from('employees')
+      .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${employeeEmail},email.eq.${employeeEmail}`).maybeSingle()
+    if (!emp) { showError('Employee not found — ensure they have been created first'); setSurveyAssigning(null); return false }
+    const endDate = new Date()
+    endDate.setDate(endDate.getDate() + 30)
+    const { data: deployment, error: depErr } = await supabase.from('survey_deployments').insert({
+      company_id: selectedCompanyId,
+      survey_id: surveyId,
+      status: 'active',
+      starts_at: new Date().toISOString(),
+      ends_at: endDate.toISOString(),
+      target_type: 'individual',
+      target_values: [emp.id],
+      total_recipients: 1,
+      total_responses: 0,
+      created_by: session.user.id,
+    }).select('id').single()
+    if (depErr || !deployment) { showError('Failed to deploy survey: ' + (depErr?.message || 'unknown error')); setSurveyAssigning(null); return false }
+    const { error: resErr } = await supabase.from('survey_responses').insert({
+      company_id: selectedCompanyId,
+      deployment_id: deployment.id,
+      employee_id: emp.id,
+      status: 'pending',
+    })
+    if (resErr) { showError('Failed to assign survey: ' + resErr.message); setSurveyAssigning(null); return false }
+    await supabase.from('notifications').insert({
+      company_id: selectedCompanyId,
+      employee_id: emp.id,
+      type: 'action',
+      notification_type: 'survey_assigned',
+      title: 'Survey assigned',
+      message: `You have a new survey to complete: ${companySurveys.find(s => s.id === surveyId)?.title || 'Survey'}`,
+      send_email: true,
+    })
+    showSuccess(`Survey assigned to ${employeeName}`)
+    setSurveyAssigning(null)
+    return true
   }
 
   async function loadSyncStatus() {
@@ -4120,6 +4167,27 @@ export default function AdminOnboarding() {
                     </div>
                   )}
 
+                  {/* Survey assignment card */}
+                  {step.step_config?.step_type === 'survey' && step.step_config?.survey_id && selectedRecord && !done && (
+                    <div style={{ margin: '0 0 20px', padding: 12, border: '1px solid #99f6e4', borderRadius: 8, background: '#f0fdfa' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, color: '#0d9488', fontWeight: 600 }}>📊 Survey: {companySurveys.find(s => s.id === step.step_config!.survey_id)?.title || 'Unknown'}</span>
+                        <button
+                          className="admin-btn-sm admin-btn-save"
+                          disabled={surveyAssigning === step.step_key}
+                          onClick={async () => {
+                            const ok = await assignSurveyToEmployee(step.step_config!.survey_id!, selectedRecord.user_email, `${selectedRecord.firstname} ${selectedRecord.surname}`, step.step_key)
+                            if (ok) completeStep(step.step_key)
+                          }}
+                          style={{ fontSize: 12, padding: '4px 12px', background: '#0d9488' }}
+                        >
+                          {surveyAssigning === step.step_key ? 'Assigning...' : `📊 Assign to ${selectedRecord.firstname}`}
+                        </button>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#115e59', marginTop: 4 }}>Assigns this survey to the employee and creates a pending response in their My Surveys page.</div>
+                    </div>
+                  )}
+
                   {/* E-Learning card */}
                   {step.step_key === 'assign_elearning' && !done && (
                     <div style={{ border: '1px solid #c7d2fe', borderRadius: 10, padding: 16, marginBottom: 20, background: '#eef2ff' }}>
@@ -5177,6 +5245,31 @@ export default function AdminOnboarding() {
                                     Meeting: {resolveStepPlaceholders(offCfg.meeting.title || '', record)} · Attendees: {offCfg.meeting.attendees?.join(', ') || 'manager, leaver'}
                                   </div>
                                 )}
+                              </div>
+                            )
+                          })()}
+
+                          {/* Survey assignment card (offboarding) */}
+                          {(() => {
+                            const offSurveyCfg = (offboardCustomSteps.find(cs => cs.step_key === step.key)?.step_config) as StepConfig | undefined
+                            if (!offSurveyCfg || offSurveyCfg.step_type !== 'survey' || !offSurveyCfg.survey_id || done || skipped) return null
+                            return (
+                              <div style={{ margin: '8px 0', padding: 12, border: '1px solid #99f6e4', borderRadius: 8, background: '#f0fdfa' }} onClick={e => e.stopPropagation()}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: 12, color: '#0d9488', fontWeight: 600 }}>📊 Survey: {companySurveys.find(s => s.id === offSurveyCfg.survey_id)?.title || 'Unknown'}</span>
+                                  <button
+                                    className="admin-btn-sm admin-btn-save"
+                                    disabled={surveyAssigning === step.key}
+                                    onClick={async () => {
+                                      const ok = await assignSurveyToEmployee(offSurveyCfg.survey_id!, record.employee_email, record.employee_name, step.key)
+                                      if (ok) completeOffboardStep(step.key)
+                                    }}
+                                    style={{ fontSize: 12, padding: '4px 12px', background: '#0d9488' }}
+                                  >
+                                    {surveyAssigning === step.key ? 'Assigning...' : `📊 Assign to ${record.employee_name.split(' ')[0]}`}
+                                  </button>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#115e59', marginTop: 4 }}>Assigns this survey to the employee and creates a pending response in their My Surveys page.</div>
                               </div>
                             )
                           })()}
@@ -7520,6 +7613,18 @@ export default function AdminOnboarding() {
                             <span style={{ fontSize: 11, color: '#888' }}>{STEP_TYPE_META[cfg.step_type || 'checklist']?.desc}</span>
                           </div>
 
+                          {/* Survey picker — shown when type is survey */}
+                          {cfg.step_type === 'survey' && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                              <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Survey:</label>
+                              <select className="admin-input" value={cfg.survey_id || ''} onChange={e => updateCfg({ survey_id: e.target.value || undefined })} style={{ fontSize: 12, maxWidth: 300 }}>
+                                <option value="">— Select a survey —</option>
+                                {companySurveys.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                              </select>
+                              {companySurveys.length === 0 && <span style={{ fontSize: 11, color: '#dc2626' }}>No surveys created yet — create one in Surveys &amp; Feedback first</span>}
+                            </div>
+                          )}
+
                           {/* Assignee Role */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
                             <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Assignee:</label>
@@ -7659,6 +7764,7 @@ export default function AdminOnboarding() {
                           {step.label}
                           {(() => { const tm = STEP_TYPE_META[cfg.step_type || 'checklist']; return tm ? <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 4, background: tm.bg, color: tm.color, fontWeight: 600 }}>{tm.label}</span> : null })()}
                           {cfg.meeting && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>Meeting</span>}
+                          {cfg.step_type === 'survey' && cfg.survey_id && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#f0fdfa', color: '#0d9488', fontWeight: 600 }}>📊 {companySurveys.find(s => s.id === cfg.survey_id)?.title || 'Survey'}</span>}
                           {cfg.requires_step && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>Requires: {allStepKeys.find(s => s.key === cfg.requires_step)?.label || cfg.requires_step}</span>}
                           {cfg.phase === 'post_join' && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#d1fae5', color: '#065f46', fontWeight: 600 }}>Post-Join</span>}
                         </div>
