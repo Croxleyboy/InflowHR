@@ -213,29 +213,37 @@ export default function AdminApprovals() {
         const nextYear = monthIndex + 2 > 12 ? year + 1 : year
         const rangeEnd = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
 
-        await supabase
+        const { error: psErr, count: psCount } = await supabase
           .from('payslips')
-          .delete()
+          .delete({ count: 'exact' })
           .eq('company_id', selectedCompanyId)
           .gte('pay_period_start', rangeStart)
           .lt('pay_period_start', rangeEnd)
 
-        await supabase
+        const { error: prErr, count: prCount } = await supabase
           .from('pay_runs')
-          .delete()
+          .delete({ count: 'exact' })
           .eq('company_id', selectedCompanyId)
           .gte('period_start', rangeStart)
           .lt('period_start', rangeEnd)
+
+        if (psErr || prErr) {
+          showToast(`Delete errors — payslips: ${psErr?.message || 'none'}, pay_runs: ${prErr?.message || 'none'}`, 'error')
+        } else {
+          showToast(`Deleted ${psCount ?? 0} payslips, ${prCount ?? 0} pay runs for ${key}`, 'success')
+        }
 
         const approverName = await getUserDisplayName()
         await supabase.from('payroll_audit_log').insert({
           company_id: selectedCompanyId,
           action: 'payroll_month_deleted',
-          detail: `Deleted payroll data for ${key} (${summary.month || 'Unknown'} ${year})`,
+          detail: `Deleted ${psCount ?? 0} payslips, ${prCount ?? 0} pay runs for ${key} (${summary.month || 'Unknown'} ${year})`,
           performed_by: session?.user?.id,
           performer_name: approverName,
         })
         window.dispatchEvent(new Event('payroll-data-changed'))
+      } else {
+        showToast(`Cannot delete: invalid month data (year=${year}, monthIndex=${monthIndex})`, 'error')
       }
     }
   }
