@@ -227,8 +227,8 @@ export default function AdminAccess() {
     const twoStep = await isTwoStepEnabled(selectedCompanyId)
     if (twoStep) {
       const userName = employeeName || session?.user?.email || 'Unknown'
-      const empRow = row?.employee as { first_name?: string; last_name?: string } | undefined
-      const targetName = empRow ? `${empRow.first_name || ''} ${empRow.last_name || ''}`.trim() : 'Unknown'
+      const emp = row?.employee_id ? empMap.get(row.employee_id) : undefined
+      const targetName = emp ? `${emp.first_name} ${emp.last_name}`.trim() : 'Unknown'
       const result = await createApprovalRecord({
         companyId: selectedCompanyId,
         category: 'access_request',

@@ -3516,7 +3516,7 @@ export default function AdminPayrollNew() {
 
       {/* ── SCHEDULE ───────────────────────────────────────────── */}
       {view === 'schedule' && (() => {
-        async function deletePayrollMonth(monthLabel: string, year: number, monthIdx: number, gross: number, hasPaid: boolean) {
+        async function deletePayrollMonth(_monthLabel: string, year: number, monthIdx: number, gross: number, hasPaid: boolean) {
           if (!selectedCompanyId) return
           const monthStr = MONTH_NAMES[monthIdx]
           const twoStep = await isTwoStepEnabled(selectedCompanyId)

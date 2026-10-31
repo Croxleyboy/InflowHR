@@ -384,7 +384,7 @@ export default function AdminApprovals() {
                         <div style={{ fontSize: 12, color: 'var(--text-muted, #94a3b8)' }}>
                           Requested by {a.requester_name || 'Unknown'} on {formatDate(a.created_at)}
                         </div>
-                        {summary.warning && (
+                        {(summary.warning as string) && (
                           <div style={{
                             marginTop: 8,
                             padding: '8px 12px',
