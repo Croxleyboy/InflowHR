@@ -3567,8 +3567,12 @@ export default function AdminPayrollNew() {
             : ''
           if (!confirm(`${warning}Delete all payroll data for ${monthStr} ${year}? This will remove payslips and pay run data for this month. Timesheet and shift recorded time will NOT be deleted.`)) return
           const key = `${year}-${String(monthIdx + 1).padStart(2, '0')}`
-          await supabase.from('payslips').delete().eq('company_id', selectedCompanyId).like('pay_period_start', `${key}%`)
-          await supabase.from('pay_runs').delete().eq('company_id', selectedCompanyId).like('period_start::text', `${key}%`)
+          const rangeStart = `${key}-01`
+          const nMonth = monthIdx + 2 > 12 ? 1 : monthIdx + 2
+          const nYear = monthIdx + 2 > 12 ? year + 1 : year
+          const rangeEnd = `${nYear}-${String(nMonth).padStart(2, '0')}-01`
+          await supabase.from('payslips').delete().eq('company_id', selectedCompanyId).gte('pay_period_start', rangeStart).lt('pay_period_start', rangeEnd)
+          await supabase.from('pay_runs').delete().eq('company_id', selectedCompanyId).gte('period_start', rangeStart).lt('period_start', rangeEnd)
 
           const { data: me } = await supabase.from('employees').select('first_name, last_name').eq('user_id', session?.user?.id).maybeSingle()
           const userName = me ? `${me.first_name} ${me.last_name}`.trim() : (session?.user?.email || 'Unknown')

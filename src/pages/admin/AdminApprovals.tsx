@@ -208,17 +208,24 @@ export default function AdminApprovals() {
       if (year && monthIndex >= 0) {
         const key = `${year}-${String(monthIndex + 1).padStart(2, '0')}`
 
+        const rangeStart = `${key}-01`
+        const nextMonth = monthIndex + 2 > 12 ? 1 : monthIndex + 2
+        const nextYear = monthIndex + 2 > 12 ? year + 1 : year
+        const rangeEnd = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
+
         await supabase
           .from('payslips')
           .delete()
           .eq('company_id', selectedCompanyId)
-          .like('pay_period_start', `${key}%`)
+          .gte('pay_period_start', rangeStart)
+          .lt('pay_period_start', rangeEnd)
 
         await supabase
           .from('pay_runs')
           .delete()
           .eq('company_id', selectedCompanyId)
-          .like('period_start::text', `${key}%`)
+          .gte('period_start', rangeStart)
+          .lt('period_start', rangeEnd)
 
         const approverName = await getUserDisplayName()
         await supabase.from('payroll_audit_log').insert({
