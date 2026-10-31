@@ -459,7 +459,7 @@ export default function AdminOnboarding() {
   const [editingContacts, setEditingContacts] = useState<CompanyContact[]>([])
   const [contactsDirty, setContactsDirty] = useState(false)
   const [contactsSaving, setContactsSaving] = useState(false)
-  const [settingsSubTab, setSettingsSubTab] = useState<'workflows' | 'contacts'>('workflows')
+  const [settingsSubTab, setSettingsSubTab] = useState<'workflows' | 'contacts' | 'guide'>('workflows')
   const [stepNotifSending, setStepNotifSending] = useState<string | null>(null)
 
   // Workflow detail panel state
@@ -7135,7 +7135,181 @@ export default function AdminOnboarding() {
               style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', background: settingsSubTab === 'contacts' ? 'var(--admin-accent, #1976d2)' : 'transparent', color: settingsSubTab === 'contacts' ? '#fff' : 'inherit' }}>
               Company Contacts
             </button>
+            <button onClick={() => setSettingsSubTab('guide')}
+              style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', background: settingsSubTab === 'guide' ? 'var(--admin-accent, #1976d2)' : 'transparent', color: settingsSubTab === 'guide' ? '#fff' : 'inherit' }}>
+              Task Types Guide
+            </button>
           </div>
+
+          {/* ── Task Types Guide sub-tab ── */}
+          {settingsSubTab === 'guide' && (
+            <div>
+              <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700 }}>Task Type Taxonomy</h3>
+              <p style={{ margin: '0 0 20px', fontSize: 13, color: '#888' }}>Each workflow step gets a typed category that determines its behaviour, icon, colour coding and available configuration options. Companies can assign any type to custom steps.</p>
+
+              {/* Task type cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 32 }}>
+                {Object.entries(STEP_TYPE_META).filter(([k]) => !['action', 'notice'].includes(k)).map(([key, meta]) => {
+                  const examples: Record<string, string> = {
+                    hr_action: 'Add employee details, Update records, Review access',
+                    email: 'Inform starter, Notify manager, Send leaving confirmation',
+                    app_notification: 'Notify manager of new starter, Alert IT of account removal',
+                    meeting: 'Day 1 welcome meeting, Exit interview, Role change review',
+                    elearning: 'Assign compliance training, Health & safety course, GDPR awareness',
+                    approval: 'Approve resignation, Confirm final pay, Approve role change',
+                    it_provisioning: 'Set up accounts, Request equipment, Remove access, Recover laptop',
+                    checklist: 'Export employee data, Review handover notes, Confirm complete',
+                  }
+                  return (
+                    <div key={key} style={{ border: '1px solid var(--admin-border, #e5e7eb)', borderRadius: 10, padding: 16, borderLeft: `4px solid ${meta.color}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 20 }}>{meta.icon}</span>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: meta.color }}>{meta.label}</span>
+                      </div>
+                      <p style={{ margin: '0 0 10px', fontSize: 12, color: '#555', lineHeight: 1.5 }}>{meta.desc}</p>
+                      <p style={{ margin: 0, fontSize: 11, color: '#999', fontStyle: 'italic' }}>e.g. {examples[key]}</p>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Step Mapping Tables */}
+              <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>Default Step Mapping</h3>
+
+              {/* Onboarding */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Onboarding</h4>
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#dbeafe', color: '#1d4ed8', fontWeight: 600 }}>{WORKFLOW_STEPS.length} steps</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--admin-border, #e5e7eb)' }}>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Step Key</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Label</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Recommended Type</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Config Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {WORKFLOW_STEPS.map((s, i) => {
+                        const tm = STEP_TYPE_META[s.step_type || 'checklist']
+                        const notes: Record<string, string> = {
+                          details: 'Assignee: HR Admin. Phase: Preparation',
+                          equipment: 'Assignee: IT contact. Due: start date minus 5 days',
+                          meeting: 'Attendees: starter + manager. Duration: 30 min. Date: start date',
+                          notify_manager: 'Target: manager. Auto-complete on delivery',
+                          plan_day1: 'Assignee: manager. Due: start date minus 3 days',
+                          inform_starter: 'To: starter. Template: welcome email. Due: start date minus 7 days',
+                          assign_elearning: 'Assignee: starter. Courses configurable. Due: start date + 7 days',
+                          accounts: 'Assignee: IT contact. Can trigger InflowOnboarder. Due: start date minus 1 day',
+                          day1_access: 'Assignee: IT contact. Depends on: accounts. Due: start date',
+                        }
+                        return (
+                          <tr key={s.key} style={{ borderBottom: '1px solid var(--admin-border, #f0f0f0)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>{s.key}</td>
+                            <td style={{ padding: '8px 12px' }}>{s.label}</td>
+                            <td style={{ padding: '8px 12px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: tm?.bg, color: tm?.color, fontWeight: 600, fontSize: 11 }}>● {tm?.label}</span></td>
+                            <td style={{ padding: '8px 12px', color: '#666', fontSize: 11 }}>{notes[s.key] || ''}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Offboarding */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Offboarding</h4>
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#fce7f3', color: '#be185d', fontWeight: 600 }}>{OFFBOARD_STEPS.length} steps</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--admin-border, #e5e7eb)' }}>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Step Key</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Label</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Recommended Type</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Config Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {OFFBOARD_STEPS.map((s, i) => {
+                        const tm = STEP_TYPE_META[s.step_type || 'checklist']
+                        const notes: Record<string, string> = {
+                          approve_resignation: 'Approver: HR Admin. Blocks all subsequent steps',
+                          recover_equipment: 'Assignee: IT contact. Due: leave date minus 1 day',
+                          leaving_meeting: 'Attendees: leaver + HR. Duration: 45 min. Due: leave date minus 5 days',
+                          convert_shared_mailbox: 'Assignee: IT contact. Due: leave date',
+                          forward_to_manager: 'Assignee: IT contact. Due: leave date',
+                          remove_accounts: 'Assignee: IT contact. Can trigger InflowOnboarder. Due: leave date',
+                          review_shifts: 'Assignee: HR Admin. Due: leave date minus 7 days',
+                          review_bookings: 'Assignee: HR Admin. Due: leave date minus 7 days',
+                          review_benefits: 'Assignee: HR Admin. Due: leave date minus 5 days',
+                          review_assets: 'Assignee: HR Admin. Due: leave date minus 3 days',
+                          export_data: 'Assignee: HR Admin. GDPR data export pack',
+                          reassign_reports: 'Assignee: HR Admin. Transfers pending approvals to new manager',
+                          confirm_payments: 'Approver: HR Admin. Final salary, holiday pay, P45',
+                        }
+                        return (
+                          <tr key={s.key} style={{ borderBottom: '1px solid var(--admin-border, #f0f0f0)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>{s.key}</td>
+                            <td style={{ padding: '8px 12px' }}>{s.label}</td>
+                            <td style={{ padding: '8px 12px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: tm?.bg, color: tm?.color, fontWeight: 600, fontSize: 11 }}>● {tm?.label}</span></td>
+                            <td style={{ padding: '8px 12px', color: '#666', fontSize: 11 }}>{notes[s.key] || ''}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Movers */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Movers</h4>
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#d1fae5', color: '#059669', fontWeight: 600 }}>{MOVER_STEPS.length} steps</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--admin-border, #e5e7eb)' }}>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Step Key</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Label</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Recommended Type</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.5px', color: '#888' }}>Config Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {MOVER_STEPS.map((s, i) => {
+                        const tm = STEP_TYPE_META[s.step_type || 'checklist']
+                        const notes: Record<string, string> = {
+                          review_changes: 'Approver: HR Admin. Review persona, role, department changes',
+                          update_accounts: 'Assignee: IT contact. Updates Entra ID, licences, groups',
+                          update_records: 'Assignee: HR Admin. Saves changes to InflowHR record',
+                          notify_team: 'Target: new + previous managers. Auto-complete on delivery',
+                          review_access: 'Assignee: manager. SharePoint, Teams, shared drives',
+                          confirm_complete: 'Assignee: HR Admin. Final verification tick-off',
+                        }
+                        return (
+                          <tr key={s.key} style={{ borderBottom: '1px solid var(--admin-border, #f0f0f0)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>{s.key}</td>
+                            <td style={{ padding: '8px 12px' }}>{s.label}</td>
+                            <td style={{ padding: '8px 12px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: tm?.bg, color: tm?.color, fontWeight: 600, fontSize: 11 }}>● {tm?.label}</span></td>
+                            <td style={{ padding: '8px 12px', color: '#666', fontSize: 11 }}>{notes[s.key] || ''}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Company Contacts sub-tab ── */}
           {settingsSubTab === 'contacts' && (
