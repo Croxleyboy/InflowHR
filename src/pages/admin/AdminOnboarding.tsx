@@ -3909,20 +3909,19 @@ export default function AdminOnboarding() {
                 const totalSteps = activeSteps.length
                 const doneCount = activeSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length
                 const pct = totalSteps > 0 ? Math.round((doneCount / totalSteps) * 100) : 0
-                const r = 18, stroke = 4, circ = 2 * Math.PI * r, offset = circ - (pct / 100) * circ
+                const pendingSteps = activeSteps.filter(s => !stepChecks[s.step_key] && !stepSkips[s.step_key])
+                const dueSoon = pendingSteps.filter(s => {
+                  const d = getStepDueDate(s, selectedRecord)
+                  return d && d.getTime() <= Date.now() + 7 * 86400000
+                }).length
                 return (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '6px 0' }}>
-                      <svg width={48} height={48} viewBox="0 0 44 44">
-                        <circle cx="22" cy="22" r={r} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
-                        <circle cx="22" cy="22" r={r} fill="none" stroke={pct === 100 ? '#059669' : '#6366f1'} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} transform="rotate(-90 22 22)" style={{ transition: 'stroke-dashoffset 0.4s ease' }} />
-                        <text x="22" y="22" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 11, fontWeight: 700, fill: pct === 100 ? '#059669' : '#6366f1' }}>{pct}%</text>
-                      </svg>
-                      <span style={{ fontSize: 12, color: '#888' }}>{doneCount} of {totalSteps} steps complete</span>
+                    <div className="admin-wf-sidebar-progress-wrap">
+                      <div className="admin-wf-sidebar-progress-fill" style={{ width: `${Math.max(pct, 8)}%` }} />
+                      <div className="admin-wf-sidebar-progress-text">{doneCount}/{totalSteps}</div>
                     </div>
-                    <div className="admin-wf-sidebar-progress"><div className="admin-wf-sidebar-progress-fill" style={{ width: `${pct}%` }} /></div>
                     <div className="admin-wf-sidebar-meta">
-                      <span>{doneCount}/{totalSteps}</span>
+                      <span>{dueSoon > 0 ? `${dueSoon} due in 7 days` : `${pendingSteps.length} remaining`}</span>
                       <span>Starts {selectedRecord.start_date ? new Date(selectedRecord.start_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBC'}</span>
                     </div>
                   </>
@@ -3950,7 +3949,7 @@ export default function AdminOnboarding() {
                         <div key={step.step_key}
                           className={`admin-wf-step-row ${done ? 'done' : ''} ${skipped ? 'skipped' : ''} ${i === workflowStep ? 'active' : ''}`}
                           onClick={() => { setWorkflowStep(i); if (step.step_key === 'accounts' && selectedId && features.inflowonboarder_integration) loadM365Actions(selectedId) }}>
-                          <div className="admin-wf-step-icon">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
+                          <div className="admin-wf-step-icon">{done ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg> : skipped ? '⏭' : ''}</div>
                           <span className="admin-wf-step-label">{step.label}</span>
                           {dueDate && <span className="admin-wf-step-date">{dueDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                         </div>
@@ -3961,7 +3960,7 @@ export default function AdminOnboarding() {
                     <div className="admin-wf-phase-group">
                       <div className="admin-wf-phase-header" onClick={() => setCollapsedPhases(p => ({ ...p, post_join: !p.post_join }))}>
                         <span>{collapsedPhases.post_join ? '▸' : '▾'} POST-JOIN</span>
-                        <span className="admin-wf-phase-badge" style={{ background: postDone === postSteps.length && postSteps.length > 0 ? '#10b981' : '#8b8fa3' }}>{postDone}/{postSteps.length}</span>
+                        <span className="admin-wf-phase-badge" style={{ background: postDone === postSteps.length && postSteps.length > 0 ? '#3d5a3e' : '#8b8fa3' }}>{postDone}/{postSteps.length}</span>
                       </div>
                       {!collapsedPhases.post_join && postSteps.map(step => {
                         const i = activeSteps.indexOf(step)
@@ -3972,7 +3971,7 @@ export default function AdminOnboarding() {
                           <div key={step.step_key}
                             className={`admin-wf-step-row ${done ? 'done' : ''} ${skipped ? 'skipped' : ''} ${i === workflowStep ? 'active' : ''}`}
                             onClick={() => { setWorkflowStep(i); if (step.step_key === 'accounts' && selectedId && features.inflowonboarder_integration) loadM365Actions(selectedId) }}>
-                            <div className="admin-wf-step-icon">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
+                            <div className="admin-wf-step-icon">{done ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg> : skipped ? '⏭' : ''}</div>
                             <span className="admin-wf-step-label">{step.label}</span>
                             {dueDate && <span className="admin-wf-step-date">{dueDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                           </div>
