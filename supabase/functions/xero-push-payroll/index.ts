@@ -660,9 +660,11 @@ Deno.serve(async (req) => {
         }
       }
 
+      const multipliedUnits = Math.round(otHours * overtimeMultiplier * 100) / 100
       const earningsTemplateBody = {
         earningsRateID: effectiveOtRateId,
-        numberOfUnits: otHours,
+        ratePerUnit: baseRate,
+        numberOfUnits: multipliedUnits,
       }
 
       let ptPushRes: Response

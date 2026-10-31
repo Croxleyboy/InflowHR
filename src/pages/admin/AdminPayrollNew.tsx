@@ -259,6 +259,7 @@ export default function AdminPayrollNew() {
   const [wizPeriodReviews, setWizPeriodReviews] = useState<PeriodReview[]>([])
   const [wizOvertimeHours, setWizOvertimeHours] = useState<Record<string, number>>({})
   const [wizOvertimeRates, setWizOvertimeRates] = useState<Record<string, number>>({})
+  const [wizOvertimeMultipliers, setWizOvertimeMultipliers] = useState<Record<string, number>>({})
 
   const allOvertimeHours: Record<string, number> = { ...wizOvertimeHours }
   for (const r of wizPeriodReviews) {
@@ -1259,7 +1260,7 @@ export default function AdminPayrollNew() {
         const pen = latest ? Math.round((Number(latest.pension) * 12 / periodsPerYear) * 100) / 100 : Math.round(gross * 0.05 * 100) / 100
 
         const empOvertimeHrs = overtimeHandling === 'overtime' ? (wizOvertimeHours[emp.id] || 0) : 0
-        const multiplier = emp.overtime_rate_multiplier || 1.5
+        const multiplier = wizOvertimeMultipliers[emp.id] ?? (emp.overtime_rate_multiplier || 1.5)
         const hourlyFromSalary = wizOvertimeRates[emp.id] || getDerivedHourlyRate(emp) || salary / (52 * (emp.weekly_hours || 37.5))
         const overtimePay = empOvertimeHrs > 0 ? Math.round(empOvertimeHrs * hourlyFromSalary * multiplier * 100) / 100 : 0
 
@@ -1353,7 +1354,7 @@ export default function AdminPayrollNew() {
       const emp = employees.find(e => e.id === empId)
       if (!emp || hrs <= 0 || !isEmpInScope(empId)) return
       if (getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil') return
-      const mul = emp.overtime_rate_multiplier || 1.5
+      const mul = wizOvertimeMultipliers[empId] ?? (emp.overtime_rate_multiplier || 1.5)
       const rate = wizOvertimeRates[empId] || getDerivedHourlyRate(emp)
       items.push({
         employee: `${emp.first_name} ${emp.last_name}`,
@@ -1501,7 +1502,8 @@ export default function AdminPayrollNew() {
         })
         .map(([empId, hrs]) => {
           const emp = employees.find(e => e.id === empId)!
-          return { employee_id: empId, hours: hrs, multiplier: emp.overtime_rate_multiplier || 1.5, hourly_rate_override: wizOvertimeRates[empId] || getDerivedHourlyRate(emp) }
+          const defaultMul = emp.overtime_rate_multiplier || 1.5
+          return { employee_id: empId, hours: hrs, multiplier: wizOvertimeMultipliers[empId] ?? defaultMul, hourly_rate_override: wizOvertimeRates[empId] || getDerivedHourlyRate(emp) }
         })
 
       // Add shift/zero-hours overtime from approved period reviews
@@ -1516,7 +1518,7 @@ export default function AdminPayrollNew() {
         overtimeEntries.push({
           employee_id: r.employee_id,
           hours: Number(r.overtime_hours),
-          multiplier: emp.overtime_rate_multiplier || 1.5,
+          multiplier: wizOvertimeMultipliers[r.employee_id] ?? (emp.overtime_rate_multiplier || 1.5),
           hourly_rate_override: r.hourly_rate || getDerivedHourlyRate(emp),
         })
       }
@@ -4207,10 +4209,12 @@ export default function AdminPayrollNew() {
                                   {showOvertimeInputs && (() => {
                                     const derivedRate = getDerivedHourlyRate(emp)
                                     const currentRate = wizOvertimeRates[emp.id] ?? derivedRate
-                                    const mul = emp.overtime_rate_multiplier || 1.5
+                                    const defaultMul = emp.overtime_rate_multiplier || 1.5
+                                    const mul = wizOvertimeMultipliers[emp.id] ?? defaultMul
                                     const hrs = wizOvertimeHours[emp.id] || 0
                                     const amount = Math.round(currentRate * mul * hrs * 100) / 100
                                     const isOverridden = wizOvertimeRates[emp.id] !== undefined && Math.abs(wizOvertimeRates[emp.id] - derivedRate) > 0.001
+                                    const isMulOverridden = wizOvertimeMultipliers[emp.id] !== undefined && Math.abs(wizOvertimeMultipliers[emp.id] - defaultMul) > 0.001
                                     return (
                                       <>
                                         <input type="number" min="0" step="0.5" style={{ width: 70, padding: '3px 6px', fontSize: 13, borderRadius: 4, border: '1px solid var(--border, #d1d5db)' }}
@@ -4229,7 +4233,15 @@ export default function AdminPayrollNew() {
                                           title={`Derived from ${emp.hourly_rate ? 'hourly rate' : 'annual salary ÷ (52 × weekly hours)'}`}
                                           placeholder="0.00"
                                         />
-                                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>/hr × {mul}x</span>
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>/hr ×</span>
+                                        <input type="number" min="1" max="3" step="0.1" style={{ width: 50, padding: '3px 4px', fontSize: 13, borderRadius: 4, border: `1px solid ${isMulOverridden ? '#e65100' : 'var(--border, #d1d5db)'}`, background: isMulOverridden ? '#fff3e0' : undefined, textAlign: 'center' as const }}
+                                          value={mul}
+                                          onChange={e => {
+                                            const val = parseFloat(e.target.value) || 1.5
+                                            setWizOvertimeMultipliers(prev => ({ ...prev, [emp.id]: val }))
+                                          }}
+                                          title={`Default multiplier: ${defaultMul}x (from worker settings)`}
+                                        />
                                         {hrs > 0 && amount > 0 && (
                                           <span style={{ fontSize: 12, fontWeight: 600, color: '#2e7d32' }}>= {currencySymbol(currency)}{amount.toFixed(2)}</span>
                                         )}
@@ -4240,7 +4252,14 @@ export default function AdminPayrollNew() {
                                             Override
                                           </span>
                                         )}
-                                        {hrs > 0 && !isOverridden && (
+                                        {isMulOverridden && (
+                                          <span style={{ fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 6px', borderRadius: 3, fontWeight: 600, cursor: 'pointer' }}
+                                            title="Click to reset to default multiplier"
+                                            onClick={() => setWizOvertimeMultipliers(prev => { const n = { ...prev }; delete n[emp.id]; return n })}>
+                                            ×{mul}
+                                          </span>
+                                        )}
+                                        {hrs > 0 && !isOverridden && !isMulOverridden && (
                                           <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Auto</span>
                                         )}
                                       </>
