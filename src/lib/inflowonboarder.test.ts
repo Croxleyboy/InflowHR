@@ -126,7 +126,7 @@ describe('schedule.blocked handling', () => {
 // ── blocked → completed with passId (clears blocked state) ───────────────
 
 describe('schedule.stage_completed after blocked', () => {
-  function stageCompletedLogic(stageResult: any, schedAskedForPass: boolean, currentPassStatus: string | null) {
+  function stageCompletedLogic(stageResult: any, schedAskedForPass: boolean, _currentPassStatus: string | null) {
     if (stageResult?.passId) {
       return { pass_status: 'ready', pass_id: stageResult.passId, pass_error_detail: null }
     } else if (schedAskedForPass) {
@@ -173,7 +173,7 @@ describe('function_suspended with no pass requested', () => {
   it('keeps pass_status null when function_suspended is for joiners function', () => {
     const schedAskedForPass = true
     const errCode = 'function_suspended'
-    const errFunction = 'joiners'
+    const errFunction: string = 'joiners'
     const passBlockCodes = ['passes_off', 'passes_not_connected', 'passes_setup_incomplete']
     let newPassStatus: string | null = null
     if (schedAskedForPass && (passBlockCodes.includes(errCode) || (errCode === 'function_suspended' && errFunction === 'passes'))) {

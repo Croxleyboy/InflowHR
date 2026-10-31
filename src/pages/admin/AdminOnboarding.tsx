@@ -3915,7 +3915,7 @@ export default function AdminOnboarding() {
                       <span>{collapsedPhases.preparation ? '▸' : '▾'} PREPARATION</span>
                       <span className="admin-wf-phase-badge">{prepDone}/{prepSteps.length}</span>
                     </div>
-                    {!collapsedPhases.preparation && prepSteps.map((step, idx) => {
+                    {!collapsedPhases.preparation && prepSteps.map((step, _idx) => {
                       const i = activeSteps.indexOf(step)
                       const done = stepChecks[step.step_key]
                       const skipped = stepSkips[step.step_key]
