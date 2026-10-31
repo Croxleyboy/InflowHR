@@ -482,11 +482,6 @@ export default function AdminPayrollNew() {
   // Data loading
   useEffect(() => { if (selectedCompanyId) loadAll() }, [selectedCompanyId])
 
-  useEffect(() => {
-    const handler = () => { if (selectedCompanyId) loadAll() }
-    window.addEventListener('payroll-data-changed', handler)
-    return () => window.removeEventListener('payroll-data-changed', handler)
-  }, [selectedCompanyId, loadAll])
 
 
   const loadAll = useCallback(async () => {
@@ -585,6 +580,12 @@ export default function AdminPayrollNew() {
 
     setLoading(false)
   }, [selectedCompanyId, fyRange])
+
+  useEffect(() => {
+    const handler = () => { if (selectedCompanyId) loadAll() }
+    window.addEventListener('payroll-data-changed', handler)
+    return () => window.removeEventListener('payroll-data-changed', handler)
+  }, [selectedCompanyId, loadAll])
 
   function saveWorkerTypeSettings(workerType: string) {
     const setting = editingSettings[workerType]
