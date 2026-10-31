@@ -480,10 +480,6 @@ export default function AdminPayrollNew() {
   }, [payslips, employedEmployees, shiftEmployees, zeroHoursEmployees, currentMonthKey, payDayMode, customPayDay, shiftPayDayMode, shiftCustomPayDay, zeroHrsPayDayMode, zeroHrsCustomPayDay, lastPayRuns, workerSettings, fyStartMonth])
 
   // Data loading
-  useEffect(() => { if (selectedCompanyId) loadAll() }, [selectedCompanyId])
-
-
-
   const loadAll = useCallback(async () => {
     setLoading(true)
     const fyStart = localDateStr(fyRange.startDate)
@@ -581,10 +577,17 @@ export default function AdminPayrollNew() {
     setLoading(false)
   }, [selectedCompanyId, fyRange])
 
+  useEffect(() => { if (selectedCompanyId) loadAll() }, [selectedCompanyId, loadAll])
+
   useEffect(() => {
     const handler = () => { if (selectedCompanyId) loadAll() }
     window.addEventListener('payroll-data-changed', handler)
-    return () => window.removeEventListener('payroll-data-changed', handler)
+    const visHandler = () => { if (!document.hidden && selectedCompanyId) loadAll() }
+    document.addEventListener('visibilitychange', visHandler)
+    return () => {
+      window.removeEventListener('payroll-data-changed', handler)
+      document.removeEventListener('visibilitychange', visHandler)
+    }
   }, [selectedCompanyId, loadAll])
 
   function saveWorkerTypeSettings(workerType: string) {
