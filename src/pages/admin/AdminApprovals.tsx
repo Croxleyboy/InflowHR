@@ -202,26 +202,23 @@ export default function AdminApprovals() {
     }
 
     if (approval.category === 'payroll_month' && approval.action === 'delete') {
-      const month = (summary.month as string) || ''
       const year = (summary.year as number) || 0
-      const workerType = (summary.worker_type as string) || ''
+      const monthIndex = (summary.month_index as number) ?? -1
 
-      if (month && year) {
+      if (year && monthIndex >= 0) {
+        const key = `${year}-${String(monthIndex + 1).padStart(2, '0')}`
+
         await supabase
           .from('payslips')
           .delete()
           .eq('company_id', selectedCompanyId)
-          .eq('pay_month', month)
-          .eq('pay_year', year)
-          .match(workerType ? { worker_type: workerType } : {})
+          .like('pay_period_start', `${key}%`)
 
         await supabase
           .from('pay_runs')
           .delete()
           .eq('company_id', selectedCompanyId)
-          .eq('pay_month', month)
-          .eq('pay_year', year)
-          .match(workerType ? { worker_type: workerType } : {})
+          .like('period_start::text', `${key}%`)
 
         const approverName = await getUserDisplayName()
         await supabase.from('payroll_audit_log').insert({
