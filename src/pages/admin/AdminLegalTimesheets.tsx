@@ -237,6 +237,9 @@ export default function AdminLegalTimesheets() {
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [auditReason, setAuditReason] = useState('')
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteTargetEntry, setDeleteTargetEntry] = useState<TimesheetEntry | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Invoice state
   const [invoices, setInvoices] = useState<LegalInvoice[]>([])
@@ -586,6 +589,28 @@ export default function AdminLegalTimesheets() {
     setEditHrs(String(e.duration_hrs))
     setEditCode(e.task_code)
     setAuditReason('')
+  }
+
+  async function deleteEntry() {
+    if (!deleteTargetEntry) return
+    setDeleting(true)
+    const entry = deleteTargetEntry
+    const { error } = await supabase
+      .from('legal_timesheet_entries')
+      .delete()
+      .eq('id', entry.id)
+      .eq('company_id', selectedCompanyId)
+    if (error) {
+      showError('Failed to delete entry: ' + error.message)
+      setDeleting(false)
+      return
+    }
+    showSuccess(`Timesheet entry for ${empName(entry.employee)} on ${fmtDate(entry.date)} permanently deleted`)
+    setShowDeleteModal(false)
+    setDeleteTargetEntry(null)
+    setDeleting(false)
+    setSelectedIds(prev => { const n = new Set(prev); n.delete(entry.id); return n })
+    await loadEntries()
   }
 
   // ── Invoice functions ──
@@ -1286,6 +1311,9 @@ export default function AdminLegalTimesheets() {
                                 <button className="admin-btn-icon" title="Edit" onClick={() => startEdit(e)}>
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                 </button>
+                                <button className="admin-btn-icon" title="Delete permanently" style={{ color: '#c62828' }} onClick={() => { setDeleteTargetEntry(e); setShowDeleteModal(true) }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
+                                </button>
                               )}
                             </td>
                           </tr>
@@ -1307,6 +1335,45 @@ export default function AdminLegalTimesheets() {
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
                   <button className="admin-btn admin-btn-cancel-lg" onClick={() => setShowRejectModal(false)}>Cancel</button>
                   <button className="admin-btn alt-btn-reject" onClick={rejectSelected} disabled={!rejectReason.trim()}>Reject Selected</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Confirmation Modal */}
+          {showDeleteModal && deleteTargetEntry && (
+            <div className="admin-modal-overlay" onClick={() => { if (!deleting) { setShowDeleteModal(false); setDeleteTargetEntry(null) } }}>
+              <div className="admin-modal" onClick={ev => ev.stopPropagation()} style={{ maxWidth: 480 }}>
+                <h2 style={{ marginBottom: 8, color: '#c62828', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                  Permanently Delete Timesheet Entry
+                </h2>
+                <div style={{ background: '#fff3e0', border: '1px solid #ffe0b2', borderRadius: 8, padding: '12px 14px', marginBottom: 14, fontSize: 13, lineHeight: 1.6, color: '#e65100' }}>
+                  <strong>This action cannot be undone.</strong> The entry will be permanently removed from:
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                    <li>Admin legal timesheet management</li>
+                    <li>The employee's HR app timesheet view</li>
+                    <li>Any linked invoice lines (the line will lose its source reference)</li>
+                    <li>All billing calculations and exports</li>
+                  </ul>
+                </div>
+                <div style={{ background: '#f5f5f5', borderRadius: 8, padding: '10px 14px', fontSize: 13, lineHeight: 1.6, marginBottom: 14 }}>
+                  <div><strong>Employee:</strong> {empName(deleteTargetEntry.employee)}</div>
+                  <div><strong>Date:</strong> {fmtDate(deleteTargetEntry.date)}</div>
+                  <div><strong>Client / Matter:</strong> {deleteTargetEntry.client?.name || '—'} / {deleteTargetEntry.matter?.name || '—'}</div>
+                  <div><strong>Hours:</strong> {Number(deleteTargetEntry.duration_hrs).toFixed(1)}h</div>
+                  <div><strong>Status:</strong> {deleteTargetEntry.status}</div>
+                </div>
+                {deleteTargetEntry.status === 'billed' && (
+                  <div style={{ background: '#ffebee', border: '1px solid #ffcdd2', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#c62828' }}>
+                    <strong>Warning:</strong> This entry has already been billed. Deleting it will not remove the invoice line but will unlink it from this timesheet entry. You may need to update or credit the invoice separately.
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="admin-btn admin-btn-cancel-lg" onClick={() => { setShowDeleteModal(false); setDeleteTargetEntry(null) }} disabled={deleting}>Cancel</button>
+                  <button className="admin-btn" style={{ background: '#c62828', color: '#fff', fontWeight: 600 }} onClick={deleteEntry} disabled={deleting}>
+                    {deleting ? 'Deleting...' : 'Yes, Permanently Delete'}
+                  </button>
                 </div>
               </div>
             </div>
