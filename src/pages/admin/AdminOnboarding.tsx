@@ -77,29 +77,42 @@ interface DeletionCertificate {
   created_at: string
 }
 
+const STEP_TYPE_META: Record<string, { label: string; color: string; bg: string; icon: string; desc: string }> = {
+  hr_action:        { label: 'HR Action',          color: '#7c3aed', bg: '#f5f3ff', icon: '☑️', desc: 'Manual task completed by ticking off' },
+  email:            { label: 'Email',              color: '#0891b2', bg: '#ecfeff', icon: '✉️', desc: 'Sends a templated email, auto-completes on send' },
+  app_notification: { label: 'App Notification',   color: '#ea580c', bg: '#fff7ed', icon: '🔔', desc: 'Creates an in-app notification, auto-completes' },
+  meeting:          { label: 'Meeting',            color: '#059669', bg: '#ecfdf5', icon: '📅', desc: 'Schedules a meeting with attendees and duration' },
+  elearning:        { label: 'E-Learning',         color: '#d97706', bg: '#fffbeb', icon: '📖', desc: 'Assigns training courses to complete' },
+  approval:         { label: 'Approval',           color: '#dc2626', bg: '#fef2f2', icon: '✅', desc: 'Requires sign-off before workflow continues' },
+  it_provisioning:  { label: 'IT / Provisioning',  color: '#6366f1', bg: '#eef2ff', icon: '💻', desc: 'IT tasks — accounts, equipment, access' },
+  checklist:        { label: 'Checklist / To-Do',  color: '#64748b', bg: '#f8fafc', icon: '📋', desc: 'Simple tick-off item, no automation' },
+  action:           { label: 'HR Action',          color: '#7c3aed', bg: '#f5f3ff', icon: '☑️', desc: 'Manual task completed by ticking off' },
+  notice:           { label: 'App Notification',   color: '#ea580c', bg: '#fff7ed', icon: '🔔', desc: 'Creates an in-app notification, auto-completes' },
+}
+
 const OFFBOARD_STEPS = [
-  { key: 'approve_resignation', label: 'Approve Resignation / Redundancy', icon: '📝', description: 'Review and formally approve the employee resignation or termination. Update HR records with the leaving reason and confirm final working date. Use the leaver financial calculator to work out holiday balance and costs.', role: 'HR' },
-  { key: 'recover_equipment', label: 'Recover Equipment', icon: '💻', description: 'Collect all company equipment — laptop, monitor, phone, building pass, keys, parking permit. Complete the asset return checklist and update the inventory register.', role: 'HR' },
-  { key: 'leaving_meeting', label: 'Organise Leaving Meeting', icon: '🤝', description: 'Schedule an exit interview and farewell meeting with the line manager. Cover handover tasks, knowledge transfer, and gather feedback on their experience.', role: 'Manager' },
-  { key: 'convert_shared_mailbox', label: 'Convert to Shared Mailbox', icon: '📬', description: 'Convert the leaver\'s mailbox to a shared mailbox so colleagues can continue to access their emails without consuming a licence. This step can be skipped if not required.', role: 'HR' },
-  { key: 'forward_to_manager', label: 'Forward to Manager', icon: '📧', description: 'Set up email forwarding from the leaver\'s mailbox to their line manager so that incoming messages are not missed during the transition period. This step can be skipped if not required.', role: 'HR' },
-  { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable the Microsoft 365 account, revoke licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR' },
-  { key: 'review_shifts', label: 'Review Future Shifts', icon: '📅', description: 'Review and cancel any future shift assignments for this employee. Unassigned shifts can be reassigned to other team members via the rota.', role: 'HR' },
-  { key: 'review_bookings', label: 'Review Future Bookings', icon: '🏢', description: 'Review and cancel any future desk or room bookings made by this employee. This frees up the spaces for other team members.', role: 'HR' },
-  { key: 'review_benefits', label: 'Review Benefit Enrolments', icon: '🎁', description: 'Unenrol the employee from all active company benefits. If payroll is connected, benefit deductions will stop from the next pay run.', role: 'HR' },
-  { key: 'review_assets', label: 'Review Company Assets', icon: '📦', description: 'Confirm all company assets assigned to this employee have been accounted for and returned. Cross-reference with the asset register.', role: 'HR' },
-  { key: 'export_data', label: 'Export Employee Data (GDPR)', icon: '📥', description: 'Generate and download the GDPR data export pack containing all personal data held for this employee. This is also auto-generated when the account is frozen.', role: 'HR' },
-  { key: 'reassign_reports', label: 'Reassign Direct Reports', icon: '👥', description: 'Reassign any employees who report to this person to a new manager. This also transfers all pending approval actions (leave, expenses, timesheets) to the new manager.', role: 'HR' },
-  { key: 'confirm_payments', label: 'Agree / Confirm Last Payments', icon: '💷', description: 'Calculate final salary payment including outstanding holiday pay, expenses, bonuses and any deductions. Confirm P45 will be issued and pension contributions ceased.', role: 'HR' },
+  { key: 'approve_resignation', label: 'Approve Resignation / Redundancy', icon: '📝', description: 'Review and formally approve the employee resignation or termination. Update HR records with the leaving reason and confirm final working date. Use the leaver financial calculator to work out holiday balance and costs.', role: 'HR', step_type: 'approval' as const },
+  { key: 'recover_equipment', label: 'Recover Equipment', icon: '💻', description: 'Collect all company equipment — laptop, monitor, phone, building pass, keys, parking permit. Complete the asset return checklist and update the inventory register.', role: 'HR', step_type: 'it_provisioning' as const },
+  { key: 'leaving_meeting', label: 'Organise Leaving Meeting', icon: '🤝', description: 'Schedule an exit interview and farewell meeting with the line manager. Cover handover tasks, knowledge transfer, and gather feedback on their experience.', role: 'Manager', step_type: 'meeting' as const },
+  { key: 'convert_shared_mailbox', label: 'Convert to Shared Mailbox', icon: '📬', description: 'Convert the leaver\'s mailbox to a shared mailbox so colleagues can continue to access their emails without consuming a licence. This step can be skipped if not required.', role: 'HR', step_type: 'it_provisioning' as const },
+  { key: 'forward_to_manager', label: 'Forward to Manager', icon: '📧', description: 'Set up email forwarding from the leaver\'s mailbox to their line manager so that incoming messages are not missed during the transition period. This step can be skipped if not required.', role: 'HR', step_type: 'it_provisioning' as const },
+  { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable the Microsoft 365 account, revoke licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR', step_type: 'it_provisioning' as const },
+  { key: 'review_shifts', label: 'Review Future Shifts', icon: '📅', description: 'Review and cancel any future shift assignments for this employee. Unassigned shifts can be reassigned to other team members via the rota.', role: 'HR', step_type: 'hr_action' as const },
+  { key: 'review_bookings', label: 'Review Future Bookings', icon: '🏢', description: 'Review and cancel any future desk or room bookings made by this employee. This frees up the spaces for other team members.', role: 'HR', step_type: 'hr_action' as const },
+  { key: 'review_benefits', label: 'Review Benefit Enrolments', icon: '🎁', description: 'Unenrol the employee from all active company benefits. If payroll is connected, benefit deductions will stop from the next pay run.', role: 'HR', step_type: 'hr_action' as const },
+  { key: 'review_assets', label: 'Review Company Assets', icon: '📦', description: 'Confirm all company assets assigned to this employee have been accounted for and returned. Cross-reference with the asset register.', role: 'HR', step_type: 'hr_action' as const },
+  { key: 'export_data', label: 'Export Employee Data (GDPR)', icon: '📥', description: 'Generate and download the GDPR data export pack containing all personal data held for this employee. This is also auto-generated when the account is frozen.', role: 'HR', step_type: 'checklist' as const },
+  { key: 'reassign_reports', label: 'Reassign Direct Reports', icon: '👥', description: 'Reassign any employees who report to this person to a new manager. This also transfers all pending approval actions (leave, expenses, timesheets) to the new manager.', role: 'HR', step_type: 'hr_action' as const },
+  { key: 'confirm_payments', label: 'Agree / Confirm Last Payments', icon: '💷', description: 'Calculate final salary payment including outstanding holiday pay, expenses, bonuses and any deductions. Confirm P45 will be issued and pension contributions ceased.', role: 'HR', step_type: 'approval' as const },
 ]
 
 const MOVER_STEPS = [
-  { key: 'review_changes', label: 'Review Proposed Changes', icon: '📋', description: 'Review all proposed changes including persona tier, role, department, location and manager. Confirm the changes are correct before proceeding.', role: 'HR' },
-  { key: 'update_accounts', label: 'Update M365 Account', icon: '🔐', description: 'Update the employee\'s Microsoft 365 account — this step sets extensionAttribute1 in Entra ID, swaps licences, and updates group membership. Dynamic groups re-evaluate automatically, applying the correct Intune profiles and conditional access policies.', role: 'HR' },
-  { key: 'update_records', label: 'Save Changes to InflowHR', icon: '📝', description: 'Apply the changes to the employee\'s InflowHR record — persona tier, job title, department, location and manager.', role: 'HR' },
-  { key: 'notify_team', label: 'Notify Team / Manager', icon: '📧', description: 'Inform the new and previous managers and team members of the role change. Share updated reporting lines and responsibilities.', role: 'HR' },
-  { key: 'review_access', label: 'Review Remaining Access', icon: '🔍', description: 'Review any access that requires manual attention — SharePoint sites, Teams channels, shared drives, and application permissions that were not automatically updated.', role: 'Manager' },
-  { key: 'confirm_complete', label: 'Confirm Complete', icon: '✅', description: 'Confirm all changes have been applied and verified. Mark the role change as complete.', role: 'HR' },
+  { key: 'review_changes', label: 'Review Proposed Changes', icon: '📋', description: 'Review all proposed changes including persona tier, role, department, location and manager. Confirm the changes are correct before proceeding.', role: 'HR', step_type: 'approval' as const },
+  { key: 'update_accounts', label: 'Update M365 Account', icon: '🔐', description: 'Update the employee\'s Microsoft 365 account — this step sets extensionAttribute1 in Entra ID, swaps licences, and updates group membership. Dynamic groups re-evaluate automatically, applying the correct Intune profiles and conditional access policies.', role: 'HR', step_type: 'it_provisioning' as const },
+  { key: 'update_records', label: 'Save Changes to InflowHR', icon: '📝', description: 'Apply the changes to the employee\'s InflowHR record — persona tier, job title, department, location and manager.', role: 'HR', step_type: 'hr_action' as const },
+  { key: 'notify_team', label: 'Notify Team / Manager', icon: '📧', description: 'Inform the new and previous managers and team members of the role change. Share updated reporting lines and responsibilities.', role: 'HR', step_type: 'app_notification' as const },
+  { key: 'review_access', label: 'Review Remaining Access', icon: '🔍', description: 'Review any access that requires manual attention — SharePoint sites, Teams channels, shared drives, and application permissions that were not automatically updated.', role: 'Manager', step_type: 'it_provisioning' as const },
+  { key: 'confirm_complete', label: 'Confirm Complete', icon: '✅', description: 'Confirm all changes have been applied and verified. Mark the role change as complete.', role: 'HR', step_type: 'checklist' as const },
 ]
 
 interface EnginePersona {
@@ -308,15 +321,15 @@ interface OnboardRecord {
 }
 
 const WORKFLOW_STEPS = [
-  { key: 'details', label: 'Create Starter Details', icon: '📋', description: 'Capture personal information, role details, start date and contract type for the new employee.' },
-  { key: 'equipment', label: 'Order Equipment', icon: '💻', description: 'Raise equipment requests — laptop, monitor, keyboard, headset, building pass. Select device type and delivery address.' },
-  { key: 'meeting', label: 'Organise First Meeting', icon: '🤝', description: 'Schedule welcome meeting with manager. Send calendar invite and prepare agenda covering first week expectations.' },
-  { key: 'notify_manager', label: 'Notify Manager', icon: '📧', description: 'Inform the line manager of confirmed start date, equipment status and onboarding checklist. Share new starter profile.' },
-  { key: 'plan_day1', label: 'Plan First Day', icon: '📅', description: 'Prepare day-one schedule: building access, desk assignment, welcome pack, team introductions and lunch arrangements.' },
-  { key: 'inform_starter', label: 'Inform Starter', icon: '✉️', description: 'Send welcome email to the new starter with start date, office location, dress code, parking info and first day schedule.' },
-  { key: 'assign_elearning', label: 'Assign New Starter E-Learning', icon: '📚', description: 'Assign the company new starter e-learning course. 7-day completion deadline from start date, appears in employee reminders.' },
-  { key: 'accounts', label: 'Create Accounts & Licences', icon: '🔐', description: 'Create the new starter\'s Microsoft 365 account via InflowOnboarder — checks licence availability, creates the account, assigns the licence and adds to groups. Generates a temporary password.' },
-  { key: 'day1_access', label: 'Day 1 Access Verification', icon: '✅', description: 'Confirm the new starter can log in, access email, Teams, shared drives and all required business applications on their first day.' },
+  { key: 'details', label: 'Create Starter Details', icon: '📋', description: 'Capture personal information, role details, start date and contract type for the new employee.', step_type: 'hr_action' as const },
+  { key: 'equipment', label: 'Order Equipment', icon: '💻', description: 'Raise equipment requests — laptop, monitor, keyboard, headset, building pass. Select device type and delivery address.', step_type: 'it_provisioning' as const },
+  { key: 'meeting', label: 'Organise First Meeting', icon: '🤝', description: 'Schedule welcome meeting with manager. Send calendar invite and prepare agenda covering first week expectations.', step_type: 'meeting' as const },
+  { key: 'notify_manager', label: 'Notify Manager', icon: '📧', description: 'Inform the line manager of confirmed start date, equipment status and onboarding checklist. Share new starter profile.', step_type: 'app_notification' as const },
+  { key: 'plan_day1', label: 'Plan First Day', icon: '📅', description: 'Prepare day-one schedule: building access, desk assignment, welcome pack, team introductions and lunch arrangements.', step_type: 'hr_action' as const },
+  { key: 'inform_starter', label: 'Inform Starter', icon: '✉️', description: 'Send welcome email to the new starter with start date, office location, dress code, parking info and first day schedule.', step_type: 'email' as const },
+  { key: 'assign_elearning', label: 'Assign New Starter E-Learning', icon: '📚', description: 'Assign the company new starter e-learning course. 7-day completion deadline from start date, appears in employee reminders.', step_type: 'elearning' as const },
+  { key: 'accounts', label: 'Create Accounts & Licences', icon: '🔐', description: 'Create the new starter\'s Microsoft 365 account via InflowOnboarder — checks licence availability, creates the account, assigns the licence and adds to groups. Generates a temporary password.', step_type: 'it_provisioning' as const },
+  { key: 'day1_access', label: 'Day 1 Access Verification', icon: '✅', description: 'Confirm the new starter can log in, access email, Teams, shared drives and all required business applications on their first day.', step_type: 'checklist' as const },
 ]
 
 export default function AdminOnboarding() {
@@ -420,14 +433,17 @@ export default function AdminOnboarding() {
 
   // Custom workflow steps state
   interface StepConfig {
-    step_type?: 'action' | 'notice'
+    step_type?: 'hr_action' | 'email' | 'app_notification' | 'meeting' | 'elearning' | 'approval' | 'it_provisioning' | 'checklist' | 'action' | 'notice'
+    assignee_role?: 'hr_admin' | 'line_manager' | 'it_contact' | 'starter_leaver' | 'finance' | 'custom'
+    relative_due_days?: number
+    relative_due_anchor?: 'start_date' | 'leave_date' | 'effective_date'
     notify_email?: string
     notify_contact_key?: string
     notify_starter?: boolean
     notify_subject?: string
     notify_body?: string
     requires_step?: string
-    meeting?: { title?: string; body?: string; attendees?: string[] }
+    meeting?: { title?: string; body?: string; attendees?: string[]; duration_minutes?: number }
     phase?: 'preparation' | 'post_join'
   }
   interface CustomStep { id?: number; step_key: string; label: string; icon: string; description: string; sort_order: number; is_default: boolean; step_config?: StepConfig }
@@ -457,7 +473,7 @@ export default function AdminOnboarding() {
   const [reassignStepKey, setReassignStepKey] = useState<string | null>(null)
   const [reassignStepEmail, setReassignStepEmail] = useState('')
 
-  const activeSteps: CustomStep[] = hasCustomSteps ? customSteps : WORKFLOW_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true }))
+  const activeSteps: CustomStep[] = hasCustomSteps ? customSteps : WORKFLOW_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true, step_config: { step_type: s.step_type } as StepConfig }))
 
   // M365 provisioning state (InflowOnboarder v2)
   interface M365Actions {
@@ -894,7 +910,7 @@ export default function AdminOnboarding() {
       await supabase.from('notifications').insert({
         company_id: selectedCompanyId,
         employee_id: recipientEmp.id,
-        type: stepConfig.step_type === 'notice' ? 'info' : 'action',
+        type: (stepConfig.step_type === 'app_notification' || stepConfig.step_type === 'email' || stepConfig.step_type === 'notice') ? 'info' : 'action',
         notification_type: isMeeting ? 'onboarding_meeting' : 'onboarding_task',
         title: subject,
         message: body,
@@ -1016,7 +1032,7 @@ export default function AdminOnboarding() {
   function initEditingSteps() {
     const steps = hasCustomSteps
       ? customSteps.map(s => ({ ...s }))
-      : WORKFLOW_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true }))
+      : WORKFLOW_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true, step_config: { step_type: s.step_type } as StepConfig }))
     setEditingSteps(steps)
     setSettingsDirty(false)
     setEditingIdx(null)
@@ -3892,9 +3908,19 @@ export default function AdminOnboarding() {
               {(() => {
                 const totalSteps = activeSteps.length
                 const doneCount = activeSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length
+                const pct = totalSteps > 0 ? Math.round((doneCount / totalSteps) * 100) : 0
+                const r = 18, stroke = 4, circ = 2 * Math.PI * r, offset = circ - (pct / 100) * circ
                 return (
                   <>
-                    <div className="admin-wf-sidebar-progress"><div className="admin-wf-sidebar-progress-fill" style={{ width: `${(doneCount / totalSteps) * 100}%` }} /></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '6px 0' }}>
+                      <svg width={48} height={48} viewBox="0 0 44 44">
+                        <circle cx="22" cy="22" r={r} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
+                        <circle cx="22" cy="22" r={r} fill="none" stroke={pct === 100 ? '#059669' : '#6366f1'} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} transform="rotate(-90 22 22)" style={{ transition: 'stroke-dashoffset 0.4s ease' }} />
+                        <text x="22" y="22" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 11, fontWeight: 700, fill: pct === 100 ? '#059669' : '#6366f1' }}>{pct}%</text>
+                      </svg>
+                      <span style={{ fontSize: 12, color: '#888' }}>{doneCount} of {totalSteps} steps complete</span>
+                    </div>
+                    <div className="admin-wf-sidebar-progress"><div className="admin-wf-sidebar-progress-fill" style={{ width: `${pct}%` }} /></div>
                     <div className="admin-wf-sidebar-meta">
                       <span>{doneCount}/{totalSteps}</span>
                       <span>Starts {selectedRecord.start_date ? new Date(selectedRecord.start_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBC'}</span>
@@ -4041,7 +4067,7 @@ export default function AdminOnboarding() {
                   <div className="admin-wf-meta-grid">
                     <div className="admin-wf-meta-item">
                       <label>TYPE</label>
-                      <span><span className="meta-icon">👤</span>{step.step_config?.step_type === 'notice' ? 'Notice' : 'HR action'}</span>
+                      {(() => { const tm = STEP_TYPE_META[step.step_config?.step_type || 'checklist']; return tm ? <span><span className="meta-icon">{tm.icon}</span><span style={{ color: tm.color }}>{tm.label}</span></span> : null })()}
                     </div>
                     <div className="admin-wf-meta-item">
                       <label>ASSIGNED TO</label>
@@ -4068,7 +4094,7 @@ export default function AdminOnboarding() {
                     <div style={{ margin: '0 0 20px', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
-                          {step.step_config.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {step.step_config.notify_starter ? `${selectedRecord.firstname} ${selectedRecord.surname}` : step.step_config.notify_contact_key ? (companyContacts.find(c => c.contact_key === step.step_config!.notify_contact_key)?.label || step.step_config.notify_contact_key) : step.step_config.notify_email}
+                          {STEP_TYPE_META[step.step_config.step_type || 'checklist']?.icon || '📋'} {STEP_TYPE_META[step.step_config.step_type || 'checklist']?.label || 'Task'}: {step.step_config.notify_starter ? `${selectedRecord.firstname} ${selectedRecord.surname}` : step.step_config.notify_contact_key ? (companyContacts.find(c => c.contact_key === step.step_config!.notify_contact_key)?.label || step.step_config.notify_contact_key) : step.step_config.notify_email}
                         </span>
                         {step.step_config.requires_step && (() => {
                           const reqDone = stepChecks[step.step_config.requires_step!]
@@ -5131,7 +5157,7 @@ export default function AdminOnboarding() {
                               <div style={{ margin: '8px 0', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }} onClick={e => e.stopPropagation()}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                   <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
-                                    {offCfg.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {offCfg.notify_starter ? record.employee_name : offCfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === offCfg.notify_contact_key)?.label || offCfg.notify_contact_key) : offCfg.notify_email}
+                                    {STEP_TYPE_META[offCfg.step_type || 'checklist']?.icon || '📋'} {STEP_TYPE_META[offCfg.step_type || 'checklist']?.label || 'Task'}: {offCfg.notify_starter ? record.employee_name : offCfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === offCfg.notify_contact_key)?.label || offCfg.notify_contact_key) : offCfg.notify_email}
                                   </span>
                                   {offCfg.requires_step && !offReqDone && <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {OFFBOARD_STEPS.find(s => s.key === offCfg.requires_step)?.label || offCfg.requires_step}</span>}
                                   <button
@@ -7171,7 +7197,7 @@ export default function AdminOnboarding() {
               <button
                 onClick={() => {
                   setSettingsWorkflowType('offboarding')
-                  const defaults = OFFBOARD_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true }))
+                  const defaults = OFFBOARD_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true, step_config: { step_type: s.step_type } as StepConfig }))
                   setOffboardEditingSteps(hasOffboardCustomSteps ? offboardCustomSteps : defaults)
                   setSettingsDirty(false)
                 }}
@@ -7312,14 +7338,54 @@ export default function AdminOnboarding() {
                         <div style={{ border: '1px solid #e0e7ff', borderRadius: 8, padding: 12, background: '#f8faff' }}>
                           <div style={{ fontWeight: 600, fontSize: 12, color: '#4338ca', marginBottom: 8 }}>Notification Settings</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                            <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Type:</label>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
-                              <input type="radio" name={`step_type_${i}`} checked={cfg.step_type === 'action' || !cfg.step_type} onChange={() => updateCfg({ step_type: 'action' })} /> Action
-                            </label>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
-                              <input type="radio" name={`step_type_${i}`} checked={cfg.step_type === 'notice'} onChange={() => updateCfg({ step_type: 'notice' })} /> Notice
-                            </label>
-                            <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>{cfg.step_type === 'notice' ? 'Informational only' : 'Requires recipient to act'}</span>
+                            <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Task Type:</label>
+                            <select className="admin-input" value={cfg.step_type || 'checklist'} onChange={e => updateCfg({ step_type: e.target.value as StepConfig['step_type'] })} style={{ fontSize: 12, maxWidth: 200 }}>
+                              {Object.entries(STEP_TYPE_META).filter(([k]) => k !== 'action' && k !== 'notice').map(([k, v]) => (
+                                <option key={k} value={k}>{v.icon} {v.label}</option>
+                              ))}
+                            </select>
+                            <span style={{ fontSize: 11, color: '#888' }}>{STEP_TYPE_META[cfg.step_type || 'checklist']?.desc}</span>
+                          </div>
+
+                          {/* Assignee Role */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                            <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Assignee:</label>
+                            <select className="admin-input" value={cfg.assignee_role || ''} onChange={e => updateCfg({ assignee_role: (e.target.value || undefined) as StepConfig['assignee_role'] })} style={{ fontSize: 12, maxWidth: 200 }}>
+                              <option value="">— Not set —</option>
+                              <option value="hr_admin">HR Admin</option>
+                              <option value="line_manager">Line Manager</option>
+                              <option value="it_contact">IT Contact</option>
+                              <option value="starter_leaver">Starter / Leaver</option>
+                              <option value="finance">Finance</option>
+                              <option value="custom">Custom (see notification)</option>
+                            </select>
+                          </div>
+
+                          {/* Relative Due Date */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Due:</label>
+                            <select className="admin-input" value={cfg.relative_due_anchor || 'start_date'} onChange={e => updateCfg({ relative_due_anchor: e.target.value as StepConfig['relative_due_anchor'] })} style={{ fontSize: 12, width: 130 }}>
+                              <option value="start_date">Start date</option>
+                              <option value="leave_date">Leave date</option>
+                              <option value="effective_date">Effective date</option>
+                            </select>
+                            <select className="admin-input" value={cfg.relative_due_days !== undefined ? (cfg.relative_due_days < 0 ? 'minus' : 'plus') : ''} onChange={e => {
+                              const dir = e.target.value
+                              if (!dir) { updateCfg({ relative_due_days: undefined }); return }
+                              const abs = Math.abs(cfg.relative_due_days || 0) || 1
+                              updateCfg({ relative_due_days: dir === 'minus' ? -abs : abs })
+                            }} style={{ fontSize: 12, width: 90 }}>
+                              <option value="">—</option>
+                              <option value="minus">minus</option>
+                              <option value="plus">plus</option>
+                            </select>
+                            {cfg.relative_due_days !== undefined && (
+                              <input type="number" className="admin-input" value={Math.abs(cfg.relative_due_days)} onChange={e => {
+                                const v = parseInt(e.target.value) || 0
+                                updateCfg({ relative_due_days: (cfg.relative_due_days || 0) < 0 ? -v : v })
+                              }} style={{ fontSize: 12, width: 55 }} min={0} max={90} />
+                            )}
+                            {cfg.relative_due_days !== undefined && <span style={{ fontSize: 11, color: '#888' }}>days</span>}
                           </div>
                           <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                             <div style={{ flex: 1, minWidth: 180 }}>
@@ -7380,6 +7446,10 @@ export default function AdminOnboarding() {
                                   <input className="admin-input" value={cfg.meeting.title || ''} onChange={e => updateCfg({ meeting: { ...cfg.meeting!, title: e.target.value } })} style={{ fontSize: 12, width: '100%' }} />
                                 </div>
                                 <div style={{ marginBottom: 6 }}>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Duration (minutes)</label>
+                                  <input type="number" className="admin-input" value={cfg.meeting?.duration_minutes || 30} onChange={e => updateCfg({ meeting: { ...cfg.meeting!, duration_minutes: parseInt(e.target.value) || 30 } })} style={{ fontSize: 12, width: 80 }} min={15} max={480} step={15} />
+                                </div>
+                                <div style={{ marginBottom: 6 }}>
                                   <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Email body template</label>
                                   <textarea className="admin-input" value={cfg.meeting.body || ''} onChange={e => updateCfg({ meeting: { ...cfg.meeting!, body: e.target.value } })} rows={4} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />
                                 </div>
@@ -7414,7 +7484,7 @@ export default function AdminOnboarding() {
                       <>
                         <div style={{ fontWeight: 700, fontSize: 14, color: '#1e1e2d' }}>
                           {step.label}
-                          {(cfg.notify_email || cfg.notify_contact_key || cfg.notify_starter) && <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 4, background: cfg.step_type === 'notice' ? '#e0f2fe' : '#ede9fe', color: cfg.step_type === 'notice' ? '#0369a1' : '#6d28d9', fontWeight: 600 }}>{cfg.step_type === 'notice' ? 'Notice' : 'Action'}</span>}
+                          {(() => { const tm = STEP_TYPE_META[cfg.step_type || 'checklist']; return tm ? <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 4, background: tm.bg, color: tm.color, fontWeight: 600 }}>{tm.label}</span> : null })()}
                           {cfg.meeting && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>Meeting</span>}
                           {cfg.requires_step && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>Requires: {allStepKeys.find(s => s.key === cfg.requires_step)?.label || cfg.requires_step}</span>}
                           {cfg.phase === 'post_join' && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#d1fae5', color: '#065f46', fontWeight: 600 }}>Post-Join</span>}
