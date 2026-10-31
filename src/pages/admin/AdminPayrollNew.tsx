@@ -2688,8 +2688,7 @@ export default function AdminPayrollNew() {
     if (released && features.modulr_integration && modulrConnected) {
       const p = payslips.find(ps => ps.id === id)
       if (p && p.employee?.id && !modulrPaidPayslips.has(p.id) && (p.source === 'xero' || p.source === 'sage')) {
-        setModulrWarning({ show: true, payslipIds: [id], bulk: false })
-        return
+        if (!confirm(`This payslip has not been submitted to Modulr for payment.\n\nRelease to ${p.employee.first_name} ${p.employee.last_name} anyway?`)) return
       }
     }
     await doRelease([id], released)
@@ -2726,18 +2725,33 @@ export default function AdminPayrollNew() {
   async function doModulrPay(eligible: Payslip[]) {
     setModulrPaying(true)
     try {
+      const payslipIds = eligible.map(p => p.id)
+      const { data: existingItems } = await supabase
+        .from('modulr_payment_items').select('payslip_id')
+        .in('payslip_id', payslipIds).neq('status', 'failed')
+      const alreadyPaid = new Set((existingItems || []).map((i: any) => i.payslip_id))
+      const freshEligible = eligible.filter(p => !alreadyPaid.has(p.id))
+      if (!freshEligible.length) {
+        const paidIds = new Set(modulrPaidPayslips)
+        for (const id of alreadyPaid) paidIds.add(id)
+        setModulrPaidPayslips(paidIds)
+        showError('These payslips have already been submitted to Modulr')
+        return
+      }
+
+      const skippedNames: string[] = []
       const payments: { employee_id: string; payslip_id: number; amount: number; sort_code: string; account_number: string; reference: string; employee_name: string }[] = []
-      for (const p of eligible) {
+      for (const p of freshEligible) {
         const emp = employees.find(e => e.id === p.employee?.id)
         if (!emp) continue
         const sortCode = (emp.bank_sort_code || '').replace(/[-\s]/g, '')
         const accountNo = (emp.bank_account_number || '').replace(/\s/g, '')
-        if (!/^\d{6}$/.test(sortCode) || !/^\d{8}$/.test(accountNo)) continue
+        if (!/^\d{6}$/.test(sortCode) || !/^\d{8}$/.test(accountNo)) { skippedNames.push(`${emp.first_name} ${emp.last_name} (missing bank details)`); continue }
         const netPay = Number(p.net_pay)
-        if (netPay <= 0) continue
+        if (netPay <= 0) { skippedNames.push(`${emp.first_name} ${emp.last_name} (zero net pay)`); continue }
         payments.push({ employee_id: emp.id, payslip_id: p.id, amount: netPay, sort_code: sortCode, account_number: accountNo, reference: `SALARY ${p.pay_period_start}`, employee_name: `${emp.first_name} ${emp.last_name}` })
       }
-      if (!payments.length) { showError('No employees with valid bank details and positive net pay'); return }
+      if (!payments.length) { showError('No employees with valid bank details and positive net pay' + (skippedNames.length ? '.\n\nSkipped: ' + skippedNames.join(', ') : '')); return }
 
       const periods = [...new Set(eligible.map(p => p.pay_period_start))].sort()
       const payrunRef = `PR-${periods[0]}_${periods[periods.length - 1]}`
@@ -3270,29 +3284,39 @@ export default function AdminPayrollNew() {
                       <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => bulkUpdateMonthStatus(group.payslips, 'processed', group.key)} style={{ fontSize: 11 }}>All → Processed</button>
                       <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => bulkUpdateMonthStatus(group.payslips, 'paid', group.key)} style={{ fontSize: 11 }}>All → Paid</button>
                       <span style={{ borderLeft: '1px solid var(--border, #e5e7eb)', height: 16, margin: '0 4px' }} />
-                      {allReleased ? (
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                          All Released
-                        </span>
-                      ) : (
-                        <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => releaseAllMonth(group.payslips)} style={{ fontSize: 11, background: '#2e7d32', color: '#fff', border: '1px solid #2e7d32' }}>
-                          Release All ({gUnreleased})
-                        </button>
-                      )}
-                      {features.modulr_integration && modulrConnected && (() => {
-                        const modulrEligible = group.payslips.filter(p => p.status === 'paid' && !p.released && (p.source === 'xero' || p.source === 'sage') && p.employee?.id && !modulrPaidPayslips.has(p.id) && !modulrHeldPayslips.has(p.id))
-                        const allPushed = group.payslips.filter(p => p.status === 'paid' && (p.source === 'xero' || p.source === 'sage') && modulrPaidPayslips.has(p.id)).length > 0
-                        return modulrEligible.length > 0 ? (
-                          <button className="admin-btn-sm" disabled={modulrPaying} onClick={() => payWithModulrMonth(group.payslips)} style={{ fontSize: 11, background: '#1a237e', color: '#fff', border: '1px solid #1a237e' }}>
-                            Pay with Modulr ({modulrEligible.length})
-                          </button>
-                        ) : allPushed ? (
-                          <span style={{ fontSize: 11, fontWeight: 600, color: '#1a237e', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1a237e" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                            Modulr Paid
-                          </span>
-                        ) : null
+                      {(() => {
+                        const hasModulr = features.modulr_integration && modulrConnected
+                        const modulrEligible = hasModulr ? group.payslips.filter(p => p.status === 'paid' && !p.released && (p.source === 'xero' || p.source === 'sage') && p.employee?.id && !modulrPaidPayslips.has(p.id) && !modulrHeldPayslips.has(p.id)) : []
+                        const modulrPaidInGroup = hasModulr ? group.payslips.filter(p => p.status === 'paid' && (p.source === 'xero' || p.source === 'sage') && modulrPaidPayslips.has(p.id)) : []
+                        const allModulrDone = hasModulr && modulrEligible.length === 0 && modulrPaidInGroup.length > 0
+                        const releaseBlocked = hasModulr && modulrEligible.length > 0
+                        return (
+                          <>
+                            {allReleased ? (
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                All Released
+                              </span>
+                            ) : (
+                              <button className="admin-btn-sm" disabled={bulkUpdating || releaseBlocked} onClick={() => releaseAllMonth(group.payslips)}
+                                title={releaseBlocked ? 'Submit to Modulr first' : undefined}
+                                style={{ fontSize: 11, background: releaseBlocked ? '#9e9e9e' : '#2e7d32', color: '#fff', border: `1px solid ${releaseBlocked ? '#9e9e9e' : '#2e7d32'}`, cursor: releaseBlocked ? 'not-allowed' : undefined }}>
+                                Release All ({gUnreleased})
+                              </button>
+                            )}
+                            {hasModulr && modulrEligible.length > 0 && (
+                              <button className="admin-btn-sm" disabled={modulrPaying} onClick={() => payWithModulrMonth(group.payslips)} style={{ fontSize: 11, background: '#1a237e', color: '#fff', border: '1px solid #1a237e' }}>
+                                Pay with Modulr ({modulrEligible.length})
+                              </button>
+                            )}
+                            {hasModulr && allModulrDone && (
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#1a237e', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1a237e" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                Modulr Paid
+                              </span>
+                            )}
+                          </>
+                        )
                       })()}
                       {gDraft > 0 && (
                         <button className="admin-btn-sm admin-btn-danger" disabled={bulkUpdating} onClick={() => deleteDraftMonth(group.key, group.payslips)} style={{ fontSize: 11, marginLeft: 'auto' }}>
