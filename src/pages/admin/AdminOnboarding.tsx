@@ -1679,7 +1679,7 @@ export default function AdminOnboarding() {
       body: JSON.stringify({ company_id: selectedCompanyId, action, ...body }),
     })
     const data = await res.json()
-    console.log('[IFO]', action, 'response:', res.status, data)
+    console.log('[IFO]', action, 'response:', res.status, action === 'reveal-pass' ? '{redacted}' : data)
     if (!res.ok) { showError(data.error || 'Request failed'); return null }
     return data
   }
@@ -3895,7 +3895,7 @@ export default function AdminOnboarding() {
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Name</th><th>Company</th><th>Role</th><th>Start Date</th><th>Status</th><th>Status Update</th><th>Progress</th><th>Actions</th></tr></thead>
+                <thead><tr><th style={{ width: 50 }}>ID</th><th>Name</th><th>Company</th><th>Role</th><th>Start Date</th><th>Status</th><th>Status Update</th><th>Progress</th><th>Actions</th></tr></thead>
                 <tbody>
                   {paginatedFiltered.map(r => {
                     const skipped = r.skipped_steps || {}
@@ -3910,6 +3910,7 @@ export default function AdminOnboarding() {
                     const isFrozen = frozenEmployees.some(f => f.employee_email === r.user_email && f.status !== 'recovered')
                     return (
                       <tr key={r.id}>
+                        <td style={{ fontSize: 12, color: '#8b8fa3' }}>{r.id}</td>
                         <td><strong>{r.firstname} {r.surname}</strong></td>
                         <td style={{ fontSize: 12, color: '#666' }}>{r.company?.name || '—'}</td>
                         <td>{r.job_title || '—'}</td>
@@ -3952,6 +3953,7 @@ export default function AdminOnboarding() {
               <h3>JOINER</h3>
               <h2>{selectedRecord.firstname} {selectedRecord.surname}</h2>
               <p className="admin-wf-role">{selectedRecord.job_title}</p>
+              <p style={{ fontSize: 11, color: '#8b8fa3', marginTop: 2 }}>ID: {selectedRecord.id}</p>
               {(() => {
                 const totalSteps = activeSteps.length
                 const doneCount = activeSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length
@@ -5255,12 +5257,20 @@ export default function AdminOnboarding() {
       {tab === 'offboard-workflow' && (() => {
         const record = offboardRecords.find(r => r.id === offboardSelectedId)
         if (!record) return <div className="admin-empty">Select an offboarding record</div>
+        const steps = OFFBOARD_STEPS
+        const currentStep = steps[offboardStep] || steps[0]
+        const stepKey = currentStep.key
+        const done = offboardChecks[stepKey]
+        const skipped = offboardSkips[stepKey]
+        const totalSteps = steps.length
+        const doneCount = steps.filter(s => offboardChecks[s.key] || offboardSkips[s.key]).length
+        const pct = totalSteps > 0 ? Math.round((doneCount / totalSteps) * 100) : 0
+        const remaining = totalSteps - doneCount
+        const stepIndexInPhase = offboardStep + 1
+        const tm = STEP_TYPE_META[currentStep.step_type || 'checklist']
         return (
-          <div className="admin-workflow">
-            <div className="admin-workflow-header">
-              <h3>{record.employee_name}</h3>
-              <p>{record.job_title} · Last day {record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB') : 'TBC'}</p>
-            </div>
+          <div>
+            {/* M365 Account Offboarding info banner */}
             {features.inflowonboarder_integration && ifoConnected && leaverM365Actions && identityProvider !== 'google_workspace' && (
               <div style={{ border: '1px solid #ef9a9a', borderRadius: 10, padding: '14px 16px', margin: '0 0 16px', background: 'linear-gradient(135deg, rgba(255,235,238,.6), rgba(252,228,236,.4))' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -5297,851 +5307,894 @@ export default function AdminOnboarding() {
                 )}
               </div>
             )}
-            <div className="admin-workflow-timeline">
-              {OFFBOARD_STEPS.map((step, i) => {
-                const done = offboardChecks[step.key]
-                const skipped = offboardSkips[step.key]
-                const isCurrent = i === offboardStep
-                return (
-                  <div key={step.key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => { setOffboardStep(i); if (step.key === 'reassign_reports' && !done && !skipped && record) loadReassignData(record); if (step.key === 'remove_accounts') loadLeaverM365Actions(record.id) }}>
-                    <div className="admin-wf-connector" />
-                    <div className="admin-wf-dot">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
-                    <div className="admin-wf-content">
-                      <h4>{step.label}{skipped && <span className="admin-wf-skip-badge">Skipped</span>}<span style={{ fontSize: 11, color: '#888', fontWeight: 400, marginLeft: 8 }}>{step.role}</span></h4>
-                      {isCurrent && (
-                        <div className="admin-wf-detail">
-                          <p>{step.description}</p>
 
-                          {/* ── Offboard Send Notification / Meeting button ── */}
-                          {(() => {
-                            const offCfg = (offboardCustomSteps.find(cs => cs.step_key === step.key)?.step_config) as StepConfig | undefined
-                            if (!offCfg || (!offCfg.notify_email && !offCfg.notify_contact_key && !offCfg.notify_starter)) return null
-                            const offReqDone = offCfg.requires_step ? offboardChecks[offCfg.requires_step] : true
-                            return (
-                              <div style={{ margin: '8px 0', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }} onClick={e => e.stopPropagation()}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
-                                    {STEP_TYPE_META[offCfg.step_type || 'checklist']?.icon || '📋'} {STEP_TYPE_META[offCfg.step_type || 'checklist']?.label || 'Task'}: {offCfg.notify_starter ? record.employee_name : offCfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === offCfg.notify_contact_key)?.label || offCfg.notify_contact_key) : offCfg.notify_email}
-                                  </span>
-                                  {offCfg.requires_step && !offReqDone && <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {OFFBOARD_STEPS.find(s => s.key === offCfg.requires_step)?.label || offCfg.requires_step}</span>}
-                                  <button
-                                    className="admin-btn-sm admin-btn-save"
-                                    disabled={stepNotifSending === step.key || !offReqDone}
-                                    onClick={async () => {
-                                      setStepNotifSending(step.key)
-                                      await sendStepNotification(offCfg, record, step.label, 'offboarding')
-                                      setStepNotifSending(null)
-                                    }}
-                                    style={{ fontSize: 12, padding: '4px 12px' }}
-                                  >
-                                    {stepNotifSending === step.key ? 'Sending...' : offCfg.meeting ? '📅 Send Meeting Invite' : '📧 Send Notification'}
-                                  </button>
-                                </div>
-                                {offCfg.meeting && (
-                                  <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
-                                    Meeting: {resolveStepPlaceholders(offCfg.meeting.title || '', record)} · Attendees: {offCfg.meeting.attendees?.join(', ') || 'manager, leaver'}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })()}
+            <div className="admin-wf-split">
+              {/* ── LEFT SIDEBAR: Step list ── */}
+              <div className="admin-wf-sidebar">
+                <div className="admin-wf-sidebar-header">
+                  <h3>LEAVER</h3>
+                  <h2>{record.employee_name}</h2>
+                  <p className="admin-wf-role">{record.job_title}</p>
+                  <div className="admin-wf-sidebar-progress-wrap">
+                    <div className="admin-wf-sidebar-progress-fill" style={{ width: `${Math.max(pct, 8)}%`, background: 'linear-gradient(90deg, #c62828, #ef5350)' }} />
+                    <div className="admin-wf-sidebar-progress-text">{doneCount}/{totalSteps}</div>
+                  </div>
+                  <div className="admin-wf-sidebar-meta">
+                    <span>{remaining} remaining</span>
+                    <span>Last day {record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBC'}</span>
+                  </div>
+                </div>
+                <div className="admin-wf-phase-group">
+                  <div className="admin-wf-phase-header">
+                    <span>▾ OFFBOARDING</span>
+                    <span className="admin-wf-phase-badge" style={{ background: doneCount === totalSteps && totalSteps > 0 ? '#c62828' : '#8b8fa3' }}>{doneCount}/{totalSteps}</span>
+                  </div>
+                  {steps.map((step, i) => {
+                    const sDone = offboardChecks[step.key]
+                    const sSkipped = offboardSkips[step.key]
+                    return (
+                      <div key={step.key}
+                        className={`admin-wf-step-row ${sDone ? 'done' : ''} ${sSkipped ? 'skipped' : ''} ${i === offboardStep ? 'active' : ''}`}
+                        style={i === offboardStep ? { borderLeftColor: '#c62828' } : undefined}
+                        onClick={() => { setOffboardStep(i); if (step.key === 'reassign_reports' && !sDone && !sSkipped && record) loadReassignData(record); if (step.key === 'remove_accounts') loadLeaverM365Actions(record.id) }}>
+                        <div className="admin-wf-step-icon" style={sDone ? { color: '#c62828' } : undefined}>{sDone ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg> : sSkipped ? '⏭' : ''}</div>
+                        <span className="admin-wf-step-label">{step.label}</span>
+                        {sSkipped && <span className="admin-wf-skip-badge">Skipped</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
 
-                          {/* Survey assignment card (offboarding) */}
-                          {(() => {
-                            const offSurveyCfg = (offboardCustomSteps.find(cs => cs.step_key === step.key)?.step_config) as StepConfig | undefined
-                            if (!offSurveyCfg || offSurveyCfg.step_type !== 'survey' || !offSurveyCfg.survey_id || done || skipped) return null
-                            return (
-                              <div style={{ margin: '8px 0', padding: 12, border: '1px solid #99f6e4', borderRadius: 8, background: '#f0fdfa' }} onClick={e => e.stopPropagation()}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: 12, color: '#0d9488', fontWeight: 600 }}>📊 Survey: {companySurveys.find(s => s.id === offSurveyCfg.survey_id)?.title || 'Unknown'}</span>
-                                  <button
-                                    className="admin-btn-sm admin-btn-save"
-                                    disabled={surveyAssigning === step.key}
-                                    onClick={async () => {
-                                      const ok = await assignSurveyToEmployee(offSurveyCfg.survey_id!, record.employee_email, record.employee_name, step.key)
-                                      if (ok) completeOffboardStep(step.key)
-                                    }}
-                                    style={{ fontSize: 12, padding: '4px 12px', background: '#0d9488' }}
-                                  >
-                                    {surveyAssigning === step.key ? 'Assigning...' : `📊 Assign to ${record.employee_name.split(' ')[0]}`}
-                                  </button>
-                                </div>
-                                <div style={{ fontSize: 11, color: '#115e59', marginTop: 4 }}>Assigns this survey to the employee and creates a pending response in their My Surveys page.</div>
-                              </div>
-                            )
-                          })()}
+              {/* ── RIGHT PANEL: Step detail ── */}
+              <div className="admin-wf-detail-panel">
+                <div className="admin-wf-detail-top">
+                  <p className="admin-wf-detail-breadcrumb">OFFBOARDING · STEP {stepIndexInPhase} OF {totalSteps}</p>
+                  <h2 className="admin-wf-detail-title">{currentStep.label}</h2>
+                  <div className="admin-wf-detail-actions">
+                    {done ? (
+                      <>
+                        <button className="admin-wf-detail-btn done-btn">✓ Completed</button>
+                        <button className="admin-wf-detail-btn" onClick={() => uncompleteOffboardStep(stepKey)}>Undo</button>
+                      </>
+                    ) : skipped ? (
+                      <>
+                        <button className="admin-wf-detail-btn primary" style={{ background: '#c62828' }} onClick={() => completeOffboardStep(stepKey)}>Mark as done</button>
+                        <button className="admin-wf-detail-btn" onClick={() => uncompleteOffboardStep(stepKey)}>Undo Skip</button>
+                      </>
+                    ) : stepKey === 'reassign_reports' && reassignData && (reassignData.directReports.length > 0 || reassignData.pendingActions > 0) ? (
+                      <>
+                        <button className="admin-wf-detail-btn primary" style={{ background: '#c62828' }} onClick={() => completeOffboardStep(stepKey)}>Mark as done</button>
+                        <button className="admin-wf-detail-btn" onClick={() => skipOffboardStep(stepKey)}>Skip</button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="admin-wf-detail-btn primary" style={{ background: '#c62828' }} onClick={() => completeOffboardStep(stepKey)}>Mark as done</button>
+                        <button className="admin-wf-detail-btn" onClick={() => skipOffboardStep(stepKey)}>Skip</button>
+                      </>
+                    )}
+                  </div>
+                </div>
 
-                          {/* Timing hint for post-leave-date steps when M365 automation is active */}
-                          {ifoConnected && leaverM365Actions && record.end_date && !done && !skipped && (() => {
-                            const hints: Record<string, string> = {
-                              remove_accounts: leaverM365Actions.schedule_id
-                                ? `Scheduled: sign-in blocked on ${new Date(record.end_date).toLocaleDateString('en-GB')} at 17:00, licences removed ${leaverLicenceRemovalDays} days later. If you need to act sooner (e.g. garden leave), cancel the schedule and run manually.`
-                                : `Best practice: complete on or after the leave date (${new Date(record.end_date).toLocaleDateString('en-GB')}). Removing access while the employee is still working may breach their contract unless they are on garden leave.`,
-                              convert_shared_mailbox: `Best practice: convert after sign-in is blocked (${new Date(record.end_date).toLocaleDateString('en-GB')} at 17:00). The mailbox must remain active until the employee leaves.`,
-                              forward_to_manager: `Best practice: set up forwarding after the leave date (${new Date(record.end_date).toLocaleDateString('en-GB')}). The employee should not see forwarded copies of their own mail.`,
-                              confirm_payments: `Best practice: confirm after processing the final pay run covering all accrued holiday, expenses and deductions up to ${new Date(record.end_date).toLocaleDateString('en-GB')}. The P45 must be issued after, not before, the final pay.`,
-                            }
-                            const hint = hints[step.key]
-                            if (!hint) return null
-                            return (
-                              <div style={{ margin: '8px 0', padding: '8px 12px', background: '#fffde7', border: '1px solid #fff9c4', borderRadius: 6, fontSize: 11, color: '#5d4037', lineHeight: 1.5, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f57f17" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                                <span>{hint}</span>
-                              </div>
-                            )
-                          })()}
+                <div className="admin-wf-detail-body">
+                  {/* Metadata grid */}
+                  <div className="admin-wf-meta-grid">
+                    <div className="admin-wf-meta-item">
+                      <label>TYPE</label>
+                      {tm ? <span><span className="meta-icon">{tm.icon}</span><span style={{ color: tm.color }}>{tm.label}</span></span> : null}
+                    </div>
+                    <div className="admin-wf-meta-item">
+                      <label>ASSIGNED TO</label>
+                      <span>{currentStep.role}</span>
+                    </div>
+                  </div>
 
-                          {/* Google Workspace note for remove_accounts */}
-                          {step.key === 'remove_accounts' && identityProvider === 'google_workspace' && !done && !skipped && (
-                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10, border: '1px solid #e0e0e0' }}>
-                              <p style={{ margin: 0, fontSize: 13, color: '#666' }}>M365 provisioning is not available for Google Workspace companies. Create accounts manually.</p>
+                  {/* What Happens */}
+                  <div className="admin-wf-detail-section">
+                    <h5 className="admin-wf-detail-section-title">WHAT HAPPENS</h5>
+                    <p className="admin-wf-whatbox">{currentStep.description}</p>
+                  </div>
+
+                  {/* ── Offboard Send Notification / Meeting button ── */}
+                  {(() => {
+                    const offCfg = (offboardCustomSteps.find(cs => cs.step_key === stepKey)?.step_config) as StepConfig | undefined
+                    if (!offCfg || (!offCfg.notify_email && !offCfg.notify_contact_key && !offCfg.notify_starter)) return null
+                    const offReqDone = offCfg.requires_step ? offboardChecks[offCfg.requires_step] : true
+                    return (
+                      <div style={{ margin: '0 0 20px', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
+                            {STEP_TYPE_META[offCfg.step_type || 'checklist']?.icon || '📋'} {STEP_TYPE_META[offCfg.step_type || 'checklist']?.label || 'Task'}: {offCfg.notify_starter ? record.employee_name : offCfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === offCfg.notify_contact_key)?.label || offCfg.notify_contact_key) : offCfg.notify_email}
+                          </span>
+                          {offCfg.requires_step && !offReqDone && <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {OFFBOARD_STEPS.find(s => s.key === offCfg.requires_step)?.label || offCfg.requires_step}</span>}
+                          <button
+                            className="admin-btn-sm admin-btn-save"
+                            disabled={stepNotifSending === stepKey || !offReqDone}
+                            onClick={async () => {
+                              setStepNotifSending(stepKey)
+                              await sendStepNotification(offCfg, record, currentStep.label, 'offboarding')
+                              setStepNotifSending(null)
+                            }}
+                            style={{ fontSize: 12, padding: '4px 12px' }}
+                          >
+                            {stepNotifSending === stepKey ? 'Sending...' : offCfg.meeting ? '📅 Send Meeting Invite' : '📧 Send Notification'}
+                          </button>
+                        </div>
+                        {offCfg.meeting && (
+                          <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
+                            Meeting: {resolveStepPlaceholders(offCfg.meeting.title || '', record)} · Attendees: {offCfg.meeting.attendees?.join(', ') || 'manager, leaver'}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Survey assignment card (offboarding) */}
+                  {(() => {
+                    const offSurveyCfg = (offboardCustomSteps.find(cs => cs.step_key === stepKey)?.step_config) as StepConfig | undefined
+                    if (!offSurveyCfg || offSurveyCfg.step_type !== 'survey' || !offSurveyCfg.survey_id || done || skipped) return null
+                    return (
+                      <div style={{ margin: '0 0 20px', padding: 12, border: '1px solid #99f6e4', borderRadius: 8, background: '#f0fdfa' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, color: '#0d9488', fontWeight: 600 }}>📊 Survey: {companySurveys.find(s => s.id === offSurveyCfg.survey_id)?.title || 'Unknown'}</span>
+                          <button
+                            className="admin-btn-sm admin-btn-save"
+                            disabled={surveyAssigning === stepKey}
+                            onClick={async () => {
+                              const ok = await assignSurveyToEmployee(offSurveyCfg.survey_id!, record.employee_email, record.employee_name, stepKey)
+                              if (ok) completeOffboardStep(stepKey)
+                            }}
+                            style={{ fontSize: 12, padding: '4px 12px', background: '#0d9488' }}
+                          >
+                            {surveyAssigning === stepKey ? 'Assigning...' : `📊 Assign to ${record.employee_name.split(' ')[0]}`}
+                          </button>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#115e59', marginTop: 4 }}>Assigns this survey to the employee and creates a pending response in their My Surveys page.</div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Timing hint for post-leave-date steps when M365 automation is active */}
+                  {ifoConnected && leaverM365Actions && record.end_date && !done && !skipped && (() => {
+                    const hints: Record<string, string> = {
+                      remove_accounts: leaverM365Actions.schedule_id
+                        ? `Scheduled: sign-in blocked on ${new Date(record.end_date).toLocaleDateString('en-GB')} at 17:00, licences removed ${leaverLicenceRemovalDays} days later. If you need to act sooner (e.g. garden leave), cancel the schedule and run manually.`
+                        : `Best practice: complete on or after the leave date (${new Date(record.end_date).toLocaleDateString('en-GB')}). Removing access while the employee is still working may breach their contract unless they are on garden leave.`,
+                      convert_shared_mailbox: `Best practice: convert after sign-in is blocked (${new Date(record.end_date).toLocaleDateString('en-GB')} at 17:00). The mailbox must remain active until the employee leaves.`,
+                      forward_to_manager: `Best practice: set up forwarding after the leave date (${new Date(record.end_date).toLocaleDateString('en-GB')}). The employee should not see forwarded copies of their own mail.`,
+                      confirm_payments: `Best practice: confirm after processing the final pay run covering all accrued holiday, expenses and deductions up to ${new Date(record.end_date).toLocaleDateString('en-GB')}. The P45 must be issued after, not before, the final pay.`,
+                    }
+                    const hint = hints[stepKey]
+                    if (!hint) return null
+                    return (
+                      <div style={{ margin: '0 0 20px', padding: '8px 12px', background: '#fffde7', border: '1px solid #fff9c4', borderRadius: 6, fontSize: 11, color: '#5d4037', lineHeight: 1.5, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f57f17" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span>{hint}</span>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Google Workspace note for remove_accounts */}
+                  {stepKey === 'remove_accounts' && identityProvider === 'google_workspace' && !done && !skipped && (
+                    <div style={{ margin: '0 0 20px', padding: 14, background: '#f5f5f5', borderRadius: 10, border: '1px solid #e0e0e0' }}>
+                      <p style={{ margin: 0, fontSize: 13, color: '#666' }}>M365 provisioning is not available for Google Workspace companies. Create accounts manually.</p>
+                    </div>
+                  )}
+
+                  {/* M365 Offboarding panel (InflowOnboarder leaver) */}
+                  {stepKey === 'remove_accounts' && features.inflowonboarder_integration && ifoConnected && !done && !skipped && identityProvider !== 'google_workspace' && (
+                    <div style={{ margin: '0 0 20px', padding: 14, background: 'rgba(0,120,212,.06)', borderRadius: 10, border: '1px solid rgba(0,120,212,.15)' }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0078D4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                        </svg>
+                        <strong style={{ fontSize: 13, color: '#0078D4' }}>Microsoft 365 Offboarding</strong>
+                        {leaverM365RunPolling && <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>Updating...</span>}
+                      </div>
+
+                      {/* Function gating — leavers blocked */}
+                      {(() => { const g = getFunctionGating('leavers'); return g.blocked && !leaverM365Actions?.run_id && !leaverM365Actions?.schedule_id ? (
+                        <div style={{ marginBottom: 12, padding: 12, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#e65100' }}>Leaver provisioning: {g.message}</p>
+                          {g.reason && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>{g.reason}</p>}
+                        </div>
+                      ) : null })()}
+                      {/* No run yet — start or schedule */}
+                      {!leaverM365Actions?.run_id && !leaverM365Actions?.schedule_id && !leaverM365Actions?.schedule_status && !getFunctionGating('leavers').blocked && (
+                        <div>
+                          {leaverSchedulingAvailable && (
+                            <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderRadius: 6, overflow: 'hidden', border: '1px solid #90caf9', width: 'fit-content' }}>
+                              <button onClick={e => { e.stopPropagation(); setLeaverScheduleMode('now') }}
+                                style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                  background: leaverScheduleMode === 'now' ? '#0078D4' : '#fff', color: leaverScheduleMode === 'now' ? '#fff' : '#0078D4' }}>
+                                Run Now
+                              </button>
+                              <button onClick={e => { e.stopPropagation(); setLeaverScheduleMode('schedule') }}
+                                style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                  background: leaverScheduleMode === 'schedule' ? '#0078D4' : '#fff', color: leaverScheduleMode === 'schedule' ? '#fff' : '#0078D4' }}>
+                                Schedule
+                              </button>
                             </div>
                           )}
-                          {/* M365 Offboarding panel (InflowOnboarder leaver) */}
-                          {step.key === 'remove_accounts' && features.inflowonboarder_integration && ifoConnected && !done && !skipped && identityProvider !== 'google_workspace' && (
-                            <div style={{ margin: '12px 0', padding: 14, background: 'rgba(0,120,212,.06)', borderRadius: 10, border: '1px solid rgba(0,120,212,.15)' }} onClick={e => e.stopPropagation()}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0078D4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-                                </svg>
-                                <strong style={{ fontSize: 13, color: '#0078D4' }}>Microsoft 365 Offboarding</strong>
-                                {leaverM365RunPolling && <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>Updating...</span>}
-                              </div>
-
-                              {/* Function gating — leavers blocked */}
-                              {(() => { const g = getFunctionGating('leavers'); return g.blocked && !leaverM365Actions?.run_id && !leaverM365Actions?.schedule_id ? (
-                                <div style={{ marginBottom: 12, padding: 12, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
-                                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#e65100' }}>Leaver provisioning: {g.message}</p>
-                                  {g.reason && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>{g.reason}</p>}
-                                </div>
-                              ) : null })()}
-                              {/* No run yet — start or schedule */}
-                              {!leaverM365Actions?.run_id && !leaverM365Actions?.schedule_id && !leaverM365Actions?.schedule_status && !getFunctionGating('leavers').blocked && (
-                                <div>
-                                  {leaverSchedulingAvailable && (
-                                    <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderRadius: 6, overflow: 'hidden', border: '1px solid #90caf9', width: 'fit-content' }}>
-                                      <button onClick={e => { e.stopPropagation(); setLeaverScheduleMode('now') }}
-                                        style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
-                                          background: leaverScheduleMode === 'now' ? '#0078D4' : '#fff', color: leaverScheduleMode === 'now' ? '#fff' : '#0078D4' }}>
-                                        Run Now
-                                      </button>
-                                      <button onClick={e => { e.stopPropagation(); setLeaverScheduleMode('schedule') }}
-                                        style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
-                                          background: leaverScheduleMode === 'schedule' ? '#0078D4' : '#fff', color: leaverScheduleMode === 'schedule' ? '#fff' : '#0078D4' }}>
-                                        Schedule
-                                      </button>
-                                    </div>
-                                  )}
-                                  {(!leaverSchedulingAvailable || leaverScheduleMode === 'now') && (
-                                    <div>
-                                      <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text-muted, #666)' }}>
-                                        Block sign-in, remove from groups, and revoke licences for <strong>{record.employee_email}</strong>
-                                      </p>
-                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverM365Starting}
-                                        onClick={e => { e.stopPropagation(); leaverM365StartRun(record) }}>
-                                        {leaverM365Starting ? 'Starting...' : 'Start M365 Offboarding'}
-                                      </button>
-                                    </div>
-                                  )}
-                                  {leaverSchedulingAvailable && leaverScheduleMode === 'schedule' && (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                      <div style={{ width: 180 }}>
-                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2, color: record.end_date ? undefined : '#c62828' }}>Leave date{!record.end_date ? ' (required)' : ''}</label>
-                                        <input className="admin-input" type="date"
-                                          value={record.end_date ? record.end_date.split('T')[0] : ''}
-                                          onChange={async e => {
-                                            const v = e.target.value
-                                            if (!v) return
-                                            const { error } = await supabase.from('offboarding').update({ end_date: v }).eq('id', record.id)
-                                            if (error) { showError('Failed to save leave date'); return }
-                                            setOffboardRecords(prev => prev.map(r => r.id === record.id ? { ...r, end_date: v } : r))
-                                          }}
-                                          style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
-                                      </div>
-                                      <div style={{ width: 180 }}>
-                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Remove licence & groups on</label>
-                                        <input className="admin-input" type="date"
-                                          value={leaverRemovalDate || (() => { if (!record.end_date) return ''; const d = new Date(new Date(record.end_date + 'T00:00:00').getTime() + leaverLicenceRemovalDays * 86400000); return d.toISOString().split('T')[0] })()}
-                                          min={record.end_date ? record.end_date.split('T')[0] : ''}
-                                          onChange={e => { const v = e.target.value; setLeaverRemovalDate(v); if (v && record.end_date) { const diff = Math.round((new Date(v + 'T00:00:00').getTime() - new Date(record.end_date.split('T')[0] + 'T00:00:00').getTime()) / 86400000); setLeaverLicenceRemovalDays(Math.max(0, diff)) } }}
-                                          style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
-                                      </div>
-                                      <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #bbdefb', borderRadius: 6, padding: 10 }}>
-                                        <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, color: '#1565c0' }}>Schedule plan</p>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                                            <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#e3f2fd', border: '1px solid #90caf9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1565c0', flexShrink: 0 }}>1</span>
-                                            <span>Block access — <strong>{record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB') : 'leave date'}</strong> at 17:00</span>
-                                          </div>
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                                            <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#e3f2fd', border: '1px solid #90caf9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1565c0', flexShrink: 0 }}>2</span>
-                                            <span>Remove groups & licence — <strong>{leaverRemovalDate ? new Date(leaverRemovalDate + 'T00:00:00').toLocaleDateString('en-GB') : record.end_date ? new Date(new Date(record.end_date + 'T00:00:00').getTime() + leaverLicenceRemovalDays * 86400000).toLocaleDateString('en-GB') : `${leaverLicenceRemovalDays} days after`}</strong> at 17:00</span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
-                                        onClick={e => { e.stopPropagation(); leaverSendScheduleApproval(record) }}
-                                        style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
-                                        {leaverM365ApprovalSending ? 'Sending...' : 'Send Schedule for Approval'}
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Schedule pending approval */}
-                              {leaverM365Actions?.schedule_status === 'pending_approval' && !leaverM365Actions.schedule_id && (
-                                <div style={{ marginBottom: 8 }}>
-                                  {leaverM365Actions.approval_status === 'pending' && (
-                                    <div style={{ background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
-                                      <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Schedule awaiting approval</p>
-                                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
-                                        Sent {leaverM365Actions.approval_sent_at ? `on ${new Date(leaverM365Actions.approval_sent_at).toLocaleString('en-GB')}` : ''}
-                                      </p>
-                                    </div>
-                                  )}
-                                  {leaverM365Actions.approval_status === 'approved' && (
-                                    <div>
-                                      <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
-                                        <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Schedule approved — ready to create</p>
-                                      </div>
-                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverScheduleCreating}
-                                        onClick={e => { e.stopPropagation(); leaverCreateSchedule(record) }}
-                                        style={{ background: '#0078D4' }}>
-                                        {leaverScheduleCreating ? 'Creating...' : 'Create Schedule'}
-                                      </button>
-                                    </div>
-                                  )}
-                                  {leaverM365Actions.approval_status === 'declined' && (
-                                    <div>
-                                      <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
-                                        <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Schedule approval declined</p>
-                                      </div>
-                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
-                                        onClick={e => { e.stopPropagation(); leaverSendScheduleApproval(record) }}
-                                        style={{ background: '#0078D4' }}>
-                                        Re-send for Approval
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Schedule tracking panel */}
-                              {leaverM365Actions?.schedule_id && (
-                                <div style={{ marginBottom: 8 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                    <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
-                                      background: leaverM365Actions.schedule_status === 'scheduled' ? '#e3f2fd' : leaverM365Actions.schedule_status === 'running' ? '#fff3e0' : leaverM365Actions.schedule_status === 'completed' ? '#e8f5e9' : leaverM365Actions.schedule_status === 'cancelled' ? '#fafafa' : leaverM365Actions.schedule_status === 'failed' || leaverM365Actions.schedule_status === 'missed' ? '#fce4ec' : leaverM365Actions.schedule_status === 'blocked' ? '#fff8e1' : '#f5f5f5',
-                                      color: leaverM365Actions.schedule_status === 'scheduled' ? '#1565c0' : leaverM365Actions.schedule_status === 'running' ? '#e65100' : leaverM365Actions.schedule_status === 'completed' ? '#2e7d32' : leaverM365Actions.schedule_status === 'cancelled' ? '#888' : leaverM365Actions.schedule_status === 'failed' || leaverM365Actions.schedule_status === 'missed' ? '#c62828' : leaverM365Actions.schedule_status === 'blocked' ? '#f57f17' : '#666',
-                                    }}>
-                                      {leaverM365Actions.schedule_status === 'scheduled' ? 'Scheduled' : leaverM365Actions.schedule_status === 'running' ? 'Running' : leaverM365Actions.schedule_status === 'completed' ? 'Completed' : leaverM365Actions.schedule_status === 'cancelled' ? 'Cancelled' : leaverM365Actions.schedule_status === 'failed' ? 'Failed' : leaverM365Actions.schedule_status === 'blocked' ? 'Blocked' : (leaverM365Actions.schedule_status || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                                    </span>
-                                    <span style={{ fontSize: 12, color: '#666', flex: 1 }}>
-                                      {(() => {
-                                        const stages = leaverM365Actions.schedule_stages
-                                        const s0Done = stages && Array.isArray(stages) && stages[0]?.status === 'done'
-                                        if (leaverM365Actions.schedule_status === 'scheduled' && s0Done) {
-                                          const s0Date = stages[0].dueAt ? new Date(stages[0].dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
-                                          const s1Date = stages[1]?.dueAt ? new Date(stages[1].dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
-                                          return `Sign-in blocked on ${s0Date}${s1Date ? `; licence removal on ${s1Date}` : ''}`
-                                        }
-                                        if (leaverM365Actions.schedule_status === 'scheduled' && leaverM365Actions.schedule_next_due_at)
-                                          return `Sign-in block scheduled for ${new Date(leaverM365Actions.schedule_next_due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
-                                        if (leaverM365Actions.schedule_status === 'scheduled') return 'Account offboarding is scheduled'
-                                        if (leaverM365Actions.schedule_status === 'running') return 'Account offboarding is in progress...'
-                                        if (leaverM365Actions.schedule_status === 'completed') return 'Account offboarding complete'
-                                        if (leaverM365Actions.schedule_status === 'cancelled') return 'This schedule was cancelled'
-                                        if (leaverM365Actions.schedule_status === 'failed') return 'Offboarding failed — you can create a new schedule'
-                                        if (leaverM365Actions.schedule_status === 'blocked') return 'Offboarding is blocked — check licence availability'
-                                        return ''
-                                      })()}
-                                    </span>
-                                    <button className="admin-btn-sm" style={{ padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
-                                      disabled={leaverScheduleRefreshing}
-                                      onClick={async e => { e.stopPropagation(); setLeaverScheduleRefreshing(true); await callIfoLeaver('get-leaver-schedule', { schedule_id: leaverM365Actions!.schedule_id!, offboarding_id: record.id }); await loadLeaverM365Actions(record.id); setLeaverScheduleRefreshing(false) }}>
-                                      {leaverScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Updating...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
-                                    </button>
-                                  </div>
-                                  {leaverM365Actions.schedule_stages && Array.isArray(leaverM365Actions.schedule_stages) && leaverM365Actions.schedule_stages.filter((s: any) => s.name).length > 0 && (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
-                                      {leaverM365Actions.schedule_stages.filter((s: any) => s.name).map((stage: any, si: number) => {
-                                        const stageDate = stage.dueAt || stage.scheduledAt
-                                        const isDone = stage.status === 'done' || stage.status === 'completed'
-                                        return (
-                                          <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0', flexWrap: 'wrap' }}>
-                                            <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                              background: isDone ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
-                                            }} />
-                                            <span style={{ fontWeight: 600 }}>{stage.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
-                                            <span style={{ color: '#888' }}>{stageDate ? new Date(stageDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
-                                            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
-                                              color: isDone ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
-                                            }}>{isDone ? 'Done' : stage.status === 'pending' ? 'Waiting' : (stage.status || '').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
-                                            {isDone && stage.result?.userPrincipalName && (
-                                              <span style={{ width: '100%', fontSize: 11, color: '#4caf50', paddingLeft: 16 }}>Email: {stage.result.userPrincipalName}</span>
-                                            )}
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                  )}
-                                  {leaverM365Actions.schedule_message && !['completed', 'cancelled', 'failed'].includes(leaverM365Actions.schedule_status || '') && (
-                                    <div style={{ marginBottom: 8, padding: '6px 10px', background: 'rgba(227,242,253,.4)', borderRadius: 4, border: '1px solid #bbdefb', fontSize: 12, color: '#1565c0' }}>
-                                      {leaverM365Actions.schedule_message}
-                                    </div>
-                                  )}
-                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                    {leaverM365Actions.schedule_status === 'blocked' && (
-                                      <button className="admin-btn-sm" disabled={leaverScheduleRefreshing}
-                                        onClick={e => { e.stopPropagation(); leaverRecheckSchedule(leaverM365Actions!.schedule_id!, record.id) }}>
-                                        Check Again
-                                      </button>
-                                    )}
-                                    {!['completed', 'cancelled', 'failed'].includes(leaverM365Actions.schedule_status || '') && (
-                                      <button className="admin-btn-sm admin-btn-cancel" disabled={leaverScheduleCancelling}
-                                        onClick={e => { e.stopPropagation(); leaverCancelSchedule(leaverM365Actions!.schedule_id!, record.id, 'Cancelled by admin') }}>
-                                        {leaverScheduleCancelling ? 'Cancelling...' : 'Cancel Schedule'}
-                                      </button>
-                                    )}
-                                    {['cancelled', 'failed'].includes(leaverM365Actions.schedule_status || '') && (
-                                      <button className="admin-btn-sm" style={{ background: '#0078D4', color: '#fff', border: 'none' }}
-                                        onClick={async e => {
-                                          e.stopPropagation()
-                                          const { error } = await supabase.from('offboarding_m365_actions').update({
-                                            schedule_id: null, schedule_status: 'pending_approval', schedule_message: null,
-                                            schedule_stages: null, schedule_next_due_at: null
-                                          }).eq('offboarding_id', record.id)
-                                          if (error) { showError('Failed to reset schedule'); return }
-                                          await loadLeaverM365Actions(record.id)
-                                          showSuccess('Schedule reset — ready to create a new one')
-                                        }}>
-                                        Create New Schedule
-                                      </button>
-                                    )}
-                                  </div>
-                                  {leaverM365Actions.schedule_status === 'completed' && leaverM365Actions.run_result && (
-                                    <div style={{ marginTop: 8, background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10 }}>
-                                      <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Offboarding schedule completed</p>
-                                      {leaverM365Actions.run_result?.devices?.length > 0 && (
-                                        <div style={{ marginTop: 6 }}>
-                                          <strong style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Devices to recover:</strong>
-                                          {leaverM365Actions.run_result.devices.map((d: any, di: number) => (
-                                            <div key={di} style={{ fontSize: 12, padding: '2px 0' }}>
-                                              <strong>{d.deviceName}</strong> — {d.operatingSystem}{d.serialNumber ? ` (S/N: ${d.serialNumber})` : ''}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Checking account */}
-                              {leaverM365Actions?.run_status === 'checking_account' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <div style={{ width: 16, height: 16, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                                  <span style={{ fontSize: 13 }}>Checking account status...</span>
-                                </div>
-                              )}
-
-                              {/* Account blocked */}
-                              {leaverM365Actions?.run_status === 'account_blocked' && (
-                                <div>
-                                  <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
-                                    <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Account blocked</p>
-                                    {leaverM365Actions.run_error && (
-                                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
-                                        {leaverM365Actions.run_error.friendlyMessage || leaverM365Actions.run_error.message || leaverM365Actions.run_error.code}
-                                      </p>
-                                    )}
-                                  </div>
-                                  <div style={{ display: 'flex', gap: 8 }}>
-                                    <button className="admin-btn-sm" disabled={leaverM365RunPolling}
-                                      onClick={e => { e.stopPropagation(); leaverM365RecheckRun(leaverM365Actions!.run_id!, record.id) }}>
-                                      Done — Re-check
-                                    </button>
-                                    <button className="admin-btn-sm"
-                                      onClick={e => { e.stopPropagation(); leaverM365MarkCompleteManual(record.id) }}>
-                                      Mark Complete Manually
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Ready for approval */}
-                              {leaverM365Actions?.run_status === 'ready_for_approval' && (
-                                <div>
-                                  {leaverM365Actions.run_result?.message && (
-                                    <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text, #333)', background: 'rgba(255,255,255,.6)', padding: '8px 10px', borderRadius: 6, border: '1px solid #e0e0e0' }}>
-                                      {leaverM365Actions.run_result.message}
-                                    </p>
-                                  )}
-                                  {leaverM365Actions.approval_status === 'pending' ? (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#e65100' }}>
-                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                      Waiting for approval
-                                      <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>(auto-refreshing)</span>
-                                    </div>
-                                  ) : leaverM365Actions.approval_status === 'approved' ? (
-                                    <div>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13, color: '#2e7d32' }}>
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                                        Approved by {leaverM365Actions.approved_by}
-                                      </div>
-                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverM365Proceeding}
-                                        onClick={e => { e.stopPropagation(); leaverM365ProceedRun(record) }}>
-                                        {leaverM365Proceeding ? 'Proceeding...' : 'Proceed with Offboarding'}
-                                      </button>
-                                    </div>
-                                  ) : leaverM365Actions.approval_status === 'declined' ? (
-                                    <div>
-                                      <p style={{ margin: '0 0 8px', fontSize: 12, color: '#c62828' }}>Approval declined</p>
-                                      <button className="admin-btn-sm" onClick={e => { e.stopPropagation(); leaverM365SendApproval(record) }}>
-                                        Re-send for Approval
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
-                                      onClick={e => { e.stopPropagation(); leaverM365SendApproval(record) }}>
-                                      {leaverM365ApprovalSending ? 'Sending...' : 'Send for Approval'}
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Awaiting approval (engine processing) */}
-                              {leaverM365Actions?.run_status === 'awaiting_approval' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <div style={{ width: 16, height: 16, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                                  <span style={{ fontSize: 13 }}>Processing offboarding...</span>
-                                  <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>(auto-refreshing)</span>
-                                  <button className="admin-btn-sm" style={{ marginLeft: 8 }} disabled={leaverM365RunPolling}
-                                    onClick={e => { e.stopPropagation(); leaverM365RefreshStatus(leaverM365Actions!.run_id!, record.id) }}>
-                                    Refresh
-                                  </button>
-                                </div>
-                              )}
-
-                              {/* Deprovisioning */}
-                              {leaverM365Actions?.run_status === 'deprovisioning' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <div style={{ width: 16, height: 16, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                                  <span style={{ fontSize: 13 }}>Deprovisioning in progress...</span>
-                                  <button className="admin-btn-sm" style={{ marginLeft: 8 }} disabled={leaverM365RunPolling}
-                                    onClick={e => { e.stopPropagation(); leaverM365RefreshStatus(leaverM365Actions!.run_id!, record.id) }}>
-                                    Refresh
-                                  </button>
-                                </div>
-                              )}
-
-                              {/* Completed */}
-                              {leaverM365Actions?.run_status === 'completed' && (
-                                <div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                                    M365 offboarding complete
-                                  </div>
-                                  {leaverM365Actions.run_result?.devices?.length > 0 && (
-                                    <div style={{ marginBottom: 8 }}>
-                                      <strong style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Devices to recover:</strong>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        {leaverM365Actions.run_result.devices.map((d: any, di: number) => (
-                                          <div key={di} style={{ fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0' }}>
-                                            <strong>{d.deviceName}</strong> — {d.operatingSystem}{d.serialNumber ? ` (S/N: ${d.serialNumber})` : ''}{d.ownership ? ` · ${d.ownership}` : ''}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {leaverM365Actions.run_result?.keptGroups?.length > 0 && (
-                                    <div style={{ marginBottom: 8 }}>
-                                      <strong style={{ fontSize: 12, display: 'block', marginBottom: 4, color: '#e65100' }}>Groups kept (may need manual follow-up):</strong>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                        {leaverM365Actions.run_result.keptGroups.map((g: any, gi: number) => (
-                                          <span key={gi} style={{ fontSize: 12 }}>{g.name} — {g.reason}</span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {leaverM365Actions.run_result?.removedGroups?.length > 0 && (
-                                    <p style={{ margin: '0 0 4px', fontSize: 11, color: 'var(--text-muted, #888)' }}>
-                                      Removed from {leaverM365Actions.run_result.removedGroups.length} group{leaverM365Actions.run_result.removedGroups.length !== 1 ? 's' : ''}
-                                    </p>
-                                  )}
-                                  {leaverM365Actions.run_result?.removedLicences?.length > 0 && (
-                                    <p style={{ margin: '0 0 4px', fontSize: 11, color: 'var(--text-muted, #888)' }}>
-                                      Removed {leaverM365Actions.run_result.removedLicences.length} licence{leaverM365Actions.run_result.removedLicences.length !== 1 ? 's' : ''}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Failed */}
-                              {leaverM365Actions?.run_status === 'failed' && (
-                                <div>
-                                  <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
-                                    <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Offboarding failed</p>
-                                    {leaverM365Actions.run_error && (
-                                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
-                                        {leaverM365Actions.run_error.code}: {leaverM365Actions.run_error.message}
-                                      </p>
-                                    )}
-                                  </div>
-                                  <div style={{ display: 'flex', gap: 8 }}>
-                                    <button className="admin-btn-sm" disabled={leaverM365RunPolling}
-                                      onClick={e => { e.stopPropagation(); leaverM365RecheckRun(leaverM365Actions!.run_id!, record.id) }}>
-                                      Re-check
-                                    </button>
-                                    <button className="admin-btn-sm"
-                                      onClick={e => { e.stopPropagation(); leaverM365MarkCompleteManual(record.id) }}>
-                                      Mark Complete Manually
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Review Future Shifts panel */}
-                          {step.key === 'review_shifts' && !done && !skipped && (
-                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
-                              {reviewShifts.length === 0 ? (
-                                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No future shifts found. You can mark this step complete.</p>
-                              ) : (
-                                <>
-                                  <div style={{ background: '#e3f2fd', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
-                                    {reviewShifts.length} future shift{reviewShifts.length !== 1 ? 's' : ''}
-                                  </div>
-                                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
-                                    <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Date</th><th style={{ textAlign: 'left', padding: 6 }}>Shift</th><th style={{ textAlign: 'left', padding: 6 }}>Rota</th></tr></thead>
-                                    <tbody>{reviewShifts.map(s => (
-                                      <tr key={s.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{new Date(s.date).toLocaleDateString('en-GB')}</td><td style={{ padding: 6 }}>{s.shift_name}</td><td style={{ padding: 6 }}>{s.rota_name}</td></tr>
-                                    ))}</tbody>
-                                  </table>
-                                  <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); cancelAllShifts(record) }}>
-                                    Cancel All Future Shifts
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Review Future Bookings panel */}
-                          {step.key === 'review_bookings' && !done && !skipped && (
-                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
-                              {reviewBookings.length === 0 ? (
-                                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No future bookings found. You can mark this step complete.</p>
-                              ) : (
-                                <>
-                                  <div style={{ background: '#e8f5e9', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
-                                    {reviewBookings.length} future booking{reviewBookings.length !== 1 ? 's' : ''}
-                                  </div>
-                                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
-                                    <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Date</th><th style={{ textAlign: 'left', padding: 6 }}>Space</th></tr></thead>
-                                    <tbody>{reviewBookings.map(b => (
-                                      <tr key={b.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{new Date(b.booking_date).toLocaleDateString('en-GB')}</td><td style={{ padding: 6 }}>{b.space_name}</td></tr>
-                                    ))}</tbody>
-                                  </table>
-                                  <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); cancelAllBookings(record) }}>
-                                    Cancel All Future Bookings
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Review Benefits panel */}
-                          {step.key === 'review_benefits' && !done && !skipped && (
-                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
-                              {reviewBenefits.length === 0 ? (
-                                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No active benefit enrolments found. You can mark this step complete.</p>
-                              ) : (
-                                <>
-                                  <div style={{ background: '#fce4ec', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
-                                    {reviewBenefits.length} active enrolment{reviewBenefits.length !== 1 ? 's' : ''}
-                                  </div>
-                                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
-                                    <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Benefit</th><th style={{ textAlign: 'left', padding: 6 }}>Enrolled</th></tr></thead>
-                                    <tbody>{reviewBenefits.map(b => (
-                                      <tr key={b.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{b.benefit_name}</td><td style={{ padding: 6 }}>{new Date(b.enrolled_at).toLocaleDateString('en-GB')}</td></tr>
-                                    ))}</tbody>
-                                  </table>
-                                  <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); unenrolAllBenefits(record) }}>
-                                    Unenrol All Benefits
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Review Assets panel */}
-                          {step.key === 'review_assets' && !done && !skipped && (
-                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
-                              {reviewAssets.length === 0 ? (
-                                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No company assets assigned. You can mark this step complete.</p>
-                              ) : (
-                                <>
-                                  <div style={{ background: '#fff3e0', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
-                                    {reviewAssets.length} assigned asset{reviewAssets.length !== 1 ? 's' : ''}
-                                  </div>
-                                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
-                                    <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Asset</th><th style={{ textAlign: 'left', padding: 6 }}>Type</th></tr></thead>
-                                    <tbody>{reviewAssets.map(a => (
-                                      <tr key={a.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{a.asset_name}</td><td style={{ padding: 6 }}>{a.asset_type}</td></tr>
-                                    ))}</tbody>
-                                  </table>
-                                  <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); confirmAssets(record) }}>
-                                    Confirm All Assets Accounted For
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Export Data panel */}
-                          {step.key === 'export_data' && !done && !skipped && (
-                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
-                              <p style={{ margin: '0 0 10px', fontSize: 13, color: '#666' }}>
-                                Generate a GDPR-compliant data export pack containing all personal data held for this employee. The export includes leave records, payslips, expenses, timesheets, shift history, and more.
+                          {(!leaverSchedulingAvailable || leaverScheduleMode === 'now') && (
+                            <div>
+                              <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text-muted, #666)' }}>
+                                Block sign-in, remove from groups, and revoke licences for <strong>{record.employee_email}</strong>
                               </p>
-                              {record.data_exported_at && (
-                                <p style={{ margin: '0 0 10px', fontSize: 12, color: '#4caf50', fontWeight: 600 }}>
-                                  Last exported: {new Date(record.data_exported_at!).toLocaleDateString('en-GB')}
-                                </p>
-                              )}
-                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); generateDataExport(record) }}>
-                                Download Data Export (ZIP)
+                              <button className="admin-btn-sm admin-btn-save" disabled={leaverM365Starting}
+                                onClick={e => { e.stopPropagation(); leaverM365StartRun(record) }}>
+                                {leaverM365Starting ? 'Starting...' : 'Start M365 Offboarding'}
                               </button>
                             </div>
                           )}
-
-                          {step.key === 'reassign_reports' && !done && !skipped && reassignData && (
-                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
-                              <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
-                                <div style={{ background: '#e3f2fd', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
-                                  {reassignData.directReports.length} direct report{reassignData.directReports.length !== 1 ? 's' : ''}
-                                </div>
-                                <div style={{ background: '#fff3e0', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
-                                  {reassignData.pendingActions} pending action{reassignData.pendingActions !== 1 ? 's' : ''}
+                          {leaverSchedulingAvailable && leaverScheduleMode === 'schedule' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <div style={{ width: 180 }}>
+                                <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2, color: record.end_date ? undefined : '#c62828' }}>Leave date{!record.end_date ? ' (required)' : ''}</label>
+                                <input className="admin-input" type="date"
+                                  value={record.end_date ? record.end_date.split('T')[0] : ''}
+                                  onChange={async e => {
+                                    const v = e.target.value
+                                    if (!v) return
+                                    const { error } = await supabase.from('offboarding').update({ end_date: v }).eq('id', record.id)
+                                    if (error) { showError('Failed to save leave date'); return }
+                                    setOffboardRecords(prev => prev.map(r => r.id === record.id ? { ...r, end_date: v } : r))
+                                  }}
+                                  style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
+                              </div>
+                              <div style={{ width: 180 }}>
+                                <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Remove licence & groups on</label>
+                                <input className="admin-input" type="date"
+                                  value={leaverRemovalDate || (() => { if (!record.end_date) return ''; const d = new Date(new Date(record.end_date + 'T00:00:00').getTime() + leaverLicenceRemovalDays * 86400000); return d.toISOString().split('T')[0] })()}
+                                  min={record.end_date ? record.end_date.split('T')[0] : ''}
+                                  onChange={e => { const v = e.target.value; setLeaverRemovalDate(v); if (v && record.end_date) { const diff = Math.round((new Date(v + 'T00:00:00').getTime() - new Date(record.end_date.split('T')[0] + 'T00:00:00').getTime()) / 86400000); setLeaverLicenceRemovalDays(Math.max(0, diff)) } }}
+                                  style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
+                              </div>
+                              <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #bbdefb', borderRadius: 6, padding: 10 }}>
+                                <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, color: '#1565c0' }}>Schedule plan</p>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                    <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#e3f2fd', border: '1px solid #90caf9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1565c0', flexShrink: 0 }}>1</span>
+                                    <span>Block access — <strong>{record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB') : 'leave date'}</strong> at 17:00</span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                    <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#e3f2fd', border: '1px solid #90caf9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1565c0', flexShrink: 0 }}>2</span>
+                                    <span>Remove groups & licence — <strong>{leaverRemovalDate ? new Date(leaverRemovalDate + 'T00:00:00').toLocaleDateString('en-GB') : record.end_date ? new Date(new Date(record.end_date + 'T00:00:00').getTime() + leaverLicenceRemovalDays * 86400000).toLocaleDateString('en-GB') : `${leaverLicenceRemovalDays} days after`}</strong> at 17:00</span>
+                                  </div>
                                 </div>
                               </div>
-                              {reassignData.directReports.length === 0 && reassignData.pendingActions === 0 ? (
-                                <p style={{ margin: '8px 0 0', fontSize: 13, color: '#666' }}>No direct reports or pending actions to reassign. You can mark this step complete.</p>
-                              ) : (
-                                <>
-                                  {reassignData.directReports.length > 0 && (
-                                    <div style={{ marginBottom: 10, fontSize: 13 }}>
-                                      <strong>Reports:</strong> {reassignData.directReports.map(r => `${r.first_name} ${r.last_name}`).join(', ')}
-                                    </div>
-                                  )}
-                                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Reassign to</label>
-                                  <select value={reassignTargetId} onChange={e => setReassignTargetId(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', fontSize: 14, marginBottom: 10 }}>
-                                    <option value="">Select new manager...</option>
-                                    {reassignCandidates.map(c => (
-                                      <option key={c.id} value={c.id}>{c.first_name} {c.last_name} ({c.email})</option>
-                                    ))}
-                                  </select>
-                                  <button className="admin-btn-sm admin-btn-save" disabled={!reassignTargetId || reassignSaving} onClick={e => { e.stopPropagation(); executeReassignment(record) }}>
-                                    {reassignSaving ? 'Reassigning...' : 'Reassign & Complete'}
-                                  </button>
-                                </>
-                              )}
+                              <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
+                                onClick={e => { e.stopPropagation(); leaverSendScheduleApproval(record) }}
+                                style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
+                                {leaverM365ApprovalSending ? 'Sending...' : 'Send Schedule for Approval'}
+                              </button>
                             </div>
                           )}
-                          {/* Leaver Financial Calculator — approve_resignation step only */}
-                          {step.key === 'approve_resignation' && !done && !skipped && (() => {
-                            const saved = record.leaver_calc_result
-                            const result = leaverCalcResult || saved
-                            return (
-                              <div style={{ margin: '12px 0', padding: 16, background: 'linear-gradient(135deg, #f8f9ff, #f0f4ff)', borderRadius: 12, border: '1px solid #c5cae9' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                                  <strong style={{ fontSize: 14, color: '#1a1a2e' }}>Leaver Holiday & Pay Calculator</strong>
-                                  <span style={{ fontSize: 11, color: '#666', marginLeft: 'auto' }}>UK Working Time Regulations 1998</span>
-                                </div>
+                        </div>
+                      )}
 
-                                {!record.notice_given_by && !record.end_date && (
-                                  <div style={{ padding: '10px 14px', background: '#fff8e1', borderRadius: 8, marginBottom: 12, fontSize: 13, border: '1px solid #ffe082' }}>
-                                    <strong style={{ color: '#e65100' }}>Notice details needed:</strong> Set the leaving date or notice details on this record before calculating. The calculator uses the offboarding end date if set, otherwise it derives the leaving date from the notice period.
-                                  </div>
-                                )}
+                      {/* Schedule pending approval */}
+                      {leaverM365Actions?.schedule_status === 'pending_approval' && !leaverM365Actions.schedule_id && (
+                        <div style={{ marginBottom: 8 }}>
+                          {leaverM365Actions.approval_status === 'pending' && (
+                            <div style={{ background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
+                              <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Schedule awaiting approval</p>
+                              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
+                                Sent {leaverM365Actions.approval_sent_at ? `on ${new Date(leaverM365Actions.approval_sent_at).toLocaleString('en-GB')}` : ''}
+                              </p>
+                            </div>
+                          )}
+                          {leaverM365Actions.approval_status === 'approved' && (
+                            <div>
+                              <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Schedule approved — ready to create</p>
+                              </div>
+                              <button className="admin-btn-sm admin-btn-save" disabled={leaverScheduleCreating}
+                                onClick={e => { e.stopPropagation(); leaverCreateSchedule(record) }}
+                                style={{ background: '#0078D4' }}>
+                                {leaverScheduleCreating ? 'Creating...' : 'Create Schedule'}
+                              </button>
+                            </div>
+                          )}
+                          {leaverM365Actions.approval_status === 'declined' && (
+                            <div>
+                              <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Schedule approval declined</p>
+                              </div>
+                              <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
+                                onClick={e => { e.stopPropagation(); leaverSendScheduleApproval(record) }}
+                                style={{ background: '#0078D4' }}>
+                                Re-send for Approval
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
-                                <button
-                                  className="admin-btn-sm admin-btn-primary"
-                                  disabled={leaverCalcLoading}
-                                  onClick={e => { e.stopPropagation(); calculateLeaverFinancials(record) }}
-                                  style={{ marginBottom: result ? 12 : 0 }}
-                                >
-                                  {leaverCalcLoading ? 'Calculating...' : result ? 'Recalculate' : 'Calculate Holiday Balance & Costs'}
-                                </button>
-
-                                {leaverCalcError && (
-                                  <div style={{ padding: '8px 12px', background: '#ffebee', borderRadius: 8, marginTop: 8, fontSize: 13, color: '#c62828' }}>
-                                    {leaverCalcError}
-                                  </div>
-                                )}
-
-                                {result && (
-                                  <div style={{ marginTop: 8 }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 12 }}>
-                                      <div style={{ background: '#fff', borderRadius: 10, padding: 12, border: '1px solid #e0e0e0' }}>
-                                        <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>Leaving Date</div>
-                                        <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a2e' }}>{new Date(result.leavingDate + 'T00:00:00').toLocaleDateString('en-GB')}</div>
-                                        <div style={{ fontSize: 11, color: '#888' }}>{result.noticePeriodApplied}</div>
-                                      </div>
-                                      <div style={{ background: '#fff', borderRadius: 10, padding: 12, border: '1px solid #e0e0e0' }}>
-                                        <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>Holiday Balance</div>
-                                        <div style={{ fontSize: 16, fontWeight: 700, color: result.balanceStatus === 'owed' ? '#2e7d32' : result.balanceStatus === 'overtaken' ? '#c62828' : '#666' }}>
-                                          {result.balanceDays > 0 ? '+' : ''}{result.balanceDays} days
-                                        </div>
-                                        <div style={{ fontSize: 11, color: '#888' }}>
-                                          {result.balanceStatus === 'owed' ? 'Owed to employee' : result.balanceStatus === 'overtaken' ? 'Overtaken by employee' : 'Nil balance'}
-                                        </div>
-                                      </div>
-                                      <div style={{ background: '#fff', borderRadius: 10, padding: 12, border: '1px solid #e0e0e0' }}>
-                                        <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>
-                                          {result.balanceStatus === 'overtaken' ? 'Clawback Value' : 'Total Cost to Company'}
-                                        </div>
-                                        <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a2e' }}>
-                                          {currencySymbol(currency)}{result.balanceStatus === 'overtaken' ? result.clawbackValue.toFixed(2) : result.totalEmployerCost.toFixed(2)}
-                                        </div>
-                                        <div style={{ fontSize: 11, color: '#888' }}>
-                                          {result.balanceStatus === 'overtaken'
-                                            ? `Clawback ${result.clawbackPermitted === 'yes' ? 'permitted' : 'check contract'}`
-                                            : `Gross ${currencySymbol(currency)}${result.grossPayout.toFixed(2)} + NI + pension`
-                                          }
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {result.flags.some(f => f.startsWith('WARNING:')) && (
-                                      <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span style={{ fontSize: 18 }}>&#9888;</span>
-                                        <span style={{ fontSize: 12, color: '#856404', fontWeight: 600 }}>
-                                          Missing employee data — costs may be inaccurate. See notes below.
-                                        </span>
-                                      </div>
+                      {/* Schedule tracking panel */}
+                      {leaverM365Actions?.schedule_id && (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                              background: leaverM365Actions.schedule_status === 'scheduled' ? '#e3f2fd' : leaverM365Actions.schedule_status === 'running' ? '#fff3e0' : leaverM365Actions.schedule_status === 'completed' ? '#e8f5e9' : leaverM365Actions.schedule_status === 'cancelled' ? '#fafafa' : leaverM365Actions.schedule_status === 'failed' || leaverM365Actions.schedule_status === 'missed' ? '#fce4ec' : leaverM365Actions.schedule_status === 'blocked' ? '#fff8e1' : '#f5f5f5',
+                              color: leaverM365Actions.schedule_status === 'scheduled' ? '#1565c0' : leaverM365Actions.schedule_status === 'running' ? '#e65100' : leaverM365Actions.schedule_status === 'completed' ? '#2e7d32' : leaverM365Actions.schedule_status === 'cancelled' ? '#888' : leaverM365Actions.schedule_status === 'failed' || leaverM365Actions.schedule_status === 'missed' ? '#c62828' : leaverM365Actions.schedule_status === 'blocked' ? '#f57f17' : '#666',
+                            }}>
+                              {leaverM365Actions.schedule_status === 'scheduled' ? 'Scheduled' : leaverM365Actions.schedule_status === 'running' ? 'Running' : leaverM365Actions.schedule_status === 'completed' ? 'Completed' : leaverM365Actions.schedule_status === 'cancelled' ? 'Cancelled' : leaverM365Actions.schedule_status === 'failed' ? 'Failed' : leaverM365Actions.schedule_status === 'blocked' ? 'Blocked' : (leaverM365Actions.schedule_status || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                            </span>
+                            <span style={{ fontSize: 12, color: '#666', flex: 1 }}>
+                              {(() => {
+                                const stages = leaverM365Actions.schedule_stages
+                                const s0Done = stages && Array.isArray(stages) && stages[0]?.status === 'done'
+                                if (leaverM365Actions.schedule_status === 'scheduled' && s0Done) {
+                                  const s0Date = stages[0].dueAt ? new Date(stages[0].dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+                                  const s1Date = stages[1]?.dueAt ? new Date(stages[1].dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+                                  return `Sign-in blocked on ${s0Date}${s1Date ? `; licence removal on ${s1Date}` : ''}`
+                                }
+                                if (leaverM365Actions.schedule_status === 'scheduled' && leaverM365Actions.schedule_next_due_at)
+                                  return `Sign-in block scheduled for ${new Date(leaverM365Actions.schedule_next_due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                if (leaverM365Actions.schedule_status === 'scheduled') return 'Account offboarding is scheduled'
+                                if (leaverM365Actions.schedule_status === 'running') return 'Account offboarding is in progress...'
+                                if (leaverM365Actions.schedule_status === 'completed') return 'Account offboarding complete'
+                                if (leaverM365Actions.schedule_status === 'cancelled') return 'This schedule was cancelled'
+                                if (leaverM365Actions.schedule_status === 'failed') return 'Offboarding failed — you can create a new schedule'
+                                if (leaverM365Actions.schedule_status === 'blocked') return 'Offboarding is blocked — check licence availability'
+                                return ''
+                              })()}
+                            </span>
+                            <button className="admin-btn-sm" style={{ padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
+                              disabled={leaverScheduleRefreshing}
+                              onClick={async e => { e.stopPropagation(); setLeaverScheduleRefreshing(true); await callIfoLeaver('get-leaver-schedule', { schedule_id: leaverM365Actions!.schedule_id!, offboarding_id: record.id }); await loadLeaverM365Actions(record.id); setLeaverScheduleRefreshing(false) }}>
+                              {leaverScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Updating...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
+                            </button>
+                          </div>
+                          {leaverM365Actions.schedule_stages && Array.isArray(leaverM365Actions.schedule_stages) && leaverM365Actions.schedule_stages.filter((s: any) => s.name).length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                              {leaverM365Actions.schedule_stages.filter((s: any) => s.name).map((stage: any, si: number) => {
+                                const stageDate = stage.dueAt || stage.scheduledAt
+                                const isDone = stage.status === 'done' || stage.status === 'completed'
+                                return (
+                                  <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0', flexWrap: 'wrap' }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                      background: isDone ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
+                                    }} />
+                                    <span style={{ fontWeight: 600 }}>{stage.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
+                                    <span style={{ color: '#888' }}>{stageDate ? new Date(stageDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
+                                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
+                                      color: isDone ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
+                                    }}>{isDone ? 'Done' : stage.status === 'pending' ? 'Waiting' : (stage.status || '').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
+                                    {isDone && stage.result?.userPrincipalName && (
+                                      <span style={{ width: '100%', fontSize: 11, color: '#4caf50', paddingLeft: 16 }}>Email: {stage.result.userPrincipalName}</span>
                                     )}
-
-                                    <details style={{ background: '#fff', borderRadius: 10, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
-                                      <summary style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1565c0' }}>View Full Breakdown</summary>
-                                      <div style={{ padding: '12px 14px', fontSize: 13, lineHeight: 1.6 }}>
-                                        <div style={{ marginBottom: 12 }}>
-                                          <strong>1. Key Dates</strong>
-                                          <div>Leave year: {new Date(result.leaveYearStart + 'T00:00:00').toLocaleDateString('en-GB')} to {new Date(result.leaveYearEnd + 'T00:00:00').toLocaleDateString('en-GB')}</div>
-                                          <div>Leaving date: {new Date(result.leavingDate + 'T00:00:00').toLocaleDateString('en-GB')} ({result.noticeBasis})</div>
-                                        </div>
-                                        <div style={{ marginBottom: 12 }}>
-                                          <strong>2. Entitlement</strong>
-                                          <div>Full-year entitlement: {result.fullYearEntitlement} days (statutory min: {result.statutoryMinimum} — {result.statutoryCheck})</div>
-                                          <div>Pro-rata accrued: {result.accruedDays} days ({result.daysElapsed}/{result.daysInYear} of year)</div>
-                                          <div>Carry-over: {result.carryOverDays} days</div>
-                                          <div><strong>Total available: {result.totalAvailable} days</strong></div>
-                                        </div>
-                                        <div style={{ marginBottom: 12 }}>
-                                          <strong>3. Leave Used</strong>
-                                          <div>Already taken: {result.leaveTakenDays} days</div>
-                                          <div>Booked before leaving: {result.leaveBookedBeforeLeavingDays} days</div>
-                                          <div>Bank holidays: {result.bankHolidaysUsed} days</div>
-                                          <div><strong>Total used: {result.totalUsed} days</strong></div>
-                                          {result.leaveToCancel.length > 0 && (
-                                            <div style={{ color: '#c62828', marginTop: 4 }}>To cancel: {result.leaveToCancel.join('; ')}</div>
-                                          )}
-                                        </div>
-                                        <div style={{ marginBottom: 12 }}>
-                                          <strong>4. Balance</strong>
-                                          <div>Unrounded: {result.balanceUnrounded} days</div>
-                                          <div>Rounded (nearest half day): <strong>{result.balanceDays} days</strong> ({result.balanceHours} hours)</div>
-                                        </div>
-                                        <div style={{ marginBottom: 12 }}>
-                                          <strong>5. Cost</strong>
-                                          <div>Day rate: {currencySymbol(currency)}{result.dayRate.toFixed(2)}</div>
-                                          {result.balanceStatus === 'owed' && (
-                                            <>
-                                              <div>Gross payout: {currencySymbol(currency)}{result.grossPayout.toFixed(2)}</div>
-                                              <div>Employer NI (13.8%): {currencySymbol(currency)}{result.employerNI.toFixed(2)}</div>
-                                              <div>Employer pension: {currencySymbol(currency)}{result.employerPension.toFixed(2)}</div>
-                                              <div><strong>Total employer cost: {currencySymbol(currency)}{result.totalEmployerCost.toFixed(2)}</strong></div>
-                                            </>
-                                          )}
-                                          {result.balanceStatus === 'overtaken' && (
-                                            <>
-                                              <div>Clawback value: {currencySymbol(currency)}{result.clawbackValue.toFixed(2)}</div>
-                                              <div>Clawback permitted: {result.clawbackPermitted}</div>
-                                            </>
-                                          )}
-                                        </div>
-                                        {result.flags.length > 0 && (
-                                          <div>
-                                            {result.flags.some(f => f.startsWith('WARNING:')) && (
-                                              <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 6, padding: '8px 12px', marginBottom: 10 }}>
-                                                <strong style={{ color: '#856404' }}>Missing Data</strong>
-                                                <ul style={{ margin: '4px 0 0', paddingLeft: 18, color: '#856404' }}>
-                                                  {result.flags.filter(f => f.startsWith('WARNING:')).map((f, i) => (
-                                                    <li key={i} style={{ marginBottom: 2 }}>{f.replace('WARNING: ', '')}</li>
-                                                  ))}
-                                                </ul>
-                                              </div>
-                                            )}
-                                            <strong>6. Notes & Assumptions</strong>
-                                            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                                              {result.flags.filter(f => !f.startsWith('WARNING:')).map((f, i) => (
-                                                <li key={i} style={{ marginBottom: 2, color: f.startsWith('NOTE:') ? '#0d6efd' : undefined }}>
-                                                  {f.startsWith('NOTE: ') ? f.replace('NOTE: ', '') : f}
-                                                </li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </details>
-
-                                    <div style={{ fontSize: 11, color: '#999', marginTop: 8 }}>
-                                      Calculated {new Date(result.calculatedAt).toLocaleDateString('en-GB')} {new Date(result.calculatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} — all data processed locally, nothing sent externally
-                                    </div>
                                   </div>
-                                )}
-                              </div>
-                            )
-                          })()}
-
-                          <div className="admin-wf-actions">
-                            {done ? (
-                              <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteOffboardStep(step.key) }}>Undo</button>
-                            ) : skipped ? (
-                              <>
-                                <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeOffboardStep(step.key) }}>
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                  Mark Complete
-                                </button>
-                                <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteOffboardStep(step.key) }}>Undo Skip</button>
-                              </>
-                            ) : step.key === 'reassign_reports' && reassignData && (reassignData.directReports.length > 0 || reassignData.pendingActions > 0) ? (
-                              <button className="admin-btn-sm admin-btn-skip" onClick={e => { e.stopPropagation(); skipOffboardStep(step.key) }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 4 15 12 5 20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-                                Skip
+                                )
+                              })}
+                            </div>
+                          )}
+                          {leaverM365Actions.schedule_message && !['completed', 'cancelled', 'failed'].includes(leaverM365Actions.schedule_status || '') && (
+                            <div style={{ marginBottom: 8, padding: '6px 10px', background: 'rgba(227,242,253,.4)', borderRadius: 4, border: '1px solid #bbdefb', fontSize: 12, color: '#1565c0' }}>
+                              {leaverM365Actions.schedule_message}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            {leaverM365Actions.schedule_status === 'blocked' && (
+                              <button className="admin-btn-sm" disabled={leaverScheduleRefreshing}
+                                onClick={e => { e.stopPropagation(); leaverRecheckSchedule(leaverM365Actions!.schedule_id!, record.id) }}>
+                                Check Again
                               </button>
-                            ) : (
-                              <>
-                                <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeOffboardStep(step.key) }}>
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                  Mark Complete
-                                </button>
-                                <button className="admin-btn-sm admin-btn-skip" onClick={e => { e.stopPropagation(); skipOffboardStep(step.key) }}>
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 4 15 12 5 20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-                                  Skip
-                                </button>
-                              </>
                             )}
+                            {!['completed', 'cancelled', 'failed'].includes(leaverM365Actions.schedule_status || '') && (
+                              <button className="admin-btn-sm admin-btn-cancel" disabled={leaverScheduleCancelling}
+                                onClick={e => { e.stopPropagation(); leaverCancelSchedule(leaverM365Actions!.schedule_id!, record.id, 'Cancelled by admin') }}>
+                                {leaverScheduleCancelling ? 'Cancelling...' : 'Cancel Schedule'}
+                              </button>
+                            )}
+                            {['cancelled', 'failed'].includes(leaverM365Actions.schedule_status || '') && (
+                              <button className="admin-btn-sm" style={{ background: '#0078D4', color: '#fff', border: 'none' }}
+                                onClick={async e => {
+                                  e.stopPropagation()
+                                  const { error } = await supabase.from('offboarding_m365_actions').update({
+                                    schedule_id: null, schedule_status: 'pending_approval', schedule_message: null,
+                                    schedule_stages: null, schedule_next_due_at: null
+                                  }).eq('offboarding_id', record.id)
+                                  if (error) { showError('Failed to reset schedule'); return }
+                                  await loadLeaverM365Actions(record.id)
+                                  showSuccess('Schedule reset — ready to create a new one')
+                                }}>
+                                Create New Schedule
+                              </button>
+                            )}
+                          </div>
+                          {leaverM365Actions.schedule_status === 'completed' && leaverM365Actions.run_result && (
+                            <div style={{ marginTop: 8, background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10 }}>
+                              <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Offboarding schedule completed</p>
+                              {leaverM365Actions.run_result?.devices?.length > 0 && (
+                                <div style={{ marginTop: 6 }}>
+                                  <strong style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Devices to recover:</strong>
+                                  {leaverM365Actions.run_result.devices.map((d: any, di: number) => (
+                                    <div key={di} style={{ fontSize: 12, padding: '2px 0' }}>
+                                      <strong>{d.deviceName}</strong> — {d.operatingSystem}{d.serialNumber ? ` (S/N: ${d.serialNumber})` : ''}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Checking account */}
+                      {leaverM365Actions?.run_status === 'checking_account' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 16, height: 16, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                          <span style={{ fontSize: 13 }}>Checking account status...</span>
+                        </div>
+                      )}
+
+                      {/* Account blocked */}
+                      {leaverM365Actions?.run_status === 'account_blocked' && (
+                        <div>
+                          <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                            <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Account blocked</p>
+                            {leaverM365Actions.run_error && (
+                              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
+                                {leaverM365Actions.run_error.friendlyMessage || leaverM365Actions.run_error.message || leaverM365Actions.run_error.code}
+                              </p>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button className="admin-btn-sm" disabled={leaverM365RunPolling}
+                              onClick={e => { e.stopPropagation(); leaverM365RecheckRun(leaverM365Actions!.run_id!, record.id) }}>
+                              Done — Re-check
+                            </button>
+                            <button className="admin-btn-sm"
+                              onClick={e => { e.stopPropagation(); leaverM365MarkCompleteManual(record.id) }}>
+                              Mark Complete Manually
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Ready for approval */}
+                      {leaverM365Actions?.run_status === 'ready_for_approval' && (
+                        <div>
+                          {leaverM365Actions.run_result?.message && (
+                            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text, #333)', background: 'rgba(255,255,255,.6)', padding: '8px 10px', borderRadius: 6, border: '1px solid #e0e0e0' }}>
+                              {leaverM365Actions.run_result.message}
+                            </p>
+                          )}
+                          {leaverM365Actions.approval_status === 'pending' ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#e65100' }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                              Waiting for approval
+                              <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>(auto-refreshing)</span>
+                            </div>
+                          ) : leaverM365Actions.approval_status === 'approved' ? (
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13, color: '#2e7d32' }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                Approved by {leaverM365Actions.approved_by}
+                              </div>
+                              <button className="admin-btn-sm admin-btn-save" disabled={leaverM365Proceeding}
+                                onClick={e => { e.stopPropagation(); leaverM365ProceedRun(record) }}>
+                                {leaverM365Proceeding ? 'Proceeding...' : 'Proceed with Offboarding'}
+                              </button>
+                            </div>
+                          ) : leaverM365Actions.approval_status === 'declined' ? (
+                            <div>
+                              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#c62828' }}>Approval declined</p>
+                              <button className="admin-btn-sm" onClick={e => { e.stopPropagation(); leaverM365SendApproval(record) }}>
+                                Re-send for Approval
+                              </button>
+                            </div>
+                          ) : (
+                            <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
+                              onClick={e => { e.stopPropagation(); leaverM365SendApproval(record) }}>
+                              {leaverM365ApprovalSending ? 'Sending...' : 'Send for Approval'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Awaiting approval (engine processing) */}
+                      {leaverM365Actions?.run_status === 'awaiting_approval' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 16, height: 16, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                          <span style={{ fontSize: 13 }}>Processing offboarding...</span>
+                          <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>(auto-refreshing)</span>
+                          <button className="admin-btn-sm" style={{ marginLeft: 8 }} disabled={leaverM365RunPolling}
+                            onClick={e => { e.stopPropagation(); leaverM365RefreshStatus(leaverM365Actions!.run_id!, record.id) }}>
+                            Refresh
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Deprovisioning */}
+                      {leaverM365Actions?.run_status === 'deprovisioning' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 16, height: 16, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                          <span style={{ fontSize: 13 }}>Deprovisioning in progress...</span>
+                          <button className="admin-btn-sm" style={{ marginLeft: 8 }} disabled={leaverM365RunPolling}
+                            onClick={e => { e.stopPropagation(); leaverM365RefreshStatus(leaverM365Actions!.run_id!, record.id) }}>
+                            Refresh
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Completed */}
+                      {leaverM365Actions?.run_status === 'completed' && (
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            M365 offboarding complete
+                          </div>
+                          {leaverM365Actions.run_result?.devices?.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <strong style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Devices to recover:</strong>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                {leaverM365Actions.run_result.devices.map((d: any, di: number) => (
+                                  <div key={di} style={{ fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0' }}>
+                                    <strong>{d.deviceName}</strong> — {d.operatingSystem}{d.serialNumber ? ` (S/N: ${d.serialNumber})` : ''}{d.ownership ? ` · ${d.ownership}` : ''}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {leaverM365Actions.run_result?.keptGroups?.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <strong style={{ fontSize: 12, display: 'block', marginBottom: 4, color: '#e65100' }}>Groups kept (may need manual follow-up):</strong>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                {leaverM365Actions.run_result.keptGroups.map((g: any, gi: number) => (
+                                  <span key={gi} style={{ fontSize: 12 }}>{g.name} — {g.reason}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {leaverM365Actions.run_result?.removedGroups?.length > 0 && (
+                            <p style={{ margin: '0 0 4px', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                              Removed from {leaverM365Actions.run_result.removedGroups.length} group{leaverM365Actions.run_result.removedGroups.length !== 1 ? 's' : ''}
+                            </p>
+                          )}
+                          {leaverM365Actions.run_result?.removedLicences?.length > 0 && (
+                            <p style={{ margin: '0 0 4px', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                              Removed {leaverM365Actions.run_result.removedLicences.length} licence{leaverM365Actions.run_result.removedLicences.length !== 1 ? 's' : ''}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Failed */}
+                      {leaverM365Actions?.run_status === 'failed' && (
+                        <div>
+                          <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                            <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Offboarding failed</p>
+                            {leaverM365Actions.run_error && (
+                              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
+                                {leaverM365Actions.run_error.code}: {leaverM365Actions.run_error.message}
+                              </p>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button className="admin-btn-sm" disabled={leaverM365RunPolling}
+                              onClick={e => { e.stopPropagation(); leaverM365RecheckRun(leaverM365Actions!.run_id!, record.id) }}>
+                              Re-check
+                            </button>
+                            <button className="admin-btn-sm"
+                              onClick={e => { e.stopPropagation(); leaverM365MarkCompleteManual(record.id) }}>
+                              Mark Complete Manually
+                            </button>
                           </div>
                         </div>
                       )}
                     </div>
-                  </div>
-                )
-              })}
+                  )}
+
+                  {/* Review Future Shifts panel */}
+                  {stepKey === 'review_shifts' && !done && !skipped && (
+                    <div style={{ margin: '0 0 20px', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                      {reviewShifts.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No future shifts found. You can mark this step complete.</p>
+                      ) : (
+                        <>
+                          <div style={{ background: '#e3f2fd', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
+                            {reviewShifts.length} future shift{reviewShifts.length !== 1 ? 's' : ''}
+                          </div>
+                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
+                            <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Date</th><th style={{ textAlign: 'left', padding: 6 }}>Shift</th><th style={{ textAlign: 'left', padding: 6 }}>Rota</th></tr></thead>
+                            <tbody>{reviewShifts.map(s => (
+                              <tr key={s.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{new Date(s.date).toLocaleDateString('en-GB')}</td><td style={{ padding: 6 }}>{s.shift_name}</td><td style={{ padding: 6 }}>{s.rota_name}</td></tr>
+                            ))}</tbody>
+                          </table>
+                          <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); cancelAllShifts(record) }}>
+                            Cancel All Future Shifts
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Review Future Bookings panel */}
+                  {stepKey === 'review_bookings' && !done && !skipped && (
+                    <div style={{ margin: '0 0 20px', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                      {reviewBookings.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No future bookings found. You can mark this step complete.</p>
+                      ) : (
+                        <>
+                          <div style={{ background: '#e8f5e9', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
+                            {reviewBookings.length} future booking{reviewBookings.length !== 1 ? 's' : ''}
+                          </div>
+                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
+                            <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Date</th><th style={{ textAlign: 'left', padding: 6 }}>Space</th></tr></thead>
+                            <tbody>{reviewBookings.map(b => (
+                              <tr key={b.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{new Date(b.booking_date).toLocaleDateString('en-GB')}</td><td style={{ padding: 6 }}>{b.space_name}</td></tr>
+                            ))}</tbody>
+                          </table>
+                          <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); cancelAllBookings(record) }}>
+                            Cancel All Future Bookings
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Review Benefits panel */}
+                  {stepKey === 'review_benefits' && !done && !skipped && (
+                    <div style={{ margin: '0 0 20px', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                      {reviewBenefits.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No active benefit enrolments found. You can mark this step complete.</p>
+                      ) : (
+                        <>
+                          <div style={{ background: '#fce4ec', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
+                            {reviewBenefits.length} active enrolment{reviewBenefits.length !== 1 ? 's' : ''}
+                          </div>
+                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
+                            <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Benefit</th><th style={{ textAlign: 'left', padding: 6 }}>Enrolled</th></tr></thead>
+                            <tbody>{reviewBenefits.map(b => (
+                              <tr key={b.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{b.benefit_name}</td><td style={{ padding: 6 }}>{new Date(b.enrolled_at).toLocaleDateString('en-GB')}</td></tr>
+                            ))}</tbody>
+                          </table>
+                          <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); unenrolAllBenefits(record) }}>
+                            Unenrol All Benefits
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Review Assets panel */}
+                  {stepKey === 'review_assets' && !done && !skipped && (
+                    <div style={{ margin: '0 0 20px', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                      {reviewAssets.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No company assets assigned. You can mark this step complete.</p>
+                      ) : (
+                        <>
+                          <div style={{ background: '#fff3e0', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
+                            {reviewAssets.length} assigned asset{reviewAssets.length !== 1 ? 's' : ''}
+                          </div>
+                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
+                            <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Asset</th><th style={{ textAlign: 'left', padding: 6 }}>Type</th></tr></thead>
+                            <tbody>{reviewAssets.map(a => (
+                              <tr key={a.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{a.asset_name}</td><td style={{ padding: 6 }}>{a.asset_type}</td></tr>
+                            ))}</tbody>
+                          </table>
+                          <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); confirmAssets(record) }}>
+                            Confirm All Assets Accounted For
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Export Data panel */}
+                  {stepKey === 'export_data' && !done && !skipped && (
+                    <div style={{ margin: '0 0 20px', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                      <p style={{ margin: '0 0 10px', fontSize: 13, color: '#666' }}>
+                        Generate a GDPR-compliant data export pack containing all personal data held for this employee. The export includes leave records, payslips, expenses, timesheets, shift history, and more.
+                      </p>
+                      {record.data_exported_at && (
+                        <p style={{ margin: '0 0 10px', fontSize: 12, color: '#4caf50', fontWeight: 600 }}>
+                          Last exported: {new Date(record.data_exported_at!).toLocaleDateString('en-GB')}
+                        </p>
+                      )}
+                      <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); generateDataExport(record) }}>
+                        Download Data Export (ZIP)
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Reassign Direct Reports panel */}
+                  {stepKey === 'reassign_reports' && !done && !skipped && reassignData && (
+                    <div style={{ margin: '0 0 20px', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                      <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
+                        <div style={{ background: '#e3f2fd', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                          {reassignData.directReports.length} direct report{reassignData.directReports.length !== 1 ? 's' : ''}
+                        </div>
+                        <div style={{ background: '#fff3e0', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                          {reassignData.pendingActions} pending action{reassignData.pendingActions !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                      {reassignData.directReports.length === 0 && reassignData.pendingActions === 0 ? (
+                        <p style={{ margin: '8px 0 0', fontSize: 13, color: '#666' }}>No direct reports or pending actions to reassign. You can mark this step complete.</p>
+                      ) : (
+                        <>
+                          {reassignData.directReports.length > 0 && (
+                            <div style={{ marginBottom: 10, fontSize: 13 }}>
+                              <strong>Reports:</strong> {reassignData.directReports.map(r => `${r.first_name} ${r.last_name}`).join(', ')}
+                            </div>
+                          )}
+                          <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Reassign to</label>
+                          <select value={reassignTargetId} onChange={e => setReassignTargetId(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', fontSize: 14, marginBottom: 10 }}>
+                            <option value="">Select new manager...</option>
+                            {reassignCandidates.map(c => (
+                              <option key={c.id} value={c.id}>{c.first_name} {c.last_name} ({c.email})</option>
+                            ))}
+                          </select>
+                          <button className="admin-btn-sm admin-btn-save" disabled={!reassignTargetId || reassignSaving} onClick={e => { e.stopPropagation(); executeReassignment(record) }}>
+                            {reassignSaving ? 'Reassigning...' : 'Reassign & Complete'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Leaver Financial Calculator — approve_resignation step only */}
+                  {stepKey === 'approve_resignation' && !done && !skipped && (() => {
+                    const saved = record.leaver_calc_result
+                    const result = leaverCalcResult || saved
+                    return (
+                      <div style={{ margin: '0 0 20px', padding: 16, background: 'linear-gradient(135deg, #f8f9ff, #f0f4ff)', borderRadius: 12, border: '1px solid #c5cae9' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                          <strong style={{ fontSize: 14, color: '#1a1a2e' }}>Leaver Holiday & Pay Calculator</strong>
+                          <span style={{ fontSize: 11, color: '#666', marginLeft: 'auto' }}>UK Working Time Regulations 1998</span>
+                        </div>
+
+                        {!record.notice_given_by && !record.end_date && (
+                          <div style={{ padding: '10px 14px', background: '#fff8e1', borderRadius: 8, marginBottom: 12, fontSize: 13, border: '1px solid #ffe082' }}>
+                            <strong style={{ color: '#e65100' }}>Notice details needed:</strong> Set the leaving date or notice details on this record before calculating. The calculator uses the offboarding end date if set, otherwise it derives the leaving date from the notice period.
+                          </div>
+                        )}
+
+                        <button
+                          className="admin-btn-sm admin-btn-primary"
+                          disabled={leaverCalcLoading}
+                          onClick={e => { e.stopPropagation(); calculateLeaverFinancials(record) }}
+                          style={{ marginBottom: result ? 12 : 0 }}
+                        >
+                          {leaverCalcLoading ? 'Calculating...' : result ? 'Recalculate' : 'Calculate Holiday Balance & Costs'}
+                        </button>
+
+                        {leaverCalcError && (
+                          <div style={{ padding: '8px 12px', background: '#ffebee', borderRadius: 8, marginTop: 8, fontSize: 13, color: '#c62828' }}>
+                            {leaverCalcError}
+                          </div>
+                        )}
+
+                        {result && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 12 }}>
+                              <div style={{ background: '#fff', borderRadius: 10, padding: 12, border: '1px solid #e0e0e0' }}>
+                                <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>Leaving Date</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a2e' }}>{new Date(result.leavingDate + 'T00:00:00').toLocaleDateString('en-GB')}</div>
+                                <div style={{ fontSize: 11, color: '#888' }}>{result.noticePeriodApplied}</div>
+                              </div>
+                              <div style={{ background: '#fff', borderRadius: 10, padding: 12, border: '1px solid #e0e0e0' }}>
+                                <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>Holiday Balance</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: result.balanceStatus === 'owed' ? '#2e7d32' : result.balanceStatus === 'overtaken' ? '#c62828' : '#666' }}>
+                                  {result.balanceDays > 0 ? '+' : ''}{result.balanceDays} days
+                                </div>
+                                <div style={{ fontSize: 11, color: '#888' }}>
+                                  {result.balanceStatus === 'owed' ? 'Owed to employee' : result.balanceStatus === 'overtaken' ? 'Overtaken by employee' : 'Nil balance'}
+                                </div>
+                              </div>
+                              <div style={{ background: '#fff', borderRadius: 10, padding: 12, border: '1px solid #e0e0e0' }}>
+                                <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>
+                                  {result.balanceStatus === 'overtaken' ? 'Clawback Value' : 'Total Cost to Company'}
+                                </div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a2e' }}>
+                                  {currencySymbol(currency)}{result.balanceStatus === 'overtaken' ? result.clawbackValue.toFixed(2) : result.totalEmployerCost.toFixed(2)}
+                                </div>
+                                <div style={{ fontSize: 11, color: '#888' }}>
+                                  {result.balanceStatus === 'overtaken'
+                                    ? `Clawback ${result.clawbackPermitted === 'yes' ? 'permitted' : 'check contract'}`
+                                    : `Gross ${currencySymbol(currency)}${result.grossPayout.toFixed(2)} + NI + pension`
+                                  }
+                                </div>
+                              </div>
+                            </div>
+
+                            {result.flags.some(f => f.startsWith('WARNING:')) && (
+                              <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 18 }}>&#9888;</span>
+                                <span style={{ fontSize: 12, color: '#856404', fontWeight: 600 }}>
+                                  Missing employee data — costs may be inaccurate. See notes below.
+                                </span>
+                              </div>
+                            )}
+
+                            <details style={{ background: '#fff', borderRadius: 10, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
+                              <summary style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1565c0' }}>View Full Breakdown</summary>
+                              <div style={{ padding: '12px 14px', fontSize: 13, lineHeight: 1.6 }}>
+                                <div style={{ marginBottom: 12 }}>
+                                  <strong>1. Key Dates</strong>
+                                  <div>Leave year: {new Date(result.leaveYearStart + 'T00:00:00').toLocaleDateString('en-GB')} to {new Date(result.leaveYearEnd + 'T00:00:00').toLocaleDateString('en-GB')}</div>
+                                  <div>Leaving date: {new Date(result.leavingDate + 'T00:00:00').toLocaleDateString('en-GB')} ({result.noticeBasis})</div>
+                                </div>
+                                <div style={{ marginBottom: 12 }}>
+                                  <strong>2. Entitlement</strong>
+                                  <div>Full-year entitlement: {result.fullYearEntitlement} days (statutory min: {result.statutoryMinimum} — {result.statutoryCheck})</div>
+                                  <div>Pro-rata accrued: {result.accruedDays} days ({result.daysElapsed}/{result.daysInYear} of year)</div>
+                                  <div>Carry-over: {result.carryOverDays} days</div>
+                                  <div><strong>Total available: {result.totalAvailable} days</strong></div>
+                                </div>
+                                <div style={{ marginBottom: 12 }}>
+                                  <strong>3. Leave Used</strong>
+                                  <div>Already taken: {result.leaveTakenDays} days</div>
+                                  <div>Booked before leaving: {result.leaveBookedBeforeLeavingDays} days</div>
+                                  <div>Bank holidays: {result.bankHolidaysUsed} days</div>
+                                  <div><strong>Total used: {result.totalUsed} days</strong></div>
+                                  {result.leaveToCancel.length > 0 && (
+                                    <div style={{ color: '#c62828', marginTop: 4 }}>To cancel: {result.leaveToCancel.join('; ')}</div>
+                                  )}
+                                </div>
+                                <div style={{ marginBottom: 12 }}>
+                                  <strong>4. Balance</strong>
+                                  <div>Unrounded: {result.balanceUnrounded} days</div>
+                                  <div>Rounded (nearest half day): <strong>{result.balanceDays} days</strong> ({result.balanceHours} hours)</div>
+                                </div>
+                                <div style={{ marginBottom: 12 }}>
+                                  <strong>5. Cost</strong>
+                                  <div>Day rate: {currencySymbol(currency)}{result.dayRate.toFixed(2)}</div>
+                                  {result.balanceStatus === 'owed' && (
+                                    <>
+                                      <div>Gross payout: {currencySymbol(currency)}{result.grossPayout.toFixed(2)}</div>
+                                      <div>Employer NI (13.8%): {currencySymbol(currency)}{result.employerNI.toFixed(2)}</div>
+                                      <div>Employer pension: {currencySymbol(currency)}{result.employerPension.toFixed(2)}</div>
+                                      <div><strong>Total employer cost: {currencySymbol(currency)}{result.totalEmployerCost.toFixed(2)}</strong></div>
+                                    </>
+                                  )}
+                                  {result.balanceStatus === 'overtaken' && (
+                                    <>
+                                      <div>Clawback value: {currencySymbol(currency)}{result.clawbackValue.toFixed(2)}</div>
+                                      <div>Clawback permitted: {result.clawbackPermitted}</div>
+                                    </>
+                                  )}
+                                </div>
+                                {result.flags.length > 0 && (
+                                  <div>
+                                    {result.flags.some(f => f.startsWith('WARNING:')) && (
+                                      <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 6, padding: '8px 12px', marginBottom: 10 }}>
+                                        <strong style={{ color: '#856404' }}>Missing Data</strong>
+                                        <ul style={{ margin: '4px 0 0', paddingLeft: 18, color: '#856404' }}>
+                                          {result.flags.filter(f => f.startsWith('WARNING:')).map((f, i) => (
+                                            <li key={i} style={{ marginBottom: 2 }}>{f.replace('WARNING: ', '')}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    <strong>6. Notes & Assumptions</strong>
+                                    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                      {result.flags.filter(f => !f.startsWith('WARNING:')).map((f, i) => (
+                                        <li key={i} style={{ marginBottom: 2, color: f.startsWith('NOTE:') ? '#0d6efd' : undefined }}>
+                                          {f.startsWith('NOTE: ') ? f.replace('NOTE: ', '') : f}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            </details>
+
+                            <div style={{ fontSize: 11, color: '#999', marginTop: 8 }}>
+                              Calculated {new Date(result.calculatedAt).toLocaleDateString('en-GB')} {new Date(result.calculatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} — all data processed locally, nothing sent externally
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                </div>
+              </div>
             </div>
           </div>
         )
@@ -6625,16 +6678,26 @@ export default function AdminOnboarding() {
         const m365 = moverM365[rc.id]
         const steps = MOVER_STEPS
         const currentStep = steps[moverStep] || steps[0]
-        const progressPct = Math.round((Object.keys(moverChecks).filter(k => moverChecks[k]).length / steps.length) * 100)
+        const stepKey = currentStep.key
+        const mDone = moverChecks[stepKey]
+        const mSkipped = moverSkips[stepKey]
+        const totalSteps = steps.length
+        const doneCount = Object.keys(moverChecks).filter(k => moverChecks[k]).length
+        const skippedCount = Object.keys(moverSkips).filter(k => moverSkips[k]).length
+        const progressPct = Math.round(((doneCount + skippedCount) / totalSteps) * 100)
+        const remaining = totalSteps - doneCount - skippedCount
+        const stepIndexInPhase = moverStep + 1
+        const tm = STEP_TYPE_META[currentStep.step_type || 'checklist']
 
         const isDeclined = rc.status === 'cancelled' && (m365?.persona_schedule_status === 'declined' || m365?.approval_status === 'declined')
 
         return (
           <div>
+            {/* Declined banner */}
             {isDeclined && (
               <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 16, marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 18 }}>❌</span>
+                  <span style={{ fontSize: 18 }}>&#10060;</span>
                   <strong style={{ color: '#dc2626', fontSize: 15 }}>Approval Declined</strong>
                 </div>
                 <div style={{ fontSize: 13, color: '#991b1b' }}>
@@ -6644,656 +6707,704 @@ export default function AdminOnboarding() {
                 <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>All steps have been cancelled and any applied changes have been reverted. This role change will need to be started again.</div>
               </div>
             )}
-          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20 }}>
-            <div>
-              <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 16, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 16 }}>
-                <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: isDeclined ? '#dc2626' : '#e65100' }}>{rc.employee_name || '—'}</h4>
-                <p style={{ margin: 0, fontSize: 12, color: '#666' }}>{(rc.change_type || '').replace(/_/g, ' ')} · {isDeclined ? 'Declined' : (rc.status || 'pending')}</p>
-                <div style={{ marginTop: 10, background: '#f1f5f9', borderRadius: 6, height: 8, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${progressPct}%`, background: isDeclined ? '#dc2626' : 'linear-gradient(90deg, #e65100, #ff9800)', borderRadius: 6, transition: 'width 0.3s' }} />
-                </div>
-                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#888' }}>{progressPct}% complete</p>
-              </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {steps.map((step, i) => {
-                  const done = moverChecks[step.key]
-                  const skipped = moverSkips[step.key]
-                  const isCurrent = i === moverStep
-                  const isDeclinedSkip = skipped && rc.status === 'cancelled' && (m365?.persona_schedule_status === 'declined' || m365?.approval_status === 'declined')
-                  return (
-                    <div key={step.key}
-                      className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`}
-                      onClick={() => setMoverStep(i)}
-                      style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13,
-                        background: isCurrent ? '#fff3e0' : done ? '#f0fdf4' : isDeclinedSkip ? '#fef2f2' : skipped ? '#f5f5f5' : 'transparent',
-                        border: isCurrent ? '1px solid #e65100' : '1px solid transparent',
-                      }}>
-                      <span style={{ fontSize: 16 }}>{done ? '✅' : isDeclinedSkip ? '❌' : skipped ? '⏭️' : step.icon}</span>
-                      <span style={{ fontWeight: isCurrent ? 700 : 400, color: done ? '#16a34a' : isDeclinedSkip ? '#dc2626' : skipped ? '#999' : isCurrent ? '#e65100' : 'inherit' }}>{step.label}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)' }}>
-              <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700, color: '#e65100' }}>{currentStep.icon} {currentStep.label}</h3>
-              <p style={{ margin: '0 0 20px', fontSize: 13, color: '#666' }}>{currentStep.description}</p>
-
-              {currentStep.key === 'review_changes' && (
-                <div>
-                  <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Proposed Changes</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    {Object.entries(rc.changes || {}).map(([field, val]: [string, any]) => (
-                      <div key={field} style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#888', marginBottom: 4 }}>{field.replace(/_/g, ' ')}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 13, color: '#c62828', textDecoration: 'line-through' }}>{val?.old || '—'}</span>
-                          <span style={{ fontSize: 13 }}>→</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: '#2e7d32' }}>{val?.new || '—'}</span>
-                        </div>
-                        {field === 'persona' && (
-                          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                            {[val?.old, val?.new].map((pId, idx) => {
-                              const ep = enginePersonas.find(p => p.id === pId)
-                              const colours = ENGINE_PERSONA_COLORS[pId] || { color: '#555', bg: '#f5f5f5' }
-                              return <div key={idx} style={{ background: colours.bg, border: `1px solid ${colours.color}33`, borderRadius: 8, padding: '6px 10px', flex: 1 }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, color: colours.color }}>{ep?.name || pId}</div>
-                              </div>
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+            <div className="admin-wf-split">
+              {/* ── LEFT SIDEBAR: Step list ── */}
+              <div className="admin-wf-sidebar">
+                <div className="admin-wf-sidebar-header">
+                  <h3>MOVER</h3>
+                  <h2>{rc.employee_name || '—'}</h2>
+                  <p className="admin-wf-role">{(rc.change_type || '').replace(/_/g, ' ')} · {isDeclined ? 'Declined' : (rc.status || 'pending')}</p>
+                  <div className="admin-wf-sidebar-progress-wrap">
+                    <div className="admin-wf-sidebar-progress-fill" style={{ width: `${Math.max(progressPct, 8)}%`, background: isDeclined ? '#dc2626' : 'linear-gradient(90deg, #e65100, #ff9800)' }} />
+                    <div className="admin-wf-sidebar-progress-text">{doneCount + skippedCount}/{totalSteps}</div>
                   </div>
-                  {(rc.changes?.persona?.new === 'secure-vip' || rc.changes?.persona?.old === 'secure-vip') && (
-                    <div style={{ marginTop: 12, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' }}>
-                      This persona transition crosses a security boundary. All active user sessions will be revoked.
+                  <div className="admin-wf-sidebar-meta">
+                    <span>{remaining} remaining</span>
+                    <span>{progressPct}% complete</span>
+                  </div>
+                </div>
+                <div className="admin-wf-phase-group">
+                  <div className="admin-wf-phase-header">
+                    <span>▾ ROLE CHANGE</span>
+                    <span className="admin-wf-phase-badge" style={{ background: doneCount + skippedCount === totalSteps && totalSteps > 0 ? '#e65100' : '#8b8fa3' }}>{doneCount + skippedCount}/{totalSteps}</span>
+                  </div>
+                  {steps.map((step, i) => {
+                    const sDone = moverChecks[step.key]
+                    const sSkipped = moverSkips[step.key]
+                    const isDeclinedSkip = sSkipped && rc.status === 'cancelled' && (m365?.persona_schedule_status === 'declined' || m365?.approval_status === 'declined')
+                    return (
+                      <div key={step.key}
+                        className={`admin-wf-step-row ${sDone ? 'done' : ''} ${sSkipped ? 'skipped' : ''} ${i === moverStep ? 'active' : ''}`}
+                        style={i === moverStep ? { borderLeftColor: '#e65100' } : undefined}
+                        onClick={() => setMoverStep(i)}>
+                        <div className="admin-wf-step-icon" style={sDone ? { color: '#e65100' } : isDeclinedSkip ? { color: '#dc2626' } : undefined}>
+                          {sDone ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg> : isDeclinedSkip ? '❌' : sSkipped ? '⏭' : ''}
+                        </div>
+                        <span className="admin-wf-step-label">{step.label}</span>
+                        {sSkipped && !isDeclinedSkip && <span className="admin-wf-skip-badge">Skipped</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* ── RIGHT PANEL: Step detail ── */}
+              <div className="admin-wf-detail-panel">
+                <div className="admin-wf-detail-top">
+                  <p className="admin-wf-detail-breadcrumb">ROLE CHANGE · STEP {stepIndexInPhase} OF {totalSteps}</p>
+                  <h2 className="admin-wf-detail-title">{currentStep.label}</h2>
+                  <div className="admin-wf-detail-actions">
+                    {mDone ? (
+                      <>
+                        <button className="admin-wf-detail-btn done-btn">&#10003; Completed</button>
+                      </>
+                    ) : mSkipped ? (
+                      <>
+                        <button className="admin-wf-detail-btn primary" style={{ background: '#e65100' }}
+                          onClick={async () => {
+                            const newChecks = { ...moverChecks, [stepKey]: true }
+                            setMoverChecks(newChecks)
+                            await supabase.from('role_changes').update({ workflow_steps: newChecks, status: 'in_progress' }).eq('id', rc.id)
+                          }}>Mark as done</button>
+                      </>
+                    ) : stepKey !== 'confirm_complete' ? (
+                      <>
+                        <button className="admin-wf-detail-btn primary" style={{ background: '#e65100' }}
+                          onClick={async () => {
+                            const newChecks = { ...moverChecks, [stepKey]: true }
+                            setMoverChecks(newChecks)
+                            await supabase.from('role_changes').update({ workflow_steps: newChecks, status: 'in_progress' }).eq('id', rc.id)
+                            if (moverStep < steps.length - 1) setMoverStep(moverStep + 1)
+                          }}>Mark Done & Next</button>
+                        <button className="admin-wf-detail-btn"
+                          onClick={async () => {
+                            const newSkips = { ...moverSkips, [stepKey]: true }
+                            setMoverSkips(newSkips)
+                            await supabase.from('role_changes').update({ skipped_steps: newSkips, status: 'in_progress' }).eq('id', rc.id)
+                            if (moverStep < steps.length - 1) setMoverStep(moverStep + 1)
+                          }}>Skip</button>
+                      </>
+                    ) : null}
+                    {(rc.status === 'pending' || rc.status === 'in_progress') && (
+                      <button className="admin-wf-detail-btn" style={{ color: '#c62828', borderColor: '#c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel Role Change</button>
+                    )}
+                    <button className="admin-wf-detail-btn" style={{ color: '#9e9e9e', borderColor: '#ccc' }} onClick={() => deleteMoverRoleChange(rc)}>Delete</button>
+                  </div>
+                </div>
+
+                <div className="admin-wf-detail-body">
+                  {/* Metadata grid */}
+                  <div className="admin-wf-meta-grid">
+                    <div className="admin-wf-meta-item">
+                      <label>TYPE</label>
+                      {tm ? <span><span className="meta-icon">{tm.icon}</span><span style={{ color: tm.color }}>{tm.label}</span></span> : null}
+                    </div>
+                    <div className="admin-wf-meta-item">
+                      <label>ASSIGNED TO</label>
+                      <span>{currentStep.role}</span>
+                    </div>
+                  </div>
+
+                  {/* What Happens */}
+                  <div className="admin-wf-detail-section">
+                    <h5 className="admin-wf-detail-section-title">WHAT HAPPENS</h5>
+                    <p className="admin-wf-whatbox">{currentStep.description}</p>
+                  </div>
+
+                  {/* ── Step-specific panels ── */}
+
+                  {stepKey === 'review_changes' && (
+                    <div>
+                      <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Proposed Changes</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        {Object.entries(rc.changes || {}).map(([field, val]: [string, any]) => (
+                          <div key={field} style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#888', marginBottom: 4 }}>{field.replace(/_/g, ' ')}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 13, color: '#c62828', textDecoration: 'line-through' }}>{val?.old || '—'}</span>
+                              <span style={{ fontSize: 13 }}>→</span>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: '#2e7d32' }}>{val?.new || '—'}</span>
+                            </div>
+                            {field === 'persona' && (
+                              <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                                {[val?.old, val?.new].map((pId, idx) => {
+                                  const ep = enginePersonas.find(p => p.id === pId)
+                                  const colours = ENGINE_PERSONA_COLORS[pId] || { color: '#555', bg: '#f5f5f5' }
+                                  return <div key={idx} style={{ background: colours.bg, border: `1px solid ${colours.color}33`, borderRadius: 8, padding: '6px 10px', flex: 1 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: colours.color }}>{ep?.name || pId}</div>
+                                  </div>
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {(rc.changes?.persona?.new === 'secure-vip' || rc.changes?.persona?.old === 'secure-vip') && (
+                        <div style={{ marginTop: 12, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' }}>
+                          This persona transition crosses a security boundary. All active user sessions will be revoked.
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
-              )}
 
-              {currentStep.key === 'update_accounts' && (() => {
-                try {
-                return (
-                <div>
-                  <div style={{ padding: '10px 14px', background: '#f5f5f5', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
-                    <strong>Employee:</strong> {rc.employee_name || '—'} · <strong>UPN:</strong> {rc.employee_email || '—'}
-                  </div>
-                  {identityProvider === 'google_workspace' ? (
-                    <div style={{ padding: '12px 16px', background: '#f5f5f5', borderRadius: 8, fontSize: 13, color: '#666' }}>
-                      M365 provisioning is not available for Google Workspace companies. Create accounts manually.
-                    </div>
-                  ) : features.inflowonboarder_integration && ifoConnected ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      {/* ── M365 Mover Run (profile, manager, groups, licence) ── */}
-                      {(() => {
-                        const ch = rc.changes || {}
-                        const hasProfileChanges = ch.job_title || ch.department || ch.location
-                        const hasManagerChanges = ch.manager_name || ch.manager_email
-                        const hasNonPersonaChanges = hasProfileChanges || hasManagerChanges
-                        if (!hasNonPersonaChanges) return (
-                          <div style={{ padding: '10px 14px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8, fontSize: 13, color: '#2e7d32' }}>
-                            No profile or manager changes — M365 mover run not required.{ch.persona ? ' Persona change is handled separately below.' : ''}
-                          </div>
-                        )
+                  {stepKey === 'update_accounts' && (() => {
+                    try {
+                    return (
+                    <div>
+                      <div style={{ padding: '10px 14px', background: '#f5f5f5', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+                        <strong>Employee:</strong> {rc.employee_name || '—'} · <strong>UPN:</strong> {rc.employee_email || '—'}
+                      </div>
+                      {identityProvider === 'google_workspace' ? (
+                        <div style={{ padding: '12px 16px', background: '#f5f5f5', borderRadius: 8, fontSize: 13, color: '#666' }}>
+                          M365 provisioning is not available for Google Workspace companies. Create accounts manually.
+                        </div>
+                      ) : features.inflowonboarder_integration && ifoConnected ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          {/* ── M365 Mover Run (profile, manager, groups, licence) ── */}
+                          {(() => {
+                            const ch = rc.changes || {}
+                            const hasProfileChanges = ch.job_title || ch.department || ch.location
+                            const hasManagerChanges = ch.manager_name || ch.manager_email
+                            const hasNonPersonaChanges = hasProfileChanges || hasManagerChanges
+                            if (!hasNonPersonaChanges) return (
+                              <div style={{ padding: '10px 14px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8, fontSize: 13, color: '#2e7d32' }}>
+                                No profile or manager changes — M365 mover run not required.{ch.persona ? ' Persona change is handled separately below.' : ''}
+                              </div>
+                            )
 
-                        const buildEngineChanges = () => {
-                          const engineChanges: Record<string, any> = {}
-                          if (hasProfileChanges) {
-                            const profile: Record<string, string> = {}
-                            if (ch.job_title?.new) profile.jobTitle = ch.job_title.new
-                            if (ch.department?.new) profile.department = ch.department.new
-                            if (ch.location?.new) profile.officeLocation = ch.location.new
-                            engineChanges.profile = profile
-                          }
-                          if (hasManagerChanges && ch.manager_email?.new) {
-                            engineChanges.manager = { userPrincipalName: ch.manager_email.new }
-                          }
-                          return engineChanges
-                        }
+                            const buildEngineChanges = () => {
+                              const engineChanges: Record<string, any> = {}
+                              if (hasProfileChanges) {
+                                const profile: Record<string, string> = {}
+                                if (ch.job_title?.new) profile.jobTitle = ch.job_title.new
+                                if (ch.department?.new) profile.department = ch.department.new
+                                if (ch.location?.new) profile.officeLocation = ch.location.new
+                                engineChanges.profile = profile
+                              }
+                              if (hasManagerChanges && ch.manager_email?.new) {
+                                engineChanges.manager = { userPrincipalName: ch.manager_email.new }
+                              }
+                              return engineChanges
+                            }
 
-                        return (
-                          <div>
-                            <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>M365 Account Changes</h5>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12, fontSize: 13 }}>
-                              {ch.job_title && <div><strong>Job Title:</strong> {ch.job_title.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.job_title.new}</span></div>}
-                              {ch.department && <div><strong>Department:</strong> {ch.department.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.department.new}</span></div>}
-                              {ch.location && <div><strong>Location:</strong> {ch.location.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.location.new}</span></div>}
-                              {ch.manager_name && <div><strong>Manager:</strong> {ch.manager_name.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.manager_name.new}</span></div>}
-                              {ch.manager_email && <div><strong>Manager UPN:</strong> {ch.manager_email.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.manager_email.new}</span></div>}
-                            </div>
-                            {(!m365 || m365.run_status === 'failed') && (
-                              <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
-                                onClick={async () => {
-                                  const res = await callIfoMover('start-mover-run', {
-                                    role_change_id: rc.id,
-                                    user_principal_name: rc.employee_email,
-                                    changes: buildEngineChanges(),
-                                    attempt: (m365?.attempt_count_run || 0) + 1,
-                                  })
-                                  if (!res) return
-                                  await loadMovers()
-                                  showSuccess('M365 mover run started')
-                                }}>
-                                {m365?.run_status === 'failed' ? 'Retry M365 Update' : 'Start M365 Update'}
-                              </button>
-                            )}
-                            {m365 && m365.run_id && (
-                              <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, fontSize: 13 }}>
-                                <div style={{ marginBottom: 8 }}><strong>Status:</strong> <span style={{ color: m365.run_status === 'completed' ? '#16a34a' : m365.run_status === 'failed' ? '#dc2626' : '#e65100', fontWeight: 600 }}>{m365.run_status || 'Not started'}</span></div>
-                                {m365.run_status === 'ready_for_approval' && (
-                                  <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 8 }}>
-                                    Awaiting approval. The designated approver will receive a notification to review and approve the M365 changes.
-                                  </div>
-                                )}
-                                {m365.run_status === 'completed' && m365.run_result && (
-                                  <div>
-                                    <h5 style={{ margin: '8px 0', fontSize: 13, fontWeight: 700 }}>Result</h5>
-                                    {m365.run_result.changed && <div style={{ marginBottom: 4 }}>Changed: {JSON.stringify(m365.run_result.changed)}</div>}
-                                    {m365.run_result.skipped && <div style={{ marginBottom: 4 }}>Skipped: {JSON.stringify(m365.run_result.skipped)}</div>}
-                                  </div>
-                                )}
-                                {m365.run_error && (
-                                  <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 12 }}>
-                                    Error: {m365.run_error.message || JSON.stringify(m365.run_error)}
-                                  </div>
-                                )}
-                                {m365.run_status && !['completed', 'failed'].includes(m365.run_status) && (
-                                  <button className="admin-btn-sm admin-btn-save" style={{ marginTop: 8 }}
+                            return (
+                              <div>
+                                <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>M365 Account Changes</h5>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12, fontSize: 13 }}>
+                                  {ch.job_title && <div><strong>Job Title:</strong> {ch.job_title.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.job_title.new}</span></div>}
+                                  {ch.department && <div><strong>Department:</strong> {ch.department.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.department.new}</span></div>}
+                                  {ch.location && <div><strong>Location:</strong> {ch.location.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.location.new}</span></div>}
+                                  {ch.manager_name && <div><strong>Manager:</strong> {ch.manager_name.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.manager_name.new}</span></div>}
+                                  {ch.manager_email && <div><strong>Manager UPN:</strong> {ch.manager_email.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.manager_email.new}</span></div>}
+                                </div>
+                                {(!m365 || m365.run_status === 'failed') && (
+                                  <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
                                     onClick={async () => {
-                                      await callIfoMover('check-mover-run', { role_change_id: rc.id, run_id: m365.run_id })
+                                      const res = await callIfoMover('start-mover-run', {
+                                        role_change_id: rc.id,
+                                        user_principal_name: rc.employee_email,
+                                        changes: buildEngineChanges(),
+                                        attempt: (m365?.attempt_count_run || 0) + 1,
+                                      })
+                                      if (!res) return
                                       await loadMovers()
+                                      showSuccess('M365 mover run started')
                                     }}>
-                                    Refresh Status
+                                    {m365?.run_status === 'failed' ? 'Retry M365 Update' : 'Start M365 Update'}
                                   </button>
                                 )}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })()}
-
-                      {/* ── Persona Change (separate engine flow) ── */}
-                      {(() => {
-                        const hasPersonaChange = rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new
-                        if (!hasPersonaChange) return null
-                        const personaOld = resolvePersonaId(rc.changes.persona.old)
-                        const personaNew = resolvePersonaId(rc.changes.persona.new)
-                        const personaStatus = m365?.persona_schedule_status
-                        const personaCheckResult = m365?.persona_check_result
-
-                        return (
-                          <div>
-                            <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>Persona Change</h5>
-                            <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 10, fontSize: 13 }}>
-                              <strong>{String(personaOld).replace(/_/g, ' ')}</strong> → <strong style={{ color: '#e65100' }}>{String(personaNew).replace(/_/g, ' ')}</strong>
-                              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>The employee's Microsoft 365 access and security settings will be updated to match their new persona.</div>
-                            </div>
-
-                            {/* Check result display — HR-friendly */}
-                            {personaCheckResult && (() => {
-                              try {
-                                const r = personaCheckResult
-                                const currentName = typeof r.currentPersona === 'object' ? (r.currentPersona.name || r.currentPersona.id || (r.currentPersona.source === 'none' ? 'None' : '')) : String(r.currentPersona || '')
-                                const targetName = typeof r.targetPersona === 'object' ? (r.targetPersona.name || r.targetPersona.id || '') : String(r.targetPersona || '')
-                                const isAdmin = r.adminAccount === true
-                                const needsApproval = r.approvalRequired === true
-                                const warnings = Array.isArray(r.warnings) ? r.warnings : []
-
-                                return (
-                                  <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
-                                    <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Check Result</div>
-                                    {currentName && <div style={{ marginBottom: 4 }}>Current persona: <strong>{currentName}</strong></div>}
-                                    {targetName && <div style={{ marginBottom: 6 }}>New persona: <strong>{targetName}</strong></div>}
-
-                                    {/* Admin account warning */}
-                                    {isAdmin && (
-                                      <div style={{ padding: '8px 12px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginBottom: 8, fontSize: 12 }}>
-                                        This employee has an admin account — the persona change may need to be done manually by IT.
+                                {m365 && m365.run_id && (
+                                  <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, fontSize: 13 }}>
+                                    <div style={{ marginBottom: 8 }}><strong>Status:</strong> <span style={{ color: m365.run_status === 'completed' ? '#16a34a' : m365.run_status === 'failed' ? '#dc2626' : '#e65100', fontWeight: 600 }}>{m365.run_status || 'Not started'}</span></div>
+                                    {m365.run_status === 'ready_for_approval' && (
+                                      <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 8 }}>
+                                        Awaiting approval. The designated approver will receive a notification to review and approve the M365 changes.
                                       </div>
                                     )}
-
-                                    {/* Needs IT Approval */}
-                                    {needsApproval && (() => {
-                                      const mode = moverApproverConfig.mode || 'same_as_joiner'
-                                      const effMode = mode === 'same_as_joiner' ? (moverApproverConfig.joiner_approver_mode || 'nominated') : mode
-                                      let approver = ''
-                                      if (effMode === 'nominated') {
-                                        approver = mode === 'same_as_joiner'
-                                          ? (moverApproverConfig.joiner_approver_name || moverApproverConfig.joiner_approver_email || '')
-                                          : (moverApproverConfig.name || moverApproverConfig.email || '')
-                                      } else if (effMode === 'manager') {
-                                        approver = 'employee\'s line manager'
-                                      }
-                                      return (
-                                        <div style={{ padding: '8px 12px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginBottom: 8 }}>
-                                          <strong style={{ color: '#1565c0' }}>Needs IT Approval</strong>
-                                          <div style={{ fontSize: 12, marginTop: 2 }}>This change needs approval before it can be scheduled.{approver ? ` Approver: ${approver}` : ''}</div>
-                                        </div>
-                                      )
-                                    })()}
-
-                                    {/* Warnings */}
-                                    {warnings.map((w: any, i: number) => (
-                                      <div key={i} style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginBottom: 6, fontSize: 12 }}>
-                                        {typeof w === 'string' ? w : w?.message || w?.description || JSON.stringify(w)}
-                                      </div>
-                                    ))}
-
-                                    {r.deviceWarning && (
-                                      <div style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginBottom: 6, fontSize: 12 }}>
-                                        {String(r.deviceWarning)}
+                                    {m365.run_status === 'completed' && m365.run_result && (
+                                      <div>
+                                        <h5 style={{ margin: '8px 0', fontSize: 13, fontWeight: 700 }}>Result</h5>
+                                        {m365.run_result.changed && <div style={{ marginBottom: 4 }}>Changed: {JSON.stringify(m365.run_result.changed)}</div>}
+                                        {m365.run_result.skipped && <div style={{ marginBottom: 4 }}>Skipped: {JSON.stringify(m365.run_result.skipped)}</div>}
                                       </div>
                                     )}
-
-                                    {/* Technical details — collapsible */}
-                                    <details style={{ marginTop: 8 }}>
-                                      <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Technical details</summary>
-                                      <div style={{ marginTop: 6, fontSize: 11, color: '#555', background: '#fff', padding: 8, borderRadius: 6 }}>
-                                        {r.automaticSteps && (
-                                          <div style={{ marginBottom: 4 }}>
-                                            <strong>Automatic steps:</strong>
-                                            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                                              {(Array.isArray(r.automaticSteps) ? r.automaticSteps : []).map((s: any, i: number) => (
-                                                <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        )}
-                                        {r.instructions && (
-                                          <div style={{ marginBottom: 4 }}>
-                                            <strong>Instructions:</strong>
-                                            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                                              {(Array.isArray(r.instructions) ? r.instructions : []).map((s: any, i: number) => (
-                                                <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        )}
-                                        {Array.isArray(r.documents) && r.documents.length > 0 && (
-                                          <div style={{ marginBottom: 4 }}><strong>Documents:</strong> {r.documents.map((d: any) => d?.name || String(d)).join(', ')}</div>
-                                        )}
-                                        <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(r, null, 2)}</pre>
+                                    {m365.run_error && (
+                                      <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 12 }}>
+                                        Error: {m365.run_error.message || JSON.stringify(m365.run_error)}
                                       </div>
-                                    </details>
-                                  </div>
-                                )
-                              } catch (e: any) {
-                                return (
-                                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
-                                    <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13, color: '#dc2626' }}>Error displaying check result</div>
-                                    <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, color: '#555' }}>{e?.message || String(e)}</pre>
-                                  </div>
-                                )
-                              }
-                            })()}
-
-                            {/* Persona schedule status — HR-friendly display */}
-                            {personaStatus && (() => {
-                              const display = PERSONA_STATUS_DISPLAY[personaStatus] || { label: personaStatus, color: '#616161', bg: '#f5f5f5', border: '#e0e0e0' }
-                              const preCheck = m365?.persona_pre_check
-                              const preCheckCode = preCheck?.code
-                              const help = preCheckCode ? PRECHECK_HELP[preCheckCode] : null
-                              const nextActions = m365?.persona_next_actions || []
-                              const isActionRequired = ['blocked', 'missed', 'failed'].includes(personaStatus)
-
-                              return (
-                                <div style={{ padding: '12px 16px', background: display.bg, border: `1px solid ${display.border}`, borderRadius: 8, marginBottom: 10 }}>
-                                  {/* Status badge */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: help || m365?.persona_schedule_message ? 8 : 0 }}>
-                                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: display.color, flexShrink: 0, animation: personaStatus === 'running' ? 'pulse 1.5s infinite' : undefined }} />
-                                    <strong style={{ color: display.color, fontSize: 13 }}>{display.label}</strong>
-                                    {m365?.persona_schedule_next_due_at && !['completed', 'cancelled', 'failed'].includes(personaStatus) && (
-                                      <span style={{ fontSize: 11, color: '#666', marginLeft: 'auto' }}>
-                                        Next scheduled: {new Date(m365.persona_schedule_next_due_at).toLocaleDateString('en-GB')}
-                                      </span>
                                     )}
-                                  </div>
-
-                                  {/* What happened — engine message */}
-                                  {m365?.persona_schedule_message && (
-                                    <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>{m365.persona_schedule_message}</div>
-                                  )}
-
-                                  {/* What to do — preCheck help for HR */}
-                                  {help && (
-                                    <div style={{ padding: '10px 12px', background: '#fff', border: `1px solid ${display.border}`, borderRadius: 6, marginBottom: 8 }}>
-                                      <div style={{ fontWeight: 600, fontSize: 13, color: display.color, marginBottom: 4 }}>{help.summary}</div>
-                                      <div style={{ fontSize: 12, color: '#333' }}>{help.action}</div>
-                                    </div>
-                                  )}
-
-                                  {/* Action buttons */}
-                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                    {(nextActions.includes('recheck') || (isActionRequired && nextActions.length === 0)) && (
-                                      <button className="admin-btn-sm admin-btn-save" style={{ fontSize: 12 }}
+                                    {m365.run_status && !['completed', 'failed'].includes(m365.run_status) && (
+                                      <button className="admin-btn-sm admin-btn-save" style={{ marginTop: 8 }}
                                         onClick={async () => {
-                                          const result = await callIfoMover('recheck-persona-schedule', { schedule_id: m365?.persona_schedule_id, role_change_id: rc.id })
-                                          if (result) {
-                                            await loadMovers()
-                                            showSuccess('Persona schedule rechecked')
-                                          }
-                                        }}>
-                                        Try Again
-                                      </button>
-                                    )}
-                                    {nextActions.includes('cancel') && (
-                                      <button className="admin-btn-sm" style={{ fontSize: 12, background: '#f5f5f5', border: '1px solid #ccc', color: '#333' }}
-                                        onClick={async () => {
-                                          if (!confirm('Cancel this persona change schedule?')) return
-                                          await callIfoMover('cancel-persona-schedule', { schedule_id: m365?.persona_schedule_id, role_change_id: rc.id, reason: 'Cancelled by HR' })
+                                          await callIfoMover('check-mover-run', { role_change_id: rc.id, run_id: m365.run_id })
                                           await loadMovers()
                                         }}>
-                                        Cancel
+                                        Refresh Status
                                       </button>
                                     )}
                                   </div>
-
-                                  {/* Technical details — hidden by default */}
-                                  <details style={{ marginTop: 8 }}>
-                                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Technical details</summary>
-                                    <div style={{ marginTop: 6, fontSize: 11, color: '#666', background: '#fff', padding: 8, borderRadius: 6 }}>
-                                      {preCheckCode && <div>PreCheck code: <code>{preCheckCode}</code></div>}
-                                      {help?.detail && <div style={{ marginTop: 2 }}>{help.detail}</div>}
-                                      {m365?.persona_schedule_id && <div style={{ marginTop: 2 }}>Schedule ID: {m365.persona_schedule_id}</div>}
-                                      {m365?.persona_schedule_stages && (
-                                        <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto' }}>{JSON.stringify(m365.persona_schedule_stages, null, 2)}</pre>
-                                      )}
-                                    </div>
-                                  </details>
-                                </div>
-                              )
-                            })()}
-
-                            {/* Persona function gating */}
-                            {(() => { const g = getFunctionGating('personas'); return g.blocked ? (
-                              <div style={{ marginBottom: 8, padding: 10, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
-                                <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#e65100' }}>Persona changes: {g.message}</p>
-                                {g.reason && <p style={{ margin: '4px 0 0', fontSize: 11, color: '#bf360c' }}>{g.reason}</p>}
+                                )}
                               </div>
-                            ) : null })()}
-                            {/* Action buttons */}
-                            {!personaStatus && !personaCheckResult && !getFunctionGating('personas').blocked && (
-                              <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
-                                onClick={async () => {
-                                  const checkResult = await callIfoMover('check-persona', {
-                                    persona_id: personaNew,
-                                    user_principal_name: rc.employee_email,
-                                  })
-                                  if (!checkResult) return
+                            )
+                          })()}
 
-                                  if (checkResult.jobId) {
-                                    let jobData: any = checkResult
-                                    let attempts = 0
-                                    while (jobData.status !== 'succeeded' && jobData.status !== 'failed' && attempts < 20) {
-                                      await new Promise(r => setTimeout(r, 1500))
-                                      jobData = await callIfoMover('get-job', { job_id: checkResult.jobId })
-                                      if (!jobData) break
-                                      attempts++
-                                    }
-                                    if (jobData?.result) {
+                          {/* ── Persona Change (separate engine flow) ── */}
+                          {(() => {
+                            const hasPersonaChange = rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new
+                            if (!hasPersonaChange) return null
+                            const personaOld = resolvePersonaId(rc.changes.persona.old)
+                            const personaNew = resolvePersonaId(rc.changes.persona.new)
+                            const personaStatus = m365?.persona_schedule_status
+                            const personaCheckResult = m365?.persona_check_result
+
+                            return (
+                              <div>
+                                <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>Persona Change</h5>
+                                <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 10, fontSize: 13 }}>
+                                  <strong>{String(personaOld).replace(/_/g, ' ')}</strong> → <strong style={{ color: '#e65100' }}>{String(personaNew).replace(/_/g, ' ')}</strong>
+                                  <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>The employee's Microsoft 365 access and security settings will be updated to match their new persona.</div>
+                                </div>
+
+                                {/* Check result display — HR-friendly */}
+                                {personaCheckResult && (() => {
+                                  try {
+                                    const r = personaCheckResult
+                                    const currentName = typeof r.currentPersona === 'object' ? (r.currentPersona.name || r.currentPersona.id || (r.currentPersona.source === 'none' ? 'None' : '')) : String(r.currentPersona || '')
+                                    const targetName = typeof r.targetPersona === 'object' ? (r.targetPersona.name || r.targetPersona.id || '') : String(r.targetPersona || '')
+                                    const isAdmin = r.adminAccount === true
+                                    const needsApproval = r.approvalRequired === true
+                                    const warnings = Array.isArray(r.warnings) ? r.warnings : []
+
+                                    return (
+                                      <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
+                                        <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Check Result</div>
+                                        {currentName && <div style={{ marginBottom: 4 }}>Current persona: <strong>{currentName}</strong></div>}
+                                        {targetName && <div style={{ marginBottom: 6 }}>New persona: <strong>{targetName}</strong></div>}
+
+                                        {/* Admin account warning */}
+                                        {isAdmin && (
+                                          <div style={{ padding: '8px 12px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginBottom: 8, fontSize: 12 }}>
+                                            This employee has an admin account — the persona change may need to be done manually by IT.
+                                          </div>
+                                        )}
+
+                                        {/* Needs IT Approval */}
+                                        {needsApproval && (() => {
+                                          const mode = moverApproverConfig.mode || 'same_as_joiner'
+                                          const effMode = mode === 'same_as_joiner' ? (moverApproverConfig.joiner_approver_mode || 'nominated') : mode
+                                          let approver = ''
+                                          if (effMode === 'nominated') {
+                                            approver = mode === 'same_as_joiner'
+                                              ? (moverApproverConfig.joiner_approver_name || moverApproverConfig.joiner_approver_email || '')
+                                              : (moverApproverConfig.name || moverApproverConfig.email || '')
+                                          } else if (effMode === 'manager') {
+                                            approver = 'employee\'s line manager'
+                                          }
+                                          return (
+                                            <div style={{ padding: '8px 12px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginBottom: 8 }}>
+                                              <strong style={{ color: '#1565c0' }}>Needs IT Approval</strong>
+                                              <div style={{ fontSize: 12, marginTop: 2 }}>This change needs approval before it can be scheduled.{approver ? ` Approver: ${approver}` : ''}</div>
+                                            </div>
+                                          )
+                                        })()}
+
+                                        {/* Warnings */}
+                                        {warnings.map((w: any, i: number) => (
+                                          <div key={i} style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginBottom: 6, fontSize: 12 }}>
+                                            {typeof w === 'string' ? w : w?.message || w?.description || JSON.stringify(w)}
+                                          </div>
+                                        ))}
+
+                                        {r.deviceWarning && (
+                                          <div style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginBottom: 6, fontSize: 12 }}>
+                                            {String(r.deviceWarning)}
+                                          </div>
+                                        )}
+
+                                        {/* Technical details — collapsible */}
+                                        <details style={{ marginTop: 8 }}>
+                                          <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Technical details</summary>
+                                          <div style={{ marginTop: 6, fontSize: 11, color: '#555', background: '#fff', padding: 8, borderRadius: 6 }}>
+                                            {r.automaticSteps && (
+                                              <div style={{ marginBottom: 4 }}>
+                                                <strong>Automatic steps:</strong>
+                                                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                                  {(Array.isArray(r.automaticSteps) ? r.automaticSteps : []).map((s: any, i: number) => (
+                                                    <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
+                                                  ))}
+                                                </ul>
+                                              </div>
+                                            )}
+                                            {r.instructions && (
+                                              <div style={{ marginBottom: 4 }}>
+                                                <strong>Instructions:</strong>
+                                                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                                  {(Array.isArray(r.instructions) ? r.instructions : []).map((s: any, i: number) => (
+                                                    <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
+                                                  ))}
+                                                </ul>
+                                              </div>
+                                            )}
+                                            {Array.isArray(r.documents) && r.documents.length > 0 && (
+                                              <div style={{ marginBottom: 4 }}><strong>Documents:</strong> {r.documents.map((d: any) => d?.name || String(d)).join(', ')}</div>
+                                            )}
+                                            <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(r, null, 2)}</pre>
+                                          </div>
+                                        </details>
+                                      </div>
+                                    )
+                                  } catch (e: any) {
+                                    return (
+                                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
+                                        <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13, color: '#dc2626' }}>Error displaying check result</div>
+                                        <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, color: '#555' }}>{e?.message || String(e)}</pre>
+                                      </div>
+                                    )
+                                  }
+                                })()}
+
+                                {/* Persona schedule status — HR-friendly display */}
+                                {personaStatus && (() => {
+                                  const display = PERSONA_STATUS_DISPLAY[personaStatus] || { label: personaStatus, color: '#616161', bg: '#f5f5f5', border: '#e0e0e0' }
+                                  const preCheck = m365?.persona_pre_check
+                                  const preCheckCode = preCheck?.code
+                                  const help = preCheckCode ? PRECHECK_HELP[preCheckCode] : null
+                                  const nextActions = m365?.persona_next_actions || []
+                                  const isActionRequired = ['blocked', 'missed', 'failed'].includes(personaStatus)
+
+                                  return (
+                                    <div style={{ padding: '12px 16px', background: display.bg, border: `1px solid ${display.border}`, borderRadius: 8, marginBottom: 10 }}>
+                                      {/* Status badge */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: help || m365?.persona_schedule_message ? 8 : 0 }}>
+                                        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: display.color, flexShrink: 0, animation: personaStatus === 'running' ? 'pulse 1.5s infinite' : undefined }} />
+                                        <strong style={{ color: display.color, fontSize: 13 }}>{display.label}</strong>
+                                        {m365?.persona_schedule_next_due_at && !['completed', 'cancelled', 'failed'].includes(personaStatus) && (
+                                          <span style={{ fontSize: 11, color: '#666', marginLeft: 'auto' }}>
+                                            Next scheduled: {new Date(m365.persona_schedule_next_due_at).toLocaleDateString('en-GB')}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* What happened — engine message */}
+                                      {m365?.persona_schedule_message && (
+                                        <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>{m365.persona_schedule_message}</div>
+                                      )}
+
+                                      {/* What to do — preCheck help for HR */}
+                                      {help && (
+                                        <div style={{ padding: '10px 12px', background: '#fff', border: `1px solid ${display.border}`, borderRadius: 6, marginBottom: 8 }}>
+                                          <div style={{ fontWeight: 600, fontSize: 13, color: display.color, marginBottom: 4 }}>{help.summary}</div>
+                                          <div style={{ fontSize: 12, color: '#333' }}>{help.action}</div>
+                                        </div>
+                                      )}
+
+                                      {/* Action buttons */}
+                                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        {(nextActions.includes('recheck') || (isActionRequired && nextActions.length === 0)) && (
+                                          <button className="admin-btn-sm admin-btn-save" style={{ fontSize: 12 }}
+                                            onClick={async () => {
+                                              const result = await callIfoMover('recheck-persona-schedule', { schedule_id: m365?.persona_schedule_id, role_change_id: rc.id })
+                                              if (result) {
+                                                await loadMovers()
+                                                showSuccess('Persona schedule rechecked')
+                                              }
+                                            }}>
+                                            Try Again
+                                          </button>
+                                        )}
+                                        {nextActions.includes('cancel') && (
+                                          <button className="admin-btn-sm" style={{ fontSize: 12, background: '#f5f5f5', border: '1px solid #ccc', color: '#333' }}
+                                            onClick={async () => {
+                                              if (!confirm('Cancel this persona change schedule?')) return
+                                              await callIfoMover('cancel-persona-schedule', { schedule_id: m365?.persona_schedule_id, role_change_id: rc.id, reason: 'Cancelled by HR' })
+                                              await loadMovers()
+                                            }}>
+                                            Cancel
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      {/* Technical details — hidden by default */}
+                                      <details style={{ marginTop: 8 }}>
+                                        <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Technical details</summary>
+                                        <div style={{ marginTop: 6, fontSize: 11, color: '#666', background: '#fff', padding: 8, borderRadius: 6 }}>
+                                          {preCheckCode && <div>PreCheck code: <code>{preCheckCode}</code></div>}
+                                          {help?.detail && <div style={{ marginTop: 2 }}>{help.detail}</div>}
+                                          {m365?.persona_schedule_id && <div style={{ marginTop: 2 }}>Schedule ID: {m365.persona_schedule_id}</div>}
+                                          {m365?.persona_schedule_stages && (
+                                            <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto' }}>{JSON.stringify(m365.persona_schedule_stages, null, 2)}</pre>
+                                          )}
+                                        </div>
+                                      </details>
+                                    </div>
+                                  )
+                                })()}
+
+                                {/* Persona function gating */}
+                                {(() => { const g = getFunctionGating('personas'); return g.blocked ? (
+                                  <div style={{ marginBottom: 8, padding: 10, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
+                                    <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#e65100' }}>Persona changes: {g.message}</p>
+                                    {g.reason && <p style={{ margin: '4px 0 0', fontSize: 11, color: '#bf360c' }}>{g.reason}</p>}
+                                  </div>
+                                ) : null })()}
+                                {/* Action buttons */}
+                                {!personaStatus && !personaCheckResult && !getFunctionGating('personas').blocked && (
+                                  <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
+                                    onClick={async () => {
+                                      const checkResult = await callIfoMover('check-persona', {
+                                        persona_id: personaNew,
+                                        user_principal_name: rc.employee_email,
+                                      })
+                                      if (!checkResult) return
+
+                                      if (checkResult.jobId) {
+                                        let jobData: any = checkResult
+                                        let attempts = 0
+                                        while (jobData.status !== 'succeeded' && jobData.status !== 'failed' && attempts < 20) {
+                                          await new Promise(r => setTimeout(r, 1500))
+                                          jobData = await callIfoMover('get-job', { job_id: checkResult.jobId })
+                                          if (!jobData) break
+                                          attempts++
+                                        }
+                                        if (jobData?.result) {
+                                          await supabase.from('mover_m365_actions').upsert({
+                                            role_change_id: rc.id,
+                                            company_id: selectedCompanyId,
+                                            persona_check_result: jobData.result,
+                                            employee_upn: rc.employee_email,
+                                            updated_at: new Date().toISOString(),
+                                          }, { onConflict: 'role_change_id' })
+                                          await loadMovers()
+                                          showSuccess('Persona check complete — review the results below')
+                                          return
+                                        }
+                                      }
+
                                       await supabase.from('mover_m365_actions').upsert({
                                         role_change_id: rc.id,
                                         company_id: selectedCompanyId,
-                                        persona_check_result: jobData.result,
+                                        persona_check_result: checkResult,
                                         employee_upn: rc.employee_email,
                                         updated_at: new Date().toISOString(),
                                       }, { onConflict: 'role_change_id' })
                                       await loadMovers()
                                       showSuccess('Persona check complete — review the results below')
-                                      return
-                                    }
-                                  }
+                                    }}>
+                                    Check Persona Change
+                                  </button>
+                                )}
 
-                                  await supabase.from('mover_m365_actions').upsert({
-                                    role_change_id: rc.id,
-                                    company_id: selectedCompanyId,
-                                    persona_check_result: checkResult,
-                                    employee_upn: rc.employee_email,
-                                    updated_at: new Date().toISOString(),
-                                  }, { onConflict: 'role_change_id' })
-                                  await loadMovers()
-                                  showSuccess('Persona check complete — review the results below')
-                                }}>
-                                Check Persona Change
-                              </button>
-                            )}
+                                {personaCheckResult && !personaStatus && (
+                                  <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
+                                    onClick={async () => {
+                                      let approverEmail = ''
+                                      let approverName = ''
+                                      const mode = moverApproverConfig.mode || 'same_as_joiner'
+                                      const effectiveMode = mode === 'same_as_joiner' ? (moverApproverConfig.joiner_approver_mode || 'nominated') : mode
+                                      if (effectiveMode === 'nominated') {
+                                        if (mode === 'same_as_joiner') {
+                                          approverEmail = moverApproverConfig.joiner_approver_email || ''
+                                          approverName = moverApproverConfig.joiner_approver_name || ''
+                                        } else {
+                                          approverEmail = moverApproverConfig.email || ''
+                                          approverName = moverApproverConfig.name || ''
+                                        }
+                                      } else if (effectiveMode === 'manager') {
+                                        const { data: empRec } = await supabase.from('employees').select('manager_name, manager_email').eq('id', rc.employee_id).eq('company_id', selectedCompanyId).maybeSingle()
+                                        approverEmail = empRec?.manager_email || ''
+                                        approverName = empRec?.manager_name || ''
+                                      }
+                                      if (!approverEmail) {
+                                        showError('No approver email configured. Check the Mover Approver setting in Integrations.')
+                                        return
+                                      }
 
-                            {personaCheckResult && !personaStatus && (
-                              <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
-                                onClick={async () => {
-                                  let approverEmail = ''
-                                  let approverName = ''
-                                  const mode = moverApproverConfig.mode || 'same_as_joiner'
-                                  const effectiveMode = mode === 'same_as_joiner' ? (moverApproverConfig.joiner_approver_mode || 'nominated') : mode
-                                  if (effectiveMode === 'nominated') {
-                                    if (mode === 'same_as_joiner') {
-                                      approverEmail = moverApproverConfig.joiner_approver_email || ''
-                                      approverName = moverApproverConfig.joiner_approver_name || ''
-                                    } else {
-                                      approverEmail = moverApproverConfig.email || ''
-                                      approverName = moverApproverConfig.name || ''
-                                    }
-                                  } else if (effectiveMode === 'manager') {
-                                    const { data: empRec } = await supabase.from('employees').select('manager_name, manager_email').eq('id', rc.employee_id).eq('company_id', selectedCompanyId).maybeSingle()
-                                    approverEmail = empRec?.manager_email || ''
-                                    approverName = empRec?.manager_name || ''
-                                  }
-                                  if (!approverEmail) {
-                                    showError('No approver email configured. Check the Mover Approver setting in Integrations.')
-                                    return
-                                  }
+                                      const oldName = enginePersonas.find(ep => ep.id === resolvePersonaId(personaOld))?.name || resolvePersonaId(personaOld)
+                                      const newName = enginePersonas.find(ep => ep.id === resolvePersonaId(personaNew))?.name || resolvePersonaId(personaNew)
+                                      const taskDesc = `${rc.employee_name} — Persona change: ${oldName} → ${newName}\nM365 account: ${rc.employee_email}`
 
-                                  const oldName = enginePersonas.find(ep => ep.id === resolvePersonaId(personaOld))?.name || resolvePersonaId(personaOld)
-                                  const newName = enginePersonas.find(ep => ep.id === resolvePersonaId(personaNew))?.name || resolvePersonaId(personaNew)
-                                  const taskDesc = `${rc.employee_name} — Persona change: ${oldName} → ${newName}\nM365 account: ${rc.employee_email}`
+                                      const { data: existingWt } = await supabase.from('workflow_tracker')
+                                        .select('id, status').eq('onboard_id', rc.id).eq('record_type', 'M365 Mover Persona').eq('status', 'Pending').maybeSingle()
+                                      if (existingWt) {
+                                        showError('An approval request is already pending for this persona change.')
+                                        return
+                                      }
 
-                                  const { data: existingWt } = await supabase.from('workflow_tracker')
-                                    .select('id, status').eq('onboard_id', rc.id).eq('record_type', 'M365 Mover Persona').eq('status', 'Pending').maybeSingle()
-                                  if (existingWt) {
-                                    showError('An approval request is already pending for this persona change.')
-                                    return
-                                  }
+                                      const { error: wtErr } = await supabase.from('workflow_tracker').insert({
+                                        company_id: selectedCompanyId,
+                                        record_type: 'M365 Mover Persona',
+                                        onboard_id: rc.id,
+                                        emp_display_name: rc.employee_name,
+                                        action: 'Approve',
+                                        employee_email: approverEmail,
+                                        assigned_to: approverEmail,
+                                        status: 'Pending',
+                                        approval_status: 'pending',
+                                        task_description: taskDesc,
+                                      })
+                                      if (wtErr) {
+                                        showError(`Failed to create approval task: ${wtErr.message}`)
+                                        return
+                                      }
 
-                                  const { error: wtErr } = await supabase.from('workflow_tracker').insert({
-                                    company_id: selectedCompanyId,
-                                    record_type: 'M365 Mover Persona',
-                                    onboard_id: rc.id,
-                                    emp_display_name: rc.employee_name,
-                                    action: 'Approve',
-                                    employee_email: approverEmail,
-                                    assigned_to: approverEmail,
-                                    status: 'Pending',
-                                    approval_status: 'pending',
-                                    task_description: taskDesc,
-                                  })
-                                  if (wtErr) {
-                                    showError(`Failed to create approval task: ${wtErr.message}`)
-                                    return
-                                  }
+                                      const { data: approverEmp } = await supabase.from('employees')
+                                        .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
+                                      if (approverEmp) {
+                                        await supabase.from('notifications').insert({
+                                          company_id: selectedCompanyId,
+                                          employee_id: approverEmp.id,
+                                          type: 'action',
+                                          notification_type: 'm365_mover_persona_approval',
+                                          title: 'M365 Persona Change Approval',
+                                          message: `${rc.employee_name}'s persona change (${oldName} → ${newName}) needs your approval.`,
+                                          send_email: true,
+                                        })
+                                      }
 
-                                  const { data: approverEmp } = await supabase.from('employees')
-                                    .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
-                                  if (approverEmp) {
-                                    await supabase.from('notifications').insert({
-                                      company_id: selectedCompanyId,
-                                      employee_id: approverEmp.id,
-                                      type: 'action',
-                                      notification_type: 'm365_mover_persona_approval',
-                                      title: 'M365 Persona Change Approval',
-                                      message: `${rc.employee_name}'s persona change (${oldName} → ${newName}) needs your approval.`,
-                                      send_email: true,
-                                    })
-                                  }
+                                      await supabase.from('mover_m365_actions').upsert({
+                                        role_change_id: rc.id,
+                                        company_id: selectedCompanyId,
+                                        persona_schedule_status: 'pending_approval',
+                                        employee_upn: rc.employee_email,
+                                        updated_at: new Date().toISOString(),
+                                      }, { onConflict: 'role_change_id' })
 
-                                  await supabase.from('mover_m365_actions').upsert({
-                                    role_change_id: rc.id,
-                                    company_id: selectedCompanyId,
-                                    persona_schedule_status: 'pending_approval',
-                                    employee_upn: rc.employee_email,
-                                    updated_at: new Date().toISOString(),
-                                  }, { onConflict: 'role_change_id' })
+                                      await loadMovers()
+                                      showSuccess(`Persona change approval sent to ${approverName || approverEmail}`)
+                                    }}>
+                                    {personaCheckResult?.approvalRequired ? 'Request Approval' : 'Schedule Persona Change'}
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          })()}
 
-                                  await loadMovers()
-                                  showSuccess(`Persona change approval sent to ${approverName || approverEmail}`)
-                                }}>
-                                {personaCheckResult?.approvalRequired ? 'Request Approval' : 'Schedule Persona Change'}
-                              </button>
-                            )}
-                          </div>
-                        )
-                      })()}
-
-                      {/* Verification panel — show when both mover and persona are done */}
-                      {(m365?.run_status === 'completed' || !(rc.changes?.job_title || rc.changes?.department || rc.changes?.location || rc.changes?.manager_name || rc.changes?.manager_email)) &&
-                       (m365?.persona_schedule_status === 'scheduled' || m365?.persona_schedule_status === 'completed' || !(rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new)) && (
-                        <div style={{ padding: '12px 16px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#2e7d32' }}>Changes applied</div>
-                          <p style={{ fontSize: 12, color: '#333', margin: '0 0 8px' }}>The M365 account changes have been applied. Ask IT to verify if needed.</p>
-                          <details>
-                            <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Verification steps for IT</summary>
-                            <ul style={{ fontSize: 11, margin: '6px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4, color: '#555' }}>
-                              <li><strong>Entra ID</strong> — Check the user's profile, extensionAttribute1 value, and dynamic group memberships.</li>
-                              <li><strong>Intune</strong> — Verify the correct configuration profiles and compliance policies are assigned to the user's devices.</li>
-                              <li><strong>Conditional Access</strong> — Check sign-in logs to confirm the correct policies are being applied.</li>
-                            </ul>
-                          </details>
+                          {/* Verification panel — show when both mover and persona are done */}
+                          {(m365?.run_status === 'completed' || !(rc.changes?.job_title || rc.changes?.department || rc.changes?.location || rc.changes?.manager_name || rc.changes?.manager_email)) &&
+                           (m365?.persona_schedule_status === 'scheduled' || m365?.persona_schedule_status === 'completed' || !(rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new)) && (
+                            <div style={{ padding: '12px 16px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#2e7d32' }}>Changes applied</div>
+                              <p style={{ fontSize: 12, color: '#333', margin: '0 0 8px' }}>The M365 account changes have been applied. Ask IT to verify if needed.</p>
+                              <details>
+                                <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Verification steps for IT</summary>
+                                <ul style={{ fontSize: 11, margin: '6px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4, color: '#555' }}>
+                                  <li><strong>Entra ID</strong> — Check the user's profile, extensionAttribute1 value, and dynamic group memberships.</li>
+                                  <li><strong>Intune</strong> — Verify the correct configuration profiles and compliance policies are assigned to the user's devices.</li>
+                                  <li><strong>Conditional Access</strong> — Check sign-in logs to confirm the correct policies are being applied.</li>
+                                </ul>
+                              </details>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ padding: '12px 16px', background: '#f5f5f5', borderRadius: 8, fontSize: 13 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={!!moverChecks['update_accounts']} onChange={e => setMoverChecks({ ...moverChecks, update_accounts: e.target.checked })} />
+                            I have manually updated the employee's M365 account
+                          </label>
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <div style={{ padding: '12px 16px', background: '#f5f5f5', borderRadius: 8, fontSize: 13 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={!!moverChecks['update_accounts']} onChange={e => setMoverChecks({ ...moverChecks, update_accounts: e.target.checked })} />
-                        I have manually updated the employee's M365 account
+                    )
+                    } catch (err: any) {
+                      console.error('Mover step 2 render error:', err)
+                      return <div style={{ padding: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 13 }}>
+                        <strong>Error rendering step 2:</strong> {err?.message || String(err)}
+                        <pre style={{ fontSize: 11, marginTop: 8, whiteSpace: 'pre-wrap' }}>{err?.stack}</pre>
+                      </div>
+                    }
+                  })()}
+
+                  {stepKey === 'update_records' && (
+                    <div>
+                      <p style={{ fontSize: 13, marginBottom: 12 }}>Save the following changes to the employee's InflowHR record:</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                        {Object.entries(rc.changes || {}).map(([field, val]: [string, any]) => (
+                          <div key={field} style={{ fontSize: 13 }}>
+                            <strong>{field.replace(/_/g, ' ')}:</strong> {val?.old || '—'} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{val?.new || '—'}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
+                        onClick={async () => {
+                          const updates: Record<string, any> = {}
+                          const ch = rc.changes || {}
+                          if (ch.job_title?.new) updates.job_title = ch.job_title.new
+                          if (ch.department?.new) updates.department = ch.department.new
+                          if (ch.location?.new) updates.location = ch.location.new
+                          if (ch.manager_name?.new) updates.manager_name = ch.manager_name.new
+                          if (ch.manager_email?.new) updates.manager_email = ch.manager_email.new
+                          if (ch.persona?.new) updates.persona = ch.persona.new
+                          if (Object.keys(updates).length > 0) {
+                            const { error } = await supabase.from('employees').update(updates).eq('id', rc.employee_id)
+                            if (error) { showError(error.message); return }
+                          }
+                          setMoverChecks({ ...moverChecks, update_records: true })
+                          showSuccess('HR record updated')
+                        }}>
+                        Save Changes to InflowHR
+                      </button>
+                    </div>
+                  )}
+
+                  {stepKey === 'notify_team' && (
+                    <div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                        <input type="checkbox" checked={!!moverChecks['notify_team']} onChange={e => setMoverChecks({ ...moverChecks, notify_team: e.target.checked })} />
+                        Team and manager(s) have been notified of the role change
                       </label>
                     </div>
                   )}
-                </div>
-                )
-                } catch (err: any) {
-                  console.error('Mover step 2 render error:', err)
-                  return <div style={{ padding: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 13 }}>
-                    <strong>Error rendering step 2:</strong> {err?.message || String(err)}
-                    <pre style={{ fontSize: 11, marginTop: 8, whiteSpace: 'pre-wrap' }}>{err?.stack}</pre>
-                  </div>
-                }
-              })()}
 
-              {currentStep.key === 'update_records' && (
-                <div>
-                  <p style={{ fontSize: 13, marginBottom: 12 }}>Save the following changes to the employee's InflowHR record:</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-                    {Object.entries(rc.changes || {}).map(([field, val]: [string, any]) => (
-                      <div key={field} style={{ fontSize: 13 }}>
-                        <strong>{field.replace(/_/g, ' ')}:</strong> {val?.old || '—'} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{val?.new || '—'}</span>
+                  {stepKey === 'review_access' && (
+                    <div>
+                      <p style={{ fontSize: 13, marginBottom: 12 }}>Review any access items requiring manual attention:</p>
+                      {['SharePoint sites and document libraries', 'Teams channels and groups', 'Shared drives and folders', 'Application-specific permissions', 'Physical access (badges, keys)'].map((item, i) => (
+                        <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, marginBottom: 6 }}>
+                          <input type="checkbox" />
+                          {item}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {stepKey === 'confirm_complete' && (
+                    <div>
+                      <p style={{ fontSize: 13, marginBottom: 12 }}>Confirm all changes have been applied and verified:</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
+                        {steps.filter(s => s.key !== 'confirm_complete').map(s => (
+                          <div key={s.key} style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>{moverChecks[s.key] ? '✅' : moverSkips[s.key] ? '⏭️' : '⬜'}</span>
+                            <span style={{ color: moverChecks[s.key] ? '#16a34a' : moverSkips[s.key] ? '#999' : '#333' }}>{s.label}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                      <button className="admin-btn admin-btn-save" style={{ background: '#16a34a' }}
+                        onClick={async () => {
+                          await supabase.from('role_changes').update({
+                            status: 'completed', is_complete: true, completed_at: new Date().toISOString(),
+                            workflow_steps: moverChecks, skipped_steps: moverSkips,
+                          }).eq('id', rc.id)
+                          await loadMovers()
+                          setTab('movers')
+                          showSuccess('Role change completed')
+                        }}>
+                        Mark Complete
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Navigation */}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 24, borderTop: '1px solid #e0e0e0', paddingTop: 16 }}>
+                    <button className="admin-btn-sm" disabled={moverStep <= 0} onClick={() => setMoverStep(moverStep - 1)}>← Previous</button>
+                    <button className="admin-btn-sm" disabled={moverStep >= steps.length - 1} onClick={() => setMoverStep(moverStep + 1)}>Next →</button>
+                    <button className="admin-btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setTab('movers')}>← Back to Movers List</button>
                   </div>
-                  <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
-                    onClick={async () => {
-                      const updates: Record<string, any> = {}
-                      const ch = rc.changes || {}
-                      if (ch.job_title?.new) updates.job_title = ch.job_title.new
-                      if (ch.department?.new) updates.department = ch.department.new
-                      if (ch.location?.new) updates.location = ch.location.new
-                      if (ch.manager_name?.new) updates.manager_name = ch.manager_name.new
-                      if (ch.manager_email?.new) updates.manager_email = ch.manager_email.new
-                      if (ch.persona?.new) updates.persona = ch.persona.new
-                      if (Object.keys(updates).length > 0) {
-                        const { error } = await supabase.from('employees').update(updates).eq('id', rc.employee_id)
-                        if (error) { showError(error.message); return }
-                      }
-                      setMoverChecks({ ...moverChecks, update_records: true })
-                      showSuccess('HR record updated')
-                    }}>
-                    Save Changes to InflowHR
-                  </button>
-                </div>
-              )}
 
-              {currentStep.key === 'notify_team' && (
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                    <input type="checkbox" checked={!!moverChecks['notify_team']} onChange={e => setMoverChecks({ ...moverChecks, notify_team: e.target.checked })} />
-                    Team and manager(s) have been notified of the role change
-                  </label>
                 </div>
-              )}
-
-              {currentStep.key === 'review_access' && (
-                <div>
-                  <p style={{ fontSize: 13, marginBottom: 12 }}>Review any access items requiring manual attention:</p>
-                  {['SharePoint sites and document libraries', 'Teams channels and groups', 'Shared drives and folders', 'Application-specific permissions', 'Physical access (badges, keys)'].map((item, i) => (
-                    <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, marginBottom: 6 }}>
-                      <input type="checkbox" />
-                      {item}
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {currentStep.key === 'confirm_complete' && (
-                <div>
-                  <p style={{ fontSize: 13, marginBottom: 12 }}>Confirm all changes have been applied and verified:</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
-                    {steps.filter(s => s.key !== 'confirm_complete').map(s => (
-                      <div key={s.key} style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span>{moverChecks[s.key] ? '✅' : moverSkips[s.key] ? '⏭️' : '⬜'}</span>
-                        <span style={{ color: moverChecks[s.key] ? '#16a34a' : moverSkips[s.key] ? '#999' : '#333' }}>{s.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <button className="admin-btn admin-btn-save" style={{ background: '#16a34a' }}
-                    onClick={async () => {
-                      await supabase.from('role_changes').update({
-                        status: 'completed', is_complete: true, completed_at: new Date().toISOString(),
-                        workflow_steps: moverChecks, skipped_steps: moverSkips,
-                      }).eq('id', rc.id)
-                      await loadMovers()
-                      setTab('movers')
-                      showSuccess('Role change completed')
-                    }}>
-                    Mark Complete
-                  </button>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 24, borderTop: '1px solid #e0e0e0', paddingTop: 16 }}>
-                {!moverChecks[currentStep.key] && !moverSkips[currentStep.key] && currentStep.key !== 'confirm_complete' && (
-                  <>
-                    <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
-                      onClick={async () => {
-                        const newChecks = { ...moverChecks, [currentStep.key]: true }
-                        setMoverChecks(newChecks)
-                        await supabase.from('role_changes').update({ workflow_steps: newChecks, status: 'in_progress' }).eq('id', rc.id)
-                        if (moverStep < steps.length - 1) setMoverStep(moverStep + 1)
-                      }}>
-                      Mark Done & Next
-                    </button>
-                    <button className="admin-btn-sm" style={{ color: '#888' }}
-                      onClick={async () => {
-                        const newSkips = { ...moverSkips, [currentStep.key]: true }
-                        setMoverSkips(newSkips)
-                        await supabase.from('role_changes').update({ skipped_steps: newSkips, status: 'in_progress' }).eq('id', rc.id)
-                        if (moverStep < steps.length - 1) setMoverStep(moverStep + 1)
-                      }}>
-                      Skip
-                    </button>
-                  </>
-                )}
-                <button className="admin-btn-sm" disabled={moverStep <= 0} onClick={() => setMoverStep(moverStep - 1)}>← Previous</button>
-                <button className="admin-btn-sm" disabled={moverStep >= steps.length - 1} onClick={() => setMoverStep(moverStep + 1)}>Next →</button>
-                {(rc.status === 'pending' || rc.status === 'in_progress') && (
-                  <button className="admin-btn-sm" style={{ marginLeft: 'auto', color: '#c62828', border: '1px solid #c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel Role Change</button>
-                )}
-                <button className="admin-btn-sm" style={{ marginLeft: (rc.status === 'pending' || rc.status === 'in_progress') ? 8 : 'auto', color: '#9e9e9e', border: '1px solid #ccc' }} onClick={() => deleteMoverRoleChange(rc)}>Delete</button>
               </div>
             </div>
-          </div>
           </div>
         )
         } catch (wfErr: any) {
