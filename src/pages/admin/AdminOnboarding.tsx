@@ -713,7 +713,7 @@ export default function AdminOnboarding() {
       if (state.jmlSection) setJmlSection(state.jmlSection)
       if (state.prefill) {
         const pf = state.prefill
-        setMoverSelectedEmployee({ id: pf.empId, first_name: pf.empName.split(' ')[0], last_name: pf.empName.split(' ').slice(1).join(' '), email: pf.empEmail, work_email: pf.empEmail, job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: resolvePersonaId(pf.personaChange.old), has_company_device: true })
+        setMoverSelectedEmployee({ id: pf.empId, first_name: pf.empName.split(' ')[0], last_name: pf.empName.split(' ').slice(1).join(' '), email: pf.empEmail, job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: resolvePersonaId(pf.personaChange.old), has_company_device: true })
         setMoverEmployeeSearch(pf.empName)
         setMoverForm({ employee_id: pf.empId, employee_name: pf.empName, employee_email: pf.empEmail, changes: { persona: { old: resolvePersonaId(pf.personaChange.old), new: resolvePersonaId(pf.personaChange.new) } }, change_type: 'persona_change', reason: '', additionalFields: [] })
       }
@@ -6323,9 +6323,11 @@ export default function AdminOnboarding() {
                 onChange={async (e) => {
                   setMoverEmployeeSearch(e.target.value)
                   if (e.target.value.length >= 2) {
-                    const { data } = await supabase.from('employees').select('id, first_name, last_name, email, work_email, job_title, department, manager_name, manager_email, location, persona, has_company_device')
-                      .eq('company_id', selectedCompanyId).or(`first_name.ilike.%${e.target.value}%,last_name.ilike.%${e.target.value}%,email.ilike.%${e.target.value}%`).limit(10)
-                    setMoverEmployeeResults((data || []).map((e: any) => ({ ...e, email: e.email || '', work_email: e.work_email || e.email || '' })))
+                    const q = e.target.value.replace(/[,.()"\\]/g, '')
+                    const { data } = await supabase.from('employees').select('id, first_name, last_name, email, job_title, department, manager_name, manager_email, location, persona, has_company_device')
+                      .eq('company_id', selectedCompanyId).eq('is_active', true).eq('is_frozen', false)
+                      .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,email.ilike.%${q}%`).limit(10)
+                    setMoverEmployeeResults((data || []).map((e: any) => ({ ...e, email: e.email || '' })))
                   } else {
                     setMoverEmployeeResults([])
                   }
@@ -6340,7 +6342,7 @@ export default function AdminOnboarding() {
                         setMoverSelectedEmployee(emp)
                         setMoverEmployeeSearch(`${emp.first_name} ${emp.last_name}`)
                         setMoverEmployeeResults([])
-                        setMoverForm({ employee_id: emp.id, employee_name: `${emp.first_name} ${emp.last_name}`, employee_email: emp.work_email || emp.email, changes: {}, change_type: 'persona_change', reason: '', additionalFields: [] })
+                        setMoverForm({ employee_id: emp.id, employee_name: `${emp.first_name} ${emp.last_name}`, employee_email: emp.email, changes: {}, change_type: 'persona_change', reason: '', additionalFields: [] })
                       }}>
                       <span style={{ fontWeight: 600 }}>{emp.first_name} {emp.last_name}</span>
                       <span style={{ color: '#666', marginLeft: 8 }}>{emp.job_title} · {emp.department}</span>

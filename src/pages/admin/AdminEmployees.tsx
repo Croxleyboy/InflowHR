@@ -135,6 +135,7 @@ export default function AdminEmployees() {
   const [customFieldsSaving, setCustomFieldsSaving] = useState(false)
   const [identityProvider, setIdentityProvider] = useState<'entra' | 'google_workspace'>('entra')
   const [moverPrompt, setMoverPrompt] = useState<{ empId: string; empName: string; empEmail: string; changes: Record<string, { old: string; new: string }> } | null>(null)
+  const [m365DeletePrompt, setM365DeletePrompt] = useState<{ emp: Employee; m365Upn: string; hasIfo: boolean; offboarding: boolean } | null>(null)
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
@@ -420,8 +421,25 @@ export default function AdminEmployees() {
       })
     }
 
+    // Check if employee has an M365 account that needs cleanup
+    const { data: m365Row } = await supabase
+      .from('onboarding_m365_actions')
+      .select('m365_upn')
+      .eq('company_id', selectedCompanyId)
+      .eq('onboarding_id', (await supabase.from('onboarding').select('id').eq('user_email', emp.email).eq('company_id', selectedCompanyId).maybeSingle()).data?.id || -1)
+      .maybeSingle()
+
+    if (m365Row?.m365_upn) {
+      setM365DeletePrompt({ emp, m365Upn: m365Row.m365_upn, hasIfo: !!features.inflowonboarder_integration, offboarding: false })
+      return
+    }
+
     if (!confirm(`Permanently delete ${emp.first_name} ${emp.last_name} and all their related records? This cannot be undone.`)) return
 
+    await executeCascadeDelete(emp)
+  }
+
+  async function executeCascadeDelete(emp: Employee) {
     const deletes: { table: string; column: string; value: string }[] = [
       { table: 'one_to_one_comments', column: 'author_id', value: emp.id },
       { table: 'one_to_one_meetings', column: 'employee_id', value: emp.id },
@@ -448,7 +466,6 @@ export default function AdminEmployees() {
       { table: 'company_users', column: 'employee_id', value: emp.id },
     ]
 
-    // Null out approved_by / reviewer references that point to this employee
     await supabase.from('expense_claims').update({ approved_by: null }).eq('approved_by', emp.id)
     await supabase.from('leave_requests').update({ approved_by: null }).eq('approved_by', emp.id)
     await supabase.from('timesheets').update({ approved_by: null }).eq('approved_by', emp.id)
@@ -456,7 +473,6 @@ export default function AdminEmployees() {
     await supabase.from('announcements').update({ author_id: null }).eq('author_id', emp.id)
     await supabase.from('workflow_tracker').delete().eq('employee_email', emp.email)
 
-    // Delete expense_line_items for this employee's claims first
     const { data: claims } = await supabase.from('expense_claims').select('id').eq('employee_id', emp.id)
     if (claims && claims.length > 0) {
       const claimIds = claims.map(c => c.id)
@@ -472,7 +488,6 @@ export default function AdminEmployees() {
     const { error: onboardingErr } = await supabase.from('onboarding').delete().eq('user_email', emp.email)
     if (onboardingErr) { showError('Failed to delete onboarding record: ' + onboardingErr.message); return }
 
-    // Delete avatar from storage
     const ext = emp.avatar_url?.split('.').pop()?.split('?')[0] || 'jpg'
     await supabase.storage.from('avatars').remove([`${emp.id}.${ext}`])
 
@@ -483,6 +498,44 @@ export default function AdminEmployees() {
     }
     showSuccess('Employee deleted')
     load()
+  }
+
+  async function handleM365DeleteConfirm() {
+    if (!m365DeletePrompt) return
+    const { emp, m365Upn, hasIfo } = m365DeletePrompt
+
+    if (hasIfo) {
+      setM365DeletePrompt(p => p ? { ...p, offboarding: true } : null)
+      try {
+        const { data: sessionData } = await supabase.auth.getSession()
+        const token = sessionData?.session?.access_token
+        if (!token) { showError('Session expired — please sign in again'); setM365DeletePrompt(null); return }
+
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+        const res = await fetch(`${supabaseUrl}/functions/v1/inflowonboarder-leaver`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            company_id: selectedCompanyId,
+            action: 'start-leaver-run',
+            userPrincipalName: m365Upn,
+            displayName: `${emp.first_name} ${emp.last_name}`,
+            source: 'employee_delete',
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          showError(`M365 offboarding failed: ${data.error || 'Unknown error'}. You can still delete the HR record — clean up M365 manually.`)
+        } else {
+          showSuccess('M365 account blocked, groups removed, licence released')
+        }
+      } catch {
+        showError('M365 offboarding request failed. You can still delete the HR record — clean up M365 manually.')
+      }
+    }
+
+    setM365DeletePrompt(null)
+    await executeCascadeDelete(emp)
   }
 
   async function uploadPhoto(emp: Employee, file: File) {
@@ -880,6 +933,7 @@ export default function AdminEmployees() {
                       <div><span style={{ color: '#999', display: 'block' }}>Service</span><strong>{calculateDuration(selectedEmployee.start_date)}</strong></div>
                       <div><span style={{ color: '#999', display: 'block' }}>Location</span><strong>{selectedEmployee.location || '—'}</strong></div>
                       <div><span style={{ color: '#999', display: 'block' }}>Manager</span><strong>{selectedEmployee.manager_name || '—'}</strong></div>
+                      <div><span style={{ color: '#999', display: 'block' }}>Manager Email</span><strong style={{ fontSize: 11 }}>{selectedEmployee.manager_email || '—'}</strong></div>
                       {features.inflowonboarder_integration && (
                         <>
                           <div><span style={{ color: '#999', display: 'block' }}>Company Device</span><strong>{selectedEmployee.has_company_device ? 'Yes' : 'No'}</strong></div>
@@ -890,6 +944,24 @@ export default function AdminEmployees() {
                       )}
                     </div>
                   </div>
+                  {selectedEmployee.is_active && !selectedEmployee.is_frozen && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 16, borderTop: '1px solid #e8e8e8' }}>
+                      <button
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, border: '1px solid #ffe0b2', borderRadius: 8, background: '#fff8e1', color: '#e65100', cursor: 'pointer' }}
+                        onClick={() => navigate('/admin/onboarding', { state: { tab: 'jml', jmlSection: 'movers', prefill: { empId: selectedEmployee.id, empName: `${selectedEmployee.first_name} ${selectedEmployee.last_name}`, empEmail: selectedEmployee.email } } })}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M11 13l-7 7"/><path d="M3 21h5v-5"/></svg>
+                        Start Role Change
+                      </button>
+                      <button
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, border: '1px solid #ffcdd2', borderRadius: 8, background: '#ffebee', color: '#c62828', cursor: 'pointer' }}
+                        onClick={() => navigate('/admin/onboarding', { state: { tab: 'jml', jmlSection: 'leavers', prefill: { empId: selectedEmployee.id, empName: `${selectedEmployee.first_name} ${selectedEmployee.last_name}`, empEmail: selectedEmployee.email } } })}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                        Start Offboarding
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {showDirectReports && directReports.length > 0 && (
@@ -1081,8 +1153,8 @@ export default function AdminEmployees() {
                       </div>
                     ) : <span className="admin-inline-avatar">{emp.avatar_url ? <img src={emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{emp.first_name[0]}{emp.last_name[0]}</span>}{emp.first_name} {emp.last_name}</span>}</td>
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.email} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} /> : emp.email}</td>
-                    <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.department} onChange={e => setEditForm(f => ({...f, department: e.target.value}))} disabled={!!features.inflowonboarder_integration} title={features.inflowonboarder_integration ? 'Use the Mover workflow to change this field' : ''} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} /> : (emp.department || '—')}</td>
-                    <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.job_title} onChange={e => setEditForm(f => ({...f, job_title: e.target.value}))} disabled={!!features.inflowonboarder_integration} title={features.inflowonboarder_integration ? 'Use the Mover workflow to change this field' : ''} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} /> : (emp.job_title || '—')}</td>
+                    <td>{editingId === emp.id ? (features.inflowonboarder_integration ? <span style={{ fontSize: 13, color: '#333' }} title="Use the Mover workflow to change this field">{editForm.department || '—'}</span> : <input className="admin-inline-input" value={editForm.department} onChange={e => setEditForm(f => ({...f, department: e.target.value}))} />) : (emp.department || '—')}</td>
+                    <td>{editingId === emp.id ? (features.inflowonboarder_integration ? <span style={{ fontSize: 13, color: '#333' }} title="Use the Mover workflow to change this field">{editForm.job_title || '—'}</span> : <input className="admin-inline-input" value={editForm.job_title} onChange={e => setEditForm(f => ({...f, job_title: e.target.value}))} />) : (emp.job_title || '—')}</td>
                     <td>
                       <span className={`admin-badge ${empStatus(emp).cls}`}>{empStatus(emp).label}</span>
                       {setupMap[emp.email?.toLowerCase()] === false && (
@@ -1243,7 +1315,10 @@ export default function AdminEmployees() {
                                         {showField('location') && (
                                           <div className="admin-form-field">
                                             <label style={{ fontSize: 12 }}>Work Location {features.inflowonboarder_integration && <span style={{ fontSize: 10, color: '#e65100' }}>🔒 Mover workflow</span>}</label>
-                                            <input className="admin-inline-input" value={editForm.location || ''} onChange={e => setEditForm(p => ({...p, location: e.target.value}))} disabled={!!features.inflowonboarder_integration} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} />
+                                            {features.inflowonboarder_integration
+                                              ? <div style={{ padding: '6px 10px', background: '#f5f5f5', borderRadius: 6, fontSize: 13, color: '#333', border: '1px solid #e0e0e0', minHeight: 32, display: 'flex', alignItems: 'center' }}>{editForm.location || <span style={{ color: '#999' }}>—</span>}</div>
+                                              : <input className="admin-inline-input" value={editForm.location || ''} onChange={e => setEditForm(p => ({...p, location: e.target.value}))} />
+                                            }
                                           </div>
                                         )}
                                         {showField('contract_type') && (
@@ -1290,13 +1365,19 @@ export default function AdminEmployees() {
                                         {showField('manager_name') && (
                                           <div className="admin-form-field">
                                             <label style={{ fontSize: 12 }}>Manager Name {features.inflowonboarder_integration && <span style={{ fontSize: 10, color: '#e65100' }}>🔒 Mover workflow</span>}</label>
-                                            <input className="admin-inline-input" value={editForm.manager_name || ''} onChange={e => setEditForm(p => ({...p, manager_name: e.target.value}))} disabled={!!features.inflowonboarder_integration} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} />
+                                            {features.inflowonboarder_integration
+                                              ? <div style={{ padding: '6px 10px', background: '#f5f5f5', borderRadius: 6, fontSize: 13, color: '#333', border: '1px solid #e0e0e0', minHeight: 32, display: 'flex', alignItems: 'center' }}>{editForm.manager_name || <span style={{ color: '#999' }}>—</span>}</div>
+                                              : <input className="admin-inline-input" value={editForm.manager_name || ''} onChange={e => setEditForm(p => ({...p, manager_name: e.target.value}))} />
+                                            }
                                           </div>
                                         )}
                                         {showField('manager_email') && (
                                           <div className="admin-form-field">
                                             <label style={{ fontSize: 12 }}>Manager Email {features.inflowonboarder_integration && <span style={{ fontSize: 10, color: '#e65100' }}>🔒 Mover workflow</span>}</label>
-                                            <input className="admin-inline-input" value={editForm.manager_email || ''} onChange={e => setEditForm(p => ({...p, manager_email: e.target.value}))} disabled={!!features.inflowonboarder_integration} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} />
+                                            {features.inflowonboarder_integration
+                                              ? <div style={{ padding: '6px 10px', background: '#f5f5f5', borderRadius: 6, fontSize: 13, color: '#333', border: '1px solid #e0e0e0', minHeight: 32, display: 'flex', alignItems: 'center' }}>{editForm.manager_email || <span style={{ color: '#999' }}>—</span>}</div>
+                                              : <input className="admin-inline-input" value={editForm.manager_email || ''} onChange={e => setEditForm(p => ({...p, manager_email: e.target.value}))} />
+                                            }
                                           </div>
                                         )}
                                         {features.inflowonboarder_integration && (
@@ -1584,6 +1665,66 @@ export default function AdminEmployees() {
         </div>
       )}
       </>}
+
+      {m365DeletePrompt && (
+        <div className="my-profile-modal-overlay" onClick={() => setM365DeletePrompt(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: m365DeletePrompt.hasIfo ? '#c62828' : '#e65100', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>Microsoft 365 Account Detected</span>
+              <button onClick={() => setM365DeletePrompt(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <p style={{ fontSize: 14, marginBottom: 12 }}>
+                <strong>{m365DeletePrompt.emp.first_name} {m365DeletePrompt.emp.last_name}</strong> has a Microsoft 365 account (<span style={{ fontFamily: 'monospace', fontSize: 13 }}>{m365DeletePrompt.m365Upn}</span>).
+              </p>
+
+              {m365DeletePrompt.hasIfo ? (
+                <>
+                  <div style={{ background: '#fbe9e7', border: '1px solid #ef9a9a', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
+                    <strong>Deleting this employee will also:</strong>
+                    <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+                      <li>Block their Microsoft 365 sign-in</li>
+                      <li>Remove them from all security groups</li>
+                      <li>Release their licence</li>
+                    </ul>
+                  </div>
+                  <p style={{ fontSize: 12, color: '#666', marginBottom: 16 }}>
+                    If the M365 cleanup fails, you will be notified but the HR record will still be deleted. You can then clean up M365 manually.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div style={{ background: '#fff3e0', border: '1px solid #ffcc80', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
+                    <strong>Manual steps required:</strong>
+                    <p style={{ margin: '8px 0 0' }}>Without InflowOnboarder, deleting this employee will only remove the HR record. You must manually:</p>
+                    <ol style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+                      <li>Block their sign-in in Microsoft Entra ID</li>
+                      <li>Remove them from security groups</li>
+                      <li>Release their licence</li>
+                      <li>Optionally delete the M365 account after 30 days</li>
+                    </ol>
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  disabled={m365DeletePrompt.offboarding}
+                  onClick={handleM365DeleteConfirm}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#c62828', color: '#fff', fontWeight: 700, fontSize: 14, cursor: m365DeletePrompt.offboarding ? 'wait' : 'pointer', opacity: m365DeletePrompt.offboarding ? 0.7 : 1 }}>
+                  {m365DeletePrompt.offboarding ? 'Offboarding M365...' : m365DeletePrompt.hasIfo ? 'Offboard M365 & Delete' : 'I understand, delete anyway'}
+                </button>
+                <button onClick={() => setM365DeletePrompt(null)}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid #ccc', background: '#fff', color: '#333', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {moverPrompt && (
         <div className="my-profile-modal-overlay" onClick={() => setMoverPrompt(null)}>
@@ -2056,8 +2197,8 @@ function OrgChart({ employees }: { employees: Employee[] }) {
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
   const [initialized, setInitialized] = useState(false)
 
-  const activeEmployees = useMemo(() => employees.filter(e => e.is_active && !e.is_frozen), [employees])
-  const roots = useMemo(() => buildTree(activeEmployees), [activeEmployees])
+  const orgChartEmployees = useMemo(() => employees.filter(e => e.is_active), [employees])
+  const roots = useMemo(() => buildTree(orgChartEmployees), [orgChartEmployees])
 
   useEffect(() => {
     if (roots.length > 0 && !initialized) {
@@ -2146,7 +2287,7 @@ function OrgChart({ employees }: { employees: Employee[] }) {
     setExpandedIds(rootOnly)
   }
 
-  const hasChildren = (id: string) => activeEmployees.some(e => e.manager_id === id)
+  const hasChildren = (id: string) => orgChartEmployees.some(e => e.manager_id === id)
   const isExpanded = (id: string) => expandedIds.has(id)
 
   return (
@@ -2232,8 +2373,8 @@ function OrgChart({ employees }: { employees: Employee[] }) {
                   height: NODE_H,
                   transform: `scale(${zoom})`,
                   transformOrigin: 'top left',
-                  background: 'var(--bg-card, #fff)',
-                  border: `2px solid ${canExpand && expanded ? deptColor : 'var(--border, #d1d5db)'}`,
+                  background: emp.is_frozen ? '#e3f2fd' : 'var(--bg-card, #fff)',
+                  border: `2px solid ${emp.is_frozen ? '#90caf9' : canExpand && expanded ? deptColor : 'var(--border, #d1d5db)'}`,
                   borderRadius: 10,
                   padding: '8px 10px',
                   display: 'flex',
@@ -2242,6 +2383,7 @@ function OrgChart({ employees }: { employees: Employee[] }) {
                   cursor: canExpand ? 'pointer' : 'default',
                   boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                   boxSizing: 'border-box',
+                  opacity: emp.is_frozen ? 0.85 : 1,
                 }}>
                   {emp.avatar_url ? (
                     <img src={emp.avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
@@ -2269,6 +2411,14 @@ function OrgChart({ employees }: { employees: Employee[] }) {
                       }}>
                         {dept || 'Unassigned'}
                       </span>
+                      {emp.is_frozen && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+                          background: '#bbdefb', color: '#1565c0',
+                        }}>
+                          Frozen
+                        </span>
+                      )}
                       {canExpand && (
                         <span style={{
                           fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
