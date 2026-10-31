@@ -3211,6 +3211,33 @@ export default function AdminOnboarding() {
   const moverTotalPages = Math.max(1, Math.ceil(activeMoverRecords.length / PAGE_SIZE))
   const paginatedActiveMovers = activeMoverRecords.slice((moverPage - 1) * PAGE_SIZE, moverPage * PAGE_SIZE)
 
+  const offboardStats = useMemo(() => {
+    const now = new Date()
+    const today = toLocalDateStr(now)
+    const fyStart = new Date(now.getFullYear(), fyStartMonth - 1, 1)
+    if (fyStart > now) fyStart.setFullYear(fyStart.getFullYear() - 1)
+    const fyEnd = new Date(fyStart.getFullYear() + 1, fyStart.getMonth(), 0)
+    const fyRecs = offboardRecords.filter(r => {
+      const d = r.leaving_date || r.created_at
+      return d >= toLocalDateStr(fyStart) && d <= toLocalDateStr(fyEnd)
+    })
+    const monthNames = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar']
+    const monthlyBreakdown = monthNames.map((label, i) => {
+      const m = (fyStartMonth - 1 + i) % 12
+      const y = m < fyStartMonth - 1 ? fyStart.getFullYear() + 1 : fyStart.getFullYear()
+      const count = fyRecs.filter(r => { const d = new Date(r.leaving_date || r.created_at); return d.getMonth() === m && d.getFullYear() === y }).length
+      return { label, count }
+    })
+    return {
+      total: offboardRecords.length,
+      fyTotal: fyRecs.length,
+      inProgress: offboardRecords.filter(r => !r.is_complete).length,
+      completed: offboardRecords.filter(r => r.is_complete).length,
+      overdue: offboardRecords.filter(r => !r.is_complete && r.leaving_date && r.leaving_date < today).length,
+      monthlyBreakdown,
+    }
+  }, [offboardRecords, fyStartMonth])
+
   const moverStats = useMemo(() => {
     const now = new Date()
     const fyStart = new Date(now.getFullYear(), fyStartMonth - 1, 1)
@@ -3269,79 +3296,135 @@ export default function AdminOnboarding() {
 
       {tab === 'dashboard' && (
         <div className="admin-onboard-dash">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14, marginBottom: 20 }}>
+          {/* Condensed metrics — all three types on one line */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap' }}>
             {[
-              { label: 'Total Starters', value: stats.total, color: '#4f46e5', bg: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)', icon: '👥' },
-              { label: 'This FY', value: stats.fyTotal, color: '#0284c7', bg: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)', icon: '📊' },
-              { label: 'In Progress', value: stats.pending, color: '#d97706', bg: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', icon: '⏳' },
-              { label: 'Due to Join', value: stats.dueJoining, color: '#7c3aed', bg: 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)', icon: '🗓️' },
-              { label: 'Overdue', value: stats.overdue, color: stats.overdue > 0 ? '#dc2626' : '#16a34a', bg: stats.overdue > 0 ? 'linear-gradient(135deg, #fef2f2 0%, #fecaca 100%)' : 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', icon: stats.overdue > 0 ? '🚨' : '✅' },
-              { label: 'Completed', value: stats.completed, color: '#16a34a', bg: 'linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)', icon: '🎉' },
-            ].map((card, i) => (
-              <div key={i} style={{
-                background: card.bg, borderRadius: 14, padding: '16px 18px',
-                border: `1px solid ${card.color}22`, position: 'relative', overflow: 'hidden',
+              { label: 'Onboarding', items: [
+                { k: 'Total', v: stats.total, c: '#4f46e5' }, { k: 'FY', v: stats.fyTotal, c: '#4f46e5' },
+                { k: 'Active', v: stats.pending, c: '#d97706' }, { k: 'Due', v: stats.dueJoining, c: '#7c3aed' },
+                { k: 'Overdue', v: stats.overdue, c: stats.overdue > 0 ? '#dc2626' : '#16a34a' }, { k: 'Done', v: stats.completed, c: '#16a34a' },
+              ], accent: '#4f46e5', bg: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)' },
+              { label: 'Offboarding', items: [
+                { k: 'Total', v: offboardStats.total, c: '#c62828' }, { k: 'FY', v: offboardStats.fyTotal, c: '#c62828' },
+                { k: 'Active', v: offboardStats.inProgress, c: '#d97706' }, { k: 'Overdue', v: offboardStats.overdue, c: offboardStats.overdue > 0 ? '#dc2626' : '#16a34a' },
+                { k: 'Done', v: offboardStats.completed, c: '#16a34a' },
+              ], accent: '#c62828', bg: 'linear-gradient(135deg, #fef2f2 0%, #fecaca 100%)' },
+              ...(features.inflowonboarder_integration && moverRecords.length > 0 ? [{
+                label: 'Movers', items: [
+                  { k: 'Total', v: moverStats.total, c: '#e65100' }, { k: 'FY', v: moverStats.fyTotal, c: '#e65100' },
+                  { k: 'Active', v: moverStats.inProgress, c: '#d97706' }, { k: 'Persona', v: moverStats.personaChanges, c: '#bf360c' },
+                  { k: 'Done', v: moverStats.completed, c: '#16a34a' },
+                ], accent: '#e65100', bg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)' },
+              ] : []),
+            ].map((section, si) => (
+              <div key={si} style={{
+                flex: '1 1 280px', background: section.bg, borderRadius: 14, padding: '14px 18px',
+                border: `1px solid ${section.accent}22`, position: 'relative',
               }}>
-                <div style={{ position: 'absolute', top: 10, right: 12, fontSize: 28, opacity: 0.2 }}>{card.icon}</div>
-                <div style={{ fontSize: 28, fontWeight: 800, color: card.color, lineHeight: 1 }}>{card.value}</div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: card.color, opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 }}>{card.label}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: section.accent, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>{section.label}</div>
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                  {section.items.map((item, ii) => (
+                    <div key={ii} style={{ textAlign: 'center', minWidth: 36 }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: item.c, lineHeight: 1 }}>{item.v}</div>
+                      <div style={{ fontSize: 9, fontWeight: 600, color: '#9b9cb5', textTransform: 'uppercase', letterSpacing: 0.3, marginTop: 2 }}>{item.k}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: 20, marginTop: 24 }}>
-            {/* Line Graph — Onboarders per Month */}
-            {(() => {
-              const data = stats.monthlyBreakdown
-              const max = Math.max(...data.map(x => x.count), 1)
-              const padTop = 28, padBot = 32, padLeft = 30, padRight = 16
-              const w = 660, h = 220
-              const chartW = w - padLeft - padRight, chartH = h - padTop - padBot
-              const points = data.map((m, i) => ({
-                x: padLeft + (i / (data.length - 1)) * chartW,
-                y: padTop + chartH - (m.count / max) * chartH,
-                count: m.count,
-                label: m.label,
-              }))
-              const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-              const areaPath = `${linePath} L${points[points.length - 1].x},${padTop + chartH} L${points[0].x},${padTop + chartH} Z`
-              const gridLines = Array.from({ length: 5 }, (_, i) => {
-                const val = Math.round((max / 4) * i)
-                const y = padTop + chartH - (val / max) * chartH
-                return { y, val }
-              })
-              return (
-                <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '20px 20px 16px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
-                  <h4 style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 700, color: 'var(--admin-text, #1e1e2d)' }}>Onboarders per Month</h4>
-                  <p style={{ margin: '0 0 12px', fontSize: 12, color: '#888' }}>{stats.fyLabel}</p>
-                  <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 'auto' }}>
-                    <defs>
-                      <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.18" />
-                        <stop offset="100%" stopColor="#4f46e5" stopOpacity="0.01" />
-                      </linearGradient>
-                    </defs>
-                    {gridLines.map((g, i) => (
-                      <g key={i}>
-                        <line x1={padLeft} y1={g.y} x2={w - padRight} y2={g.y} stroke="#e5e7eb" strokeWidth="1" />
-                        <text x={padLeft - 6} y={g.y + 4} textAnchor="end" fill="#aaa" fontSize="10">{g.val}</text>
-                      </g>
-                    ))}
-                    <path d={areaPath} fill="url(#lineGrad)" />
-                    <path d={linePath} fill="none" stroke="#4f46e5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                    {points.map((p, i) => (
-                      <g key={i}>
-                        <circle cx={p.x} cy={p.y} r={p.count > 0 ? 4 : 2.5} fill={p.count > 0 ? '#4f46e5' : '#cbd5e1'} stroke="#fff" strokeWidth="2" />
-                        {p.count > 0 && <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#4f46e5" fontSize="12" fontWeight="700">{p.count}</text>}
-                        <text x={p.x} y={padTop + chartH + 18} textAnchor="middle" fill="#999" fontSize="12">{p.label}</text>
-                      </g>
-                    ))}
-                  </svg>
-                </div>
-              )
-            })()}
+          {/* Combined multi-line chart — smooth bezier curves */}
+          {(() => {
+            const series = [
+              { label: 'Onboarders', data: stats.monthlyBreakdown, color: '#4f46e5' },
+              { label: 'Offboarders', data: offboardStats.monthlyBreakdown, color: '#c62828' },
+              ...(features.inflowonboarder_integration && moverRecords.length > 0
+                ? [{ label: 'Movers', data: moverStats.monthlyBreakdown, color: '#e65100' }] : []),
+            ]
+            const allCounts = series.flatMap(s => s.data.map(d => d.count))
+            const max = Math.max(...allCounts, 1)
+            const w = 700, h = 240
+            const padL = 38, padR = 14, padT = 28, padB = 28
+            const chartW = w - padL - padR, chartH = h - padT - padB
+            const gridLines = 4
+            const gridVals = Array.from({ length: gridLines + 1 }, (_, i) => Math.round((max / gridLines) * i))
 
-            {/* Horizontal Bar Chart — Pipeline */}
+            const buildSmooth = (data: { count: number }[]) => {
+              const pts = data.map((d, i) => ({
+                x: padL + (i / (data.length - 1)) * chartW,
+                y: padT + (1 - d.count / max) * chartH,
+              }))
+              const line = pts.reduce((acc, p, i) => {
+                if (i === 0) return `M${p.x},${p.y}`
+                const prev = pts[i - 1]
+                const cpx = (prev.x + p.x) / 2
+                return acc + ` C${cpx},${prev.y} ${cpx},${p.y} ${p.x},${p.y}`
+              }, '')
+              const area = line + ` L${pts[pts.length - 1].x},${padT + chartH} L${pts[0].x},${padT + chartH} Z`
+              return { pts, line, area }
+            }
+
+            return (
+              <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '20px 20px 16px', border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
+                  <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--admin-text, #1e1e2d)' }}>JML Activity per Month</h4>
+                  <span style={{ fontSize: 12, color: '#9b9cb5', fontWeight: 500 }}>{stats.fyLabel}</span>
+                  <div style={{ display: 'flex', gap: 14, marginLeft: 'auto' }}>
+                    {series.map((s, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, display: 'inline-block' }} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#666' }}>{s.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 'auto' }}>
+                  <defs>
+                    {series.map((s, i) => (
+                      <linearGradient key={i} id={`jmlGrad${i}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={s.color} stopOpacity="0.22" />
+                        <stop offset="100%" stopColor={s.color} stopOpacity="0.01" />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  {gridVals.map((v, i) => {
+                    const y = padT + (1 - v / max) * chartH
+                    return (
+                      <g key={i}>
+                        <line x1={padL} y1={y} x2={w - padR} y2={y} stroke="#eeeef4" strokeWidth="1" />
+                        <text x={padL - 8} y={y + 3.5} textAnchor="end" fontSize="9.5" fill="#b0b2c6" fontWeight="500">{v}</text>
+                      </g>
+                    )
+                  })}
+                  {series.map((s, si) => {
+                    const { pts, line, area } = buildSmooth(s.data)
+                    return (
+                      <g key={si}>
+                        <path d={area} fill={`url(#jmlGrad${si})`} opacity={si === 0 ? 1 : 0.5} />
+                        <path d={line} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" />
+                        {pts.map((p, i) => (
+                          <g key={i}>
+                            <circle cx={p.x} cy={p.y} r={4} fill="#fff" stroke={s.color} strokeWidth="2.5" />
+                            {s.data[i].count > 0 && si === 0 && (
+                              <text x={p.x} y={p.y - 10} textAnchor="middle" fontSize="10" fontWeight="700" fill="#1e1e2d">{s.data[i].count}</text>
+                            )}
+                          </g>
+                        ))}
+                      </g>
+                    )
+                  })}
+                  {stats.monthlyBreakdown.map((m, i) => (
+                    <text key={i} x={padL + (i / (stats.monthlyBreakdown.length - 1)) * chartW} y={h - 6} textAnchor="middle" fontSize="10" fill="#9b9cb5" fontWeight="500">{m.label}</text>
+                  ))}
+                </svg>
+              </div>
+            )
+          })()}
+
+          {/* Pipelines side by side */}
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${features.inflowonboarder_integration && moverRecords.length > 0 ? 3 : 2}, 1fr)`, gap: 16, marginBottom: 20 }}>
+            {/* Onboarding Pipeline */}
             {(() => {
               const pipelineData = [
                 ...activeSteps.map(s => ({ label: s.label, icon: s.icon, count: stats.stageMap[s.step_key] || 0, color: '#4f46e5' })),
@@ -3349,29 +3432,82 @@ export default function AdminOnboarding() {
               ]
               const maxCount = Math.max(...pipelineData.map(d => d.count), 1)
               return (
-                <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '20px 20px 16px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
-                  <h4 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: 'var(--admin-text, #1e1e2d)' }}>Onboarding Pipeline</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '16px 16px 14px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
+                  <h4 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#4f46e5' }}>Onboarding Pipeline</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     {pipelineData.map((d, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: 16, width: 22, textAlign: 'center', flexShrink: 0 }}>{d.icon}</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: d.count > 0 ? 'var(--admin-text, #333)' : '#bbb', width: 120, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
-                        <div style={{ flex: 1, height: 22, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 13, width: 18, textAlign: 'center', flexShrink: 0 }}>{d.icon}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: d.count > 0 ? 'var(--admin-text, #333)' : '#bbb', width: 90, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
+                        <div style={{ flex: 1, height: 18, background: '#f1f5f9', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
                           <div style={{
-                            height: '100%',
-                            width: d.count > 0 ? `${Math.max((d.count / maxCount) * 100, 8)}%` : '0%',
-                            background: d.color === '#16a34a'
-                              ? 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)'
-                              : `linear-gradient(90deg, #4f46e5 0%, #818cf8 100%)`,
-                            borderRadius: 6,
-                            transition: 'width 0.4s ease',
+                            height: '100%', width: d.count > 0 ? `${Math.max((d.count / maxCount) * 100, 8)}%` : '0%',
+                            background: d.color === '#16a34a' ? 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)' : 'linear-gradient(90deg, #4f46e5 0%, #818cf8 100%)',
+                            borderRadius: 5, transition: 'width 0.4s ease',
                           }} />
-                          {d.count > 0 && (
-                            <span style={{
-                              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                              fontSize: 11, fontWeight: 700, color: (d.count / maxCount) > 0.5 ? '#fff' : d.color,
-                            }}>{d.count}</span>
-                          )}
+                          {d.count > 0 && <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 700, color: (d.count / maxCount) > 0.5 ? '#fff' : d.color }}>{d.count}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Offboarding Pipeline */}
+            {(() => {
+              const pipelineData = [
+                { label: 'In Progress', icon: '⏳', count: offboardStats.inProgress, color: '#c62828' },
+                { label: 'Completed', icon: '✅', count: offboardStats.completed, color: '#16a34a' },
+              ]
+              const maxCount = Math.max(...pipelineData.map(d => d.count), 1)
+              return (
+                <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '16px 16px 14px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
+                  <h4 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#c62828' }}>Offboarding Pipeline</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {pipelineData.map((d, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 13, width: 18, textAlign: 'center', flexShrink: 0 }}>{d.icon}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: d.count > 0 ? 'var(--admin-text, #333)' : '#bbb', width: 90, flexShrink: 0 }}>{d.label}</span>
+                        <div style={{ flex: 1, height: 18, background: '#f1f5f9', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
+                          <div style={{
+                            height: '100%', width: d.count > 0 ? `${Math.max((d.count / maxCount) * 100, 8)}%` : '0%',
+                            background: d.color === '#16a34a' ? 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)' : 'linear-gradient(90deg, #c62828 0%, #ef5350 100%)',
+                            borderRadius: 5, transition: 'width 0.4s ease',
+                          }} />
+                          {d.count > 0 && <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 700, color: (d.count / maxCount) > 0.5 ? '#fff' : d.color }}>{d.count}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Mover Pipeline */}
+            {features.inflowonboarder_integration && moverRecords.length > 0 && (() => {
+              const pipelineData = [
+                { label: 'Pending', icon: '📋', count: moverStats.pending, color: '#e65100' },
+                { label: 'In Progress', icon: '⏳', count: moverStats.inProgress, color: '#f57c00' },
+                { label: 'Completed', icon: '✅', count: moverStats.completed, color: '#16a34a' },
+                { label: 'Cancelled', icon: '🚫', count: moverStats.statusMap['cancelled'] || 0, color: '#9e9e9e' },
+              ]
+              const maxCount = Math.max(...pipelineData.map(d => d.count), 1)
+              return (
+                <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '16px 16px 14px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
+                  <h4 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#e65100' }}>Mover Pipeline</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {pipelineData.map((d, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 13, width: 18, textAlign: 'center', flexShrink: 0 }}>{d.icon}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: d.count > 0 ? 'var(--admin-text, #333)' : '#bbb', width: 90, flexShrink: 0 }}>{d.label}</span>
+                        <div style={{ flex: 1, height: 18, background: '#f1f5f9', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
+                          <div style={{
+                            height: '100%', width: d.count > 0 ? `${Math.max((d.count / maxCount) * 100, 8)}%` : '0%',
+                            background: d.color === '#16a34a' ? 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)' : d.color === '#9e9e9e' ? 'linear-gradient(90deg, #9e9e9e 0%, #bdbdbd 100%)' : `linear-gradient(90deg, #e65100 0%, #ff9800 100%)`,
+                            borderRadius: 5, transition: 'width 0.4s ease',
+                          }} />
+                          {d.count > 0 && <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 700, color: (d.count / maxCount) > 0.5 ? '#fff' : d.color }}>{d.count}</span>}
                         </div>
                       </div>
                     ))}
@@ -3382,7 +3518,7 @@ export default function AdminOnboarding() {
           </div>
 
           {stats.overdue > 0 && (
-            <div style={{ marginTop: 20, background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 12, padding: 16 }}>
+            <div style={{ marginTop: 4, background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 12, padding: 16 }}>
               <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#e65100' }}>Overdue Onboarding ({stats.overdue})</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {records.filter(r => !r.is_complete && r.start_date && r.start_date < toLocalDateStr()).map(r => {
@@ -3399,120 +3535,6 @@ export default function AdminOnboarding() {
               </div>
             </div>
           )}
-
-          {features.inflowonboarder_integration && moverRecords.length > 0 && (<>
-            <h3 style={{ margin: '32px 0 14px', fontSize: 17, fontWeight: 700, color: '#e65100' }}>Movers</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14, marginBottom: 20 }}>
-              {[
-                { label: 'Total Movers', value: moverStats.total, color: '#e65100', bg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)', icon: '🔄' },
-                { label: 'This FY', value: moverStats.fyTotal, color: '#ef6c00', bg: 'linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)', icon: '📊' },
-                { label: 'In Progress', value: moverStats.inProgress, color: '#f57c00', bg: 'linear-gradient(135deg, #fff3e0 0%, #ffcc80 100%)', icon: '⏳' },
-                { label: 'Persona Changes', value: moverStats.personaChanges, color: '#bf360c', bg: 'linear-gradient(135deg, #fbe9e7 0%, #ffccbc 100%)', icon: '🛡️' },
-                { label: 'Completed', value: moverStats.completed, color: '#16a34a', bg: 'linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)', icon: '✅' },
-              ].map((card, i) => (
-                <div key={i} style={{
-                  background: card.bg, borderRadius: 14, padding: '16px 18px',
-                  border: `1px solid ${card.color}22`, position: 'relative', overflow: 'hidden',
-                }}>
-                  <div style={{ position: 'absolute', top: 10, right: 12, fontSize: 28, opacity: 0.2 }}>{card.icon}</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: card.color, lineHeight: 1 }}>{card.value}</div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: card.color, opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 }}>{card.label}</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: 20, marginTop: 24 }}>
-              {(() => {
-                const data = moverStats.monthlyBreakdown
-                const max = Math.max(...data.map(x => x.count), 1)
-                const padTop = 28, padBot = 32, padLeft = 30, padRight = 16
-                const w = 660, h = 220
-                const chartW = w - padLeft - padRight, chartH = h - padTop - padBot
-                const points = data.map((m, i) => ({
-                  x: padLeft + (i / (data.length - 1)) * chartW,
-                  y: padTop + chartH - (m.count / max) * chartH,
-                  count: m.count, label: m.label,
-                }))
-                const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-                const areaPath = `${linePath} L${points[points.length - 1].x},${padTop + chartH} L${points[0].x},${padTop + chartH} Z`
-                const gridLines = Array.from({ length: 5 }, (_, i) => {
-                  const val = Math.round((max / 4) * i)
-                  const y = padTop + chartH - (val / max) * chartH
-                  return { y, val }
-                })
-                return (
-                  <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '20px 20px 16px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
-                    <h4 style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 700, color: 'var(--admin-text, #1e1e2d)' }}>Movers per Month</h4>
-                    <p style={{ margin: '0 0 12px', fontSize: 12, color: '#888' }}>{moverStats.fyLabel}</p>
-                    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 'auto' }}>
-                      <defs>
-                        <linearGradient id="moverLineGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#e65100" stopOpacity="0.18" />
-                          <stop offset="100%" stopColor="#e65100" stopOpacity="0.01" />
-                        </linearGradient>
-                      </defs>
-                      {gridLines.map((g, i) => (
-                        <g key={i}>
-                          <line x1={padLeft} y1={g.y} x2={w - padRight} y2={g.y} stroke="#e5e7eb" strokeWidth="1" />
-                          <text x={padLeft - 6} y={g.y + 4} textAnchor="end" fill="#aaa" fontSize="10">{g.val}</text>
-                        </g>
-                      ))}
-                      <path d={areaPath} fill="url(#moverLineGrad)" />
-                      <path d={linePath} fill="none" stroke="#e65100" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                      {points.map((p, i) => (
-                        <g key={i}>
-                          <circle cx={p.x} cy={p.y} r={p.count > 0 ? 4 : 2.5} fill={p.count > 0 ? '#e65100' : '#cbd5e1'} stroke="#fff" strokeWidth="2" />
-                          {p.count > 0 && <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#e65100" fontSize="12" fontWeight="700">{p.count}</text>}
-                          <text x={p.x} y={padTop + chartH + 18} textAnchor="middle" fill="#999" fontSize="12">{p.label}</text>
-                        </g>
-                      ))}
-                    </svg>
-                  </div>
-                )
-              })()}
-
-              {(() => {
-                const pipelineData = [
-                  { label: 'Pending', icon: '📋', count: moverStats.pending, color: '#e65100' },
-                  { label: 'In Progress', icon: '⏳', count: moverStats.inProgress, color: '#f57c00' },
-                  { label: 'Completed', icon: '✅', count: moverStats.completed, color: '#16a34a' },
-                  { label: 'Cancelled', icon: '🚫', count: moverStats.statusMap['cancelled'] || 0, color: '#9e9e9e' },
-                ]
-                const maxCount = Math.max(...pipelineData.map(d => d.count), 1)
-                return (
-                  <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '20px 20px 16px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
-                    <h4 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: 'var(--admin-text, #1e1e2d)' }}>Mover Pipeline</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {pipelineData.map((d, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <span style={{ fontSize: 16, width: 22, textAlign: 'center', flexShrink: 0 }}>{d.icon}</span>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: d.count > 0 ? 'var(--admin-text, #333)' : '#bbb', width: 120, flexShrink: 0 }}>{d.label}</span>
-                          <div style={{ flex: 1, height: 22, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-                            <div style={{
-                              height: '100%',
-                              width: d.count > 0 ? `${Math.max((d.count / maxCount) * 100, 8)}%` : '0%',
-                              background: d.color === '#16a34a'
-                                ? 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)'
-                                : d.color === '#9e9e9e'
-                                  ? 'linear-gradient(90deg, #9e9e9e 0%, #bdbdbd 100%)'
-                                  : `linear-gradient(90deg, #e65100 0%, #ff9800 100%)`,
-                              borderRadius: 6, transition: 'width 0.4s ease',
-                            }} />
-                            {d.count > 0 && (
-                              <span style={{
-                                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                                fontSize: 11, fontWeight: 700, color: (d.count / maxCount) > 0.5 ? '#fff' : d.color,
-                              }}>{d.count}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })()}
-            </div>
-          </>)}
         </div>
       )}
 
