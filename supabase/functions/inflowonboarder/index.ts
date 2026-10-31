@@ -183,17 +183,18 @@ function mockRecheckRun(currentStatus: string): unknown {
   return { status: currentStatus }
 }
 
-function mockProceedRun(runId: string, onboardingId: number, currentStatus: string): unknown {
+function mockProceedRun(runId: string, onboardingId: number, currentStatus: string, issuePass?: boolean): unknown {
   if (currentStatus === 'ready_for_approval' || currentStatus === 'awaiting_approval') {
-    return {
-      status: 'completed',
-      result: {
-        userId: `mock-user-${onboardingId}`,
-        userPrincipalName: `newstarter${onboardingId}@contoso.com`,
-        temporaryPassword: `Tmp${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 90 + 10)}`,
-      },
-      error: null,
+    const result: Record<string, unknown> = {
+      userId: `mock-user-${onboardingId}`,
+      userPrincipalName: `newstarter${onboardingId}@contoso.com`,
+      temporaryPassword: `Tmp${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 90 + 10)}`,
     }
+    if (issuePass) {
+      result.passId = `mock-pass-${onboardingId}-${Date.now()}`
+      result.expiresAt = new Date(Date.now() + 8 * 3600000).toISOString()
+    }
+    return { status: 'completed', result, error: null }
   }
   return { status: currentStatus }
 }
@@ -882,7 +883,7 @@ Deno.serve(async (req) => {
         runStatus = resData.status || 'checking_licence'
       }
 
-      await sb.from('onboarding_m365_actions').upsert({
+      const upsertRow: Record<string, unknown> = {
         onboarding_id,
         company_id,
         run_id: runId,
@@ -893,7 +894,9 @@ Deno.serve(async (req) => {
         attempt_count_run: (attempt || 0) + 1,
         is_v1_legacy: false,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'onboarding_id' })
+      }
+      if (issuePass && config?.passes_ready) upsertRow.pass_status = 'pending'
+      await sb.from('onboarding_m365_actions').upsert(upsertRow, { onConflict: 'onboarding_id' })
 
       await audit(sb, company_id, userId, 'inflowonboarder_start_run', { onboarding_id, runId, runStatus, passWarning })
       return json({ run_id: runId, status: runStatus, ...(passWarning ? { pass_warning: passWarning } : {}) })
@@ -990,8 +993,8 @@ Deno.serve(async (req) => {
       let runData: any
 
       if (MOCK_MODE) {
-        const { data: row } = await sb.from('onboarding_m365_actions').select('run_status').eq('onboarding_id', onboarding_id).maybeSingle()
-        runData = mockProceedRun(run_id, onboarding_id, row?.run_status || 'ready_for_approval')
+        const { data: row } = await sb.from('onboarding_m365_actions').select('run_status, pass_status').eq('onboarding_id', onboarding_id).maybeSingle()
+        runData = mockProceedRun(run_id, onboarding_id, row?.run_status || 'ready_for_approval', row?.pass_status === 'pending')
       } else {
         const keyResult = await getApiKey(sb, company_id)
         if (keyResult instanceof Response) return keyResult
@@ -1019,6 +1022,11 @@ Deno.serve(async (req) => {
           updates.run_result = runData.result
           updates.m365_user_id = runData.result.userId
           updates.m365_upn = runData.result.userPrincipalName
+          if (runData.result.passId) {
+            updates.pass_id = runData.result.passId
+            updates.pass_expires_at = runData.result.expiresAt || runData.result.passExpiresAt
+            updates.pass_status = 'ready'
+          }
         }
         await sb.from('onboarding_m365_actions').update(updates).eq('onboarding_id', onboarding_id)
       }

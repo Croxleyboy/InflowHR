@@ -4757,6 +4757,85 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
+                            {/* TAP card (ad-hoc run path) */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.pass_status && (
+                              <>
+                                <div style={{ marginBottom: 10, border: '1px solid #bbdefb', borderRadius: 8, padding: 12, background: 'rgba(227,242,253,.3)' }}>
+                                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    🔑 First-Day Sign-In Pass
+                                  </p>
+                                  {m365Actions.pass_status === 'pending' && (
+                                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#888' }}>Pass is being created — this will update automatically</p>
+                                  )}
+                                  {m365Actions.pass_status === 'ready' && (
+                                    <div style={{ marginTop: 6 }}>
+                                      <p style={{ margin: 0, fontSize: 12, color: '#2e7d32' }}>Pass is ready</p>
+                                      {m365Actions.pass_expires_at && (
+                                        <p style={{ margin: '2px 0 0', fontSize: 11, color: '#888' }}>
+                                          Expires: {new Date(m365Actions.pass_expires_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                        </p>
+                                      )}
+                                      <p style={{ margin: '6px 0 4px', fontSize: 11, color: '#c62828', fontWeight: 500 }}>This pass is shown once and then deleted</p>
+                                      <button className="admin-btn-sm admin-btn-save" disabled={tapRevealing}
+                                        onClick={() => setTapRevealConfirmOpen(true)}
+                                        style={{ background: '#0078D4', marginTop: 4 }}>
+                                        {tapRevealing ? 'Revealing...' : 'View Pass (Once)'}
+                                      </button>
+                                    </div>
+                                  )}
+                                  {m365Actions.pass_status === 'viewed' && (
+                                    <div style={{ marginTop: 6 }}>
+                                      <p style={{ margin: 0, fontSize: 12, color: '#666' }}>
+                                        Pass viewed{m365Actions.pass_viewed_at ? ` on ${new Date(m365Actions.pass_viewed_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+                                      </p>
+                                      <span style={{ display: 'inline-block', marginTop: 4, padding: '2px 8px', borderRadius: 4, background: '#e0e0e0', fontSize: 11, fontWeight: 600, color: '#666' }}>Viewed</span>
+                                    </div>
+                                  )}
+                                  {(m365Actions.pass_status === 'expired' || m365Actions.pass_status === 'gone') && (
+                                    <div style={{ marginTop: 6 }}>
+                                      <p style={{ margin: 0, fontSize: 12, color: '#888' }}>This pass is no longer available</p>
+                                      <button className="admin-btn-sm" disabled={tapRequesting}
+                                        onClick={() => tapRequestNewPass(selectedRecord.id)}
+                                        style={{ marginTop: 6 }}>
+                                        {tapRequesting ? (tapJobPolling ? 'Creating pass...' : 'Requesting...') : 'Request a New Pass'}
+                                      </button>
+                                    </div>
+                                  )}
+                                  {m365Actions.pass_status === 'error' && (
+                                    <div style={{ marginTop: 6 }}>
+                                      <p style={{ margin: 0, fontSize: 12, color: '#c62828' }}>Pass could not be issued — check InflowOnboarder settings</p>
+                                      <button className="admin-btn-sm" disabled={tapRequesting}
+                                        onClick={() => tapRequestNewPass(selectedRecord.id)}
+                                        style={{ marginTop: 6 }}>
+                                        {tapRequesting ? 'Requesting...' : 'Request a New Pass'}
+                                      </button>
+                                    </div>
+                                  )}
+                                  {m365Actions.pass_status === 'skipped' && m365Actions.run_status !== 'failed' && (
+                                    <div style={{ marginTop: 6 }}>
+                                      <p style={{ margin: 0, fontSize: 12, color: '#bf360c' }}>
+                                        {selectedRecord?.firstname}'s account was set up without a first-day pass. They'll need another way to sign in.
+                                      </p>
+                                      {m365Actions.m365_user_id && ifoSettings?.passes_ready && ifoSettings?.passes_available !== false && (
+                                        <button className="admin-btn-sm" disabled={tapRequesting}
+                                          onClick={() => tapRequestNewPass(selectedRecord!.id)}
+                                          style={{ marginTop: 6 }}>
+                                          {tapRequesting ? (tapJobPolling ? 'Creating pass...' : 'Requesting...') : 'Request a New Pass'}
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                  {m365Actions.pass_status === 'blocked' && (
+                                    <div style={{ marginTop: 6 }}>
+                                      <p style={{ margin: 0, fontSize: 12, color: '#b71c1c' }}>
+                                        {selectedRecord?.firstname} can't sign in yet: {(m365Actions as any).pass_error_detail?.message || 'a pass issue is blocking sign-in'}. An InflowOnboarder admin needs to fix this.
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+
                             {/* Failed (ad-hoc) — hide if schedule path active */}
                             {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'failed' && (
                               <div style={{ marginBottom: 12 }}>
