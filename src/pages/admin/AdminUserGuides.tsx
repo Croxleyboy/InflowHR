@@ -856,6 +856,125 @@ const SUPER_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    icon: '💰', title: 'Payroll Operations Guide',
+    features: [
+      { title: 'Process Summary', purpose: 'End-to-end overview of running payroll each month. The process differs depending on whether the company is connected to Xero/Sage or running standalone.', steps: [
+        'Connected mode (Xero/Sage): Select Workers → Review Adjustments → Push & Manual Actions → Processing → Sync Back → Release.',
+        'Standalone mode (no provider): Select Workers → Review → Generate Estimates → Export → Sync & Release.',
+        'Employee types: Salaried (employed), Shift Workers (contracted hours), and Zero Hours Workers each have separate payslip generation logic.',
+        'After payslips are generated, push to Modulr for bank payments (if connected), then release payslips to employees.',
+        'Key rule: always submit to Modulr BEFORE releasing payslips to employees. The Release All button is disabled until Modulr is done.',
+      ], callout: { type: 'note', text: 'Pay runs are month-based. You can run multiple worker types in a single pay run or run them separately. The wizard remembers where you left off if you navigate away.' } },
+
+      { title: 'Step 1 — Select Worker Types', purpose: 'Choose which employee categories to include in this pay run.', steps: [
+        'Navigate to Admin > Payroll and click the New Pay Run tab.',
+        'Select a pay month from the month/year selectors at the top.',
+        'Tick one or more worker types: Employed (salaried staff), Shift Workers (contracted-hours staff), Zero Hours Workers.',
+        'The wizard shows the employee count for each type. Only active employees with the matching employment_category are included.',
+        'Employed = employment_category is not "shift_worker". Shift Workers = employment_category is "shift_worker" and contract_type is not "Zero hours shift worker". Zero Hours = contract_type is "Zero hours shift worker".',
+        'Click Next to proceed to the review step.',
+      ] },
+
+      { title: 'Step 2 — Review Adjustments (Connected Mode)', purpose: 'Review each employee\'s calculated gross pay, deductions, overtime, sick pay adjustments and benefit deductions before pushing to the payroll provider.', steps: [
+        'The review table is split into sub-tabs per worker type if you selected more than one.',
+        'Salaried employees: base pay = annual_salary ÷ 12 (monthly) or ÷ 52 (weekly). Overtime is calculated as: base hourly rate × OT hours × OT multiplier. The OT multiplier defaults to ×1.5 but can be edited per employee inline.',
+        'Shift workers: gross pay = approved timesheet hours × hourly_rate. Overtime hours from timesheets are added at the multiplied rate.',
+        'Zero hours workers: gross pay = approved timesheet hours × hourly_rate. If the employee has guaranteed_hours_approved, excess hours above the guarantee are paid separately.',
+        'Sick pay: the wizard checks leave_requests for sick leave in the period. SSP is calculated based on the employee\'s sick_pay_status (qualifying/waiting/exhausted) and daily rate.',
+        'Benefits: any benefit_types with payroll_deduction_enabled are listed as deductions, with the deduction_amount and deduction_frequency applied.',
+        'Review totals at the bottom: gross pay, tax (estimate), NI, net pay per employee and overall.',
+        'Click Generate to create payslips or Push to push adjustments to Xero/Sage.',
+      ] },
+
+      { title: 'Salaried Employee Payroll', purpose: 'Detailed steps for running payroll for salaried (employed) staff.', steps: [
+        'Salaried employees derive pay from the annual_salary field on their employee record. Monthly pay = annual_salary ÷ 12.',
+        'Tax is estimated using HMRC bands: 20% (£12,571–£50,270), 40% (£50,271–£125,140), 45% (above £125,140). Tax code overrides are applied if set.',
+        'NI is estimated using HMRC thresholds: 8% employee (above £12,570 p.a.), 13.8% employer (above £9,100 p.a.).',
+        'Overtime: if the employee has approved overtime hours in their period review, OT pay = base hourly rate × hours × multiplier. The base hourly rate is derived as: hourly_rate field (if set), else annual_salary ÷ (52 × weekly_hours). The multiplier defaults to ×1.5 and can be edited in the wizard.',
+        'Connected mode (Xero): overtime is pushed as a Pay Template earning line with ratePerUnit = base hourly rate and numberOfUnits = hours × multiplier. This means Xero shows the real rate and multiplied units.',
+        'Bonus: if bonus_amount and bonus_frequency are set, the bonus is added to gross pay for the relevant periods.',
+        'The wizard shows the net pay breakdown: gross − tax − NI − pension − benefit deductions = net pay.',
+      ], callout: { type: 'tip', text: 'For Xero-connected companies, overtime Pay Template lines are PERMANENT — they repeat every pay run until deleted. Push OT before creating the pay run in Xero so the template auto-populates onto the run.' } },
+
+      { title: 'Shift Worker Payroll', purpose: 'Detailed steps for running payroll for contracted-hours shift workers.', steps: [
+        'Shift workers derive pay from approved timesheets. Navigate to Admin > Timesheets and ensure all timesheets for the pay period are approved before running payroll.',
+        'The wizard pulls timesheets where status = "approved" for the selected month, grouped by employee.',
+        'Gross pay = total_hours × hourly_rate (from the employee record). Overtime hours from the timesheet are added at hourly_rate × OT multiplier.',
+        'If a shift worker has adjusted_hours on their timesheet (from shift corrections), the adjusted figure is used instead of total_hours.',
+        'Tax and NI are calculated the same as salaried staff, but annualised from the period gross (gross × 12 for monthly, × 52 for weekly).',
+        'Sick pay for shift workers uses the daily rate: hourly_rate × (weekly_hours ÷ contracted_days).',
+        'For Xero/Sage connected: the wizard pushes the calculated gross as an earnings adjustment. For standalone: payslips are generated locally.',
+      ] },
+
+      { title: 'Zero Hours Worker Payroll', purpose: 'Detailed steps for running payroll for zero hours contract workers.', steps: [
+        'Zero hours workers also derive pay from approved timesheets, identical to shift workers.',
+        'If the company has zero hours compliance enabled (Admin > Shifts & Rotas > Compliance), the wizard checks for guaranteed hours transitions.',
+        'Employees with guaranteed_hours_approved = true have a guaranteed_weekly_hours figure. Hours above this guarantee are paid as excess hours.',
+        'The excess hours calculation: if total timesheet hours > guaranteed_weekly_hours × weeks_in_period, the excess is separated on the payslip.',
+        'Shift cancellation compensation: if a zero hours worker had shifts cancelled with less than the required notice period, compensation is calculated per the compliance settings (cancellation_compensation_rate × hourly_rate × cancelled_hours).',
+        'Pension auto-enrolment: the wizard checks if the worker\'s earnings trigger auto-enrolment thresholds and flags accordingly.',
+        'All other calculations (tax, NI, benefits) follow the same logic as shift workers.',
+      ], callout: { type: 'note', text: 'Zero hours compliance features (guaranteed hours, cancellation compensation) only apply when the zero_hours_compliance feature is enabled for the company.' } },
+
+      { title: 'Step 3 — Push to Provider (Connected Mode)', purpose: 'Push payroll adjustments to Xero or Sage for final processing.', steps: [
+        'After reviewing, click "Push to Xero" or "Push to Sage" depending on the connected provider.',
+        'The edge function (xero-push-payroll or sage-payslips) sends adjustments to the provider\'s API.',
+        'For Xero: overtime is pushed as Pay Template earnings. Benefit deductions are pushed if sync_benefits_to_xero is enabled on the integration.',
+        'For Sage: adjustments are pushed as pay items on the employee\'s pay run.',
+        'Wait for the push to complete — the wizard shows a progress indicator and result summary.',
+        'If any employees fail (e.g. not found in Xero, missing earnings rate), they are listed with error details. You can fix the issue and re-push.',
+        'After pushing, open Xero/Sage to create and approve the pay run. The pushed adjustments auto-populate onto the run.',
+      ], callout: { type: 'tip', text: 'TOIL (time off in lieu) hours are excluded from the Xero/Sage push — they are tracked internally only.' } },
+
+      { title: 'Step 4 — Sync Payslips Back', purpose: 'Pull the finalised payslips from Xero/Sage back into InflowHR after the pay run is approved in the provider.', steps: [
+        'Once you have approved and posted the pay run in Xero/Sage, return to the InflowHR wizard.',
+        'Click "Sync Payslips" to pull the completed payslips back from the provider.',
+        'The sync fetches each employee\'s payslip for the period: gross, tax, NI, net, pension, and any other deductions.',
+        'Payslips are stored in the payslips table with source = "xero" or "sage" and status = "paid".',
+        'Review the synced payslips in the table — check that totals match what you approved in the provider.',
+        'For standalone mode: this step is replaced by "Export" where you download a CSV/Excel of the generated payslips.',
+      ] },
+
+      { title: 'Step 5 — Modulr Payment', purpose: 'Push net pay amounts to Modulr for bank transfer processing.', steps: [
+        'If the company has Modulr integration connected, the "Pay with Modulr" button appears on the payslips page.',
+        'Click "Pay with Modulr" to push all eligible payslips. Eligible = status is "paid", not yet released, source is xero/sage, and not already pushed to Modulr.',
+        'The system validates each employee\'s bank details: sort code must be 6 digits, account number must be 8 digits.',
+        'Employees with missing or invalid bank details are SKIPPED — their names are listed in the result message.',
+        'The system checks the modulr_payment_items table to prevent double submission — even across page refreshes.',
+        'After submission, each payslip row shows a "Modulr ✓" badge. The batch ID is shown in the success message.',
+        'Failed Modulr records (e.g. bank rejection) can be retried individually using the per-row "Pay with Modulr" button.',
+      ], callout: { type: 'note', text: 'Double submission protection: the system checks the database for existing payment items before pushing. If all payslips have already been submitted, you get a clear "already submitted" message.' } },
+
+      { title: 'Step 6 — Release Payslips', purpose: 'Make payslips visible to employees in their HR app.', steps: [
+        'Release All: click to release all unreleased payslips for the month. This button is DISABLED if Modulr has unpushed payslips — you must submit to Modulr first.',
+        'Individual release: click the release toggle on any payslip row. If that payslip hasn\'t been pushed to Modulr, a confirmation dialog asks "Release anyway?".',
+        'Released payslips appear on the employee\'s Payslips page immediately.',
+        'You can un-release a payslip by clicking the toggle again — it will disappear from the employee\'s view.',
+        'For Modulr-connected companies: the recommended flow is Push to Modulr → verify payments → Release All.',
+        'For non-Modulr companies: Release All is available immediately after payslips are synced/generated.',
+      ] },
+
+      { title: 'Deleting a Pay Run', purpose: 'Remove an entire month\'s payslips if something went wrong.', steps: [
+        'On the Payslips tab, click the delete icon next to the month group header.',
+        'Confirm the deletion in the dialog. This deletes all payslips for that month and worker type.',
+        'The deletion also removes the corresponding payroll_run record.',
+        'Deletion is permanent — you will need to re-run the wizard to regenerate payslips.',
+        'If payslips were already released, employees lose access to them immediately upon deletion.',
+        'If Modulr payments were already submitted, the bank transfers are NOT reversed — contact Modulr directly for reversals.',
+      ], callout: { type: 'note', text: 'Payslip deletions are logged in the payroll audit log (Admin > Payroll > Logs tab) with the deleting user and timestamp.' } },
+
+      { title: 'Troubleshooting Common Issues', purpose: 'Quick reference for common payroll problems and their fixes.', steps: [
+        'Overtime shows £0 in Xero: check the employee has an hourly_rate or annual_salary set. If annual_salary is used, the hourly rate is derived as salary ÷ (52 × weekly_hours).',
+        'Payslip totals don\'t match Xero: re-sync payslips from Xero. The InflowHR wizard generates estimates; Xero calculates the exact tax/NI.',
+        'Employee missing from pay run: check they are active, have the correct employment_category, and are assigned to the company.',
+        'Shift worker shows £0: check their timesheets are approved for the pay period. Only approved timesheets feed into payroll.',
+        'Modulr payment fails: check the employee\'s bank details (6-digit sort code, 8-digit account number). Update in Admin > Employees > Pay tab.',
+        'Release All does nothing: if Modulr is connected, you must submit to Modulr first. The button is disabled with a "Submit to Modulr first" tooltip.',
+        'Can\'t release one employee individually: click the release toggle — a confirm dialog appears for non-Modulr payslips.',
+      ] },
+    ],
+  },
+  {
     icon: '🛡️', title: 'Support Access',
     features: [
       { title: 'Grant Support Access', purpose: 'Temporarily grant the InflowHR support team read access to a company\'s data for troubleshooting.', steps: ['Navigate to Admin > Support Access from the sidebar.', 'Select a company and scope of access (restricted data or configuration only).', 'Set an expiry period and provide a reason for the access grant.', 'The grant is logged with an audit trail showing who granted it, when, and why.'] },
