@@ -231,6 +231,7 @@ export default function AdminApprovals() {
           performed_by: session?.user?.id,
           performer_name: approverName,
         })
+        window.dispatchEvent(new Event('payroll-data-changed'))
       }
     }
   }
