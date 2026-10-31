@@ -4,6 +4,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { formatDate } from '../../lib/formatters'
+import { isTwoStepEnabled, createApprovalRecord } from '../../lib/approvalHelper'
 import CheckInSettingsPanel from './CheckInSettings'
 import CheckInDashboardPanel from './CheckInDashboard'
 
@@ -128,7 +129,7 @@ function getWorkingDaysInRange(start: string, end: string): number {
 
 export default function AdminTimesheets() {
   const { selectedCompanyId, selectedCompany, refreshCompanies } = useAdminCompany()
-  const { employeeId } = useAuth()
+  const { employeeId, session } = useAuth()
   const { showError, showSuccess } = useToast()
   const [tsTab, setTsTab] = useState<'entries' | 'projects' | 'timeline' | 'reports' | 'checkin'>('entries')
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
@@ -342,6 +343,35 @@ export default function AdminTimesheets() {
   }
 
   async function deleteTimesheet(id: number) {
+    if (!selectedCompanyId) return
+    const ts = timesheets.find(t => t.id === id)
+    const empName = ts?.employee ? `${ts.employee.first_name} ${ts.employee.last_name}` : ''
+
+    const twoStep = await isTwoStepEnabled(selectedCompanyId)
+    if (twoStep) {
+      const { data: me } = await supabase.from('employees').select('first_name, last_name').eq('user_id', session?.user?.id).maybeSingle()
+      const userName = me ? `${me.first_name} ${me.last_name}`.trim() : (session?.user?.email || 'Unknown')
+      const result = await createApprovalRecord({
+        companyId: selectedCompanyId,
+        category: 'timesheet',
+        action: 'delete',
+        recordId: String(id),
+        recordSummary: {
+          description: `Timesheet: ${empName} — ${ts?.date ? formatDate(ts.date) : 'Unknown date'}`,
+          employee_name: empName,
+          date: ts?.date,
+        },
+        userId: session?.user?.id || '',
+        userName,
+      })
+      if (result.success) {
+        showSuccess('Deletion request sent to Admin Approvals for review')
+      } else {
+        showError('Failed to create approval request: ' + result.error)
+      }
+      return
+    }
+
     if (!confirm('Delete this timesheet entry?')) return
     const { error: e1 } = await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', id)
     if (e1) { showError('Failed to delete workflow tracker: ' + e1.message); return }

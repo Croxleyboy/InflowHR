@@ -18,6 +18,8 @@ interface CompanyDetails {
   office_phone: string
   website_url: string
   staff_count: number | null
+  two_step_approvals_enabled: boolean
+  approval_nominated_email: string
 }
 
 const EMPTY: CompanyDetails = {
@@ -35,6 +37,8 @@ const EMPTY: CompanyDetails = {
   office_phone: '',
   website_url: '',
   staff_count: null,
+  two_step_approvals_enabled: false,
+  approval_nominated_email: '',
 }
 
 const cardStyle: React.CSSProperties = {
@@ -75,7 +79,7 @@ export default function AdminCompanyDetails() {
     if (!selectedCompanyId) return
     const { data } = await supabase
       .from('companies')
-      .select('name, company_registration_number, vat_number, billing_address_line1, billing_address_line2, billing_city, billing_county, billing_postcode, billing_country, billing_phone, billing_email, office_phone, website_url, staff_count')
+      .select('name, company_registration_number, vat_number, billing_address_line1, billing_address_line2, billing_city, billing_county, billing_postcode, billing_country, billing_phone, billing_email, office_phone, website_url, staff_count, two_step_approvals_enabled, approval_nominated_email')
       .eq('id', selectedCompanyId)
       .single()
     if (data) {
@@ -94,13 +98,15 @@ export default function AdminCompanyDetails() {
         office_phone: data.office_phone || '',
         website_url: data.website_url || '',
         staff_count: data.staff_count ?? null,
+        two_step_approvals_enabled: data.two_step_approvals_enabled ?? false,
+        approval_nominated_email: data.approval_nominated_email || '',
       })
     }
   }, [selectedCompanyId])
 
   useEffect(() => { load() }, [load])
 
-  function set(key: keyof CompanyDetails, value: string | number | null) {
+  function set(key: keyof CompanyDetails, value: string | number | boolean | null) {
     setForm(prev => ({ ...prev, [key]: value }))
   }
 
@@ -124,6 +130,8 @@ export default function AdminCompanyDetails() {
         office_phone: form.office_phone.trim() || null,
         website_url: form.website_url.trim() || null,
         staff_count: form.staff_count,
+        two_step_approvals_enabled: form.two_step_approvals_enabled,
+        approval_nominated_email: form.approval_nominated_email.trim() || null,
       })
       .eq('id', selectedCompanyId)
     setSaving(false)
@@ -195,6 +203,61 @@ export default function AdminCompanyDetails() {
             <input style={inputStyle} value={form.billing_country} onChange={e => set('billing_country', e.target.value)} placeholder="United Kingdom" />
           </div>
         </div>
+      </div>
+
+      {/* 2-Step Approvals */}
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <h3 style={{ margin: '0 0 18px', fontSize: 15, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>2-Step Approvals</h3>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-muted, #64748b)' }}>
+          When enabled, destructive actions (deleting timesheets, shifts, access records, and payroll data) require a second approval step before data is permanently removed.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.two_step_approvals_enabled}
+              onChange={e => set('two_step_approvals_enabled', e.target.checked)}
+              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+            />
+            <span style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: 12,
+              background: form.two_step_approvals_enabled ? '#6c5ce7' : '#cbd5e1',
+              transition: 'background .2s',
+            }}>
+              <span style={{
+                position: 'absolute',
+                top: 2,
+                left: form.two_step_approvals_enabled ? 22 : 2,
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                background: '#fff',
+                transition: 'left .2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+              }} />
+            </span>
+          </label>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>
+            {form.two_step_approvals_enabled ? 'Enabled' : 'Disabled'}
+          </span>
+        </div>
+        {form.two_step_approvals_enabled && (
+          <div style={{ maxWidth: 400 }}>
+            <label style={labelStyle}>Nominated Approver Email *</label>
+            <input
+              style={inputStyle}
+              type="email"
+              value={form.approval_nominated_email}
+              onChange={e => set('approval_nominated_email', e.target.value)}
+              placeholder="e.g. hr-director@company.co.uk"
+            />
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted, #94a3b8)' }}>
+              Only this person can approve or reject deletion requests in Admin Approvals.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Contact Details */}

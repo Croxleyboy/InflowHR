@@ -89,6 +89,7 @@ import AdminReports from './pages/admin/AdminReports'
 import AdminSurveys from './pages/admin/AdminSurveys'
 import AdminHelp from './pages/admin/AdminHelp'
 import AdminCompanyDetails from './pages/admin/AdminCompanyDetails'
+import AdminApprovals from './pages/admin/AdminApprovals'
 import AdminGDPR from './pages/admin/AdminGDPR'
 import AdminMSPDashboard from './pages/admin/AdminMSPDashboard'
 import SurveyInsights from './pages/admin/SurveyInsights'
@@ -304,6 +305,7 @@ function AuthGate() {
               <Route path="access" element={<AdminAccess />} />
               <Route path="gdpr" element={<AdminGDPR />} />
               <Route path="company-details" element={<AdminCompanyDetails />} />
+              <Route path="approvals" element={<AdminApprovals />} />
               <Route path="msp" element={<AdminMSPDashboard />} />
             </Route>
           </Route>
@@ -355,6 +357,7 @@ function AuthGate() {
             <Route path="access" element={<AdminAccess />} />
             <Route path="gdpr" element={<AdminGDPR />} />
             <Route path="company-details" element={<AdminCompanyDetails />} />
+            <Route path="approvals" element={<AdminApprovals />} />
             <Route path="msp" element={<AdminMSPDashboard />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
@@ -413,6 +416,7 @@ function AuthGate() {
           <Route path="access" element={<AdminAccess />} />
           <Route path="gdpr" element={<AdminGDPR />} />
           <Route path="company-details" element={<AdminCompanyDetails />} />
+          <Route path="approvals" element={<AdminApprovals />} />
           <Route path="msp" element={<AdminMSPDashboard />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />

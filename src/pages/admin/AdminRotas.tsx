@@ -5,6 +5,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { toLocalDateStr, formatDate, currencySymbol } from '../../lib/formatters'
+import { isTwoStepEnabled, createApprovalRecord } from '../../lib/approvalHelper'
 
 interface Rota {
   id: string
@@ -118,7 +119,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function AdminRotas() {
   const { selectedCompanyId } = useAdminCompany()
-  const { employeeEmail: adminEmail, company } = useAuth()
+  const { employeeEmail: adminEmail, company, session } = useAuth()
   const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const [rotas, setRotas] = useState<Rota[]>([])
@@ -235,6 +236,35 @@ export default function AdminRotas() {
   }
 
   async function deleteRota(id: string) {
+    if (!selectedCompanyId) return
+    const rota = rotas.find(r => r.id === id)
+
+    const twoStep = await isTwoStepEnabled(selectedCompanyId)
+    if (twoStep) {
+      const { data: me } = await supabase.from('employees').select('first_name, last_name').eq('user_id', session?.user?.id).maybeSingle()
+      const userName = me ? `${me.first_name} ${me.last_name}`.trim() : (session?.user?.email || 'Unknown')
+      const result = await createApprovalRecord({
+        companyId: selectedCompanyId,
+        category: 'shift_rota',
+        action: 'delete',
+        recordId: id,
+        recordSummary: {
+          description: `Rota: ${rota?.name || 'Unknown'} (${rota?.start_date ? formatDate(rota.start_date) : '?'} – ${rota?.end_date ? formatDate(rota.end_date) : '?'})`,
+          rota_name: rota?.name,
+          start_date: rota?.start_date,
+          end_date: rota?.end_date,
+        },
+        userId: session?.user?.id || '',
+        userName,
+      })
+      if (result.success) {
+        showSuccess('Deletion request sent to Admin Approvals for review')
+      } else {
+        showError('Failed to create approval request: ' + result.error)
+      }
+      return
+    }
+
     if (!confirm('Delete this rota and all its assignments?')) return
     const { error: delAssign } = await supabase.from('shift_assignments').delete().eq('rota_id', id)
     if (delAssign) { showError('Failed to delete assignments: ' + delAssign.message); return }

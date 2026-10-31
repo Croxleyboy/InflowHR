@@ -5,6 +5,7 @@ import { useToast } from '../../context/ToastContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { useAuth } from '../../context/AuthContext'
 import { formatDate, formatCurrency, currencySymbol } from '../../lib/formatters'
+import { isTwoStepEnabled, createApprovalRecord } from '../../lib/approvalHelper'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -3514,7 +3515,61 @@ export default function AdminPayrollNew() {
       )}
 
       {/* ── SCHEDULE ───────────────────────────────────────────── */}
-      {view === 'schedule' && (
+      {view === 'schedule' && (() => {
+        async function deletePayrollMonth(monthLabel: string, year: number, monthIdx: number, gross: number, hasPaid: boolean) {
+          if (!selectedCompanyId) return
+          const monthStr = MONTH_NAMES[monthIdx]
+          const twoStep = await isTwoStepEnabled(selectedCompanyId)
+
+          if (twoStep) {
+            const { data: me } = await supabase.from('employees').select('first_name, last_name').eq('user_id', session?.user?.id).maybeSingle()
+            const userName = me ? `${me.first_name} ${me.last_name}`.trim() : (session?.user?.email || 'Unknown')
+            const result = await createApprovalRecord({
+              companyId: selectedCompanyId,
+              category: 'payroll_month',
+              action: 'delete',
+              recordId: `${year}-${String(monthIdx + 1).padStart(2, '0')}`,
+              recordSummary: {
+                description: `Payroll month: ${monthStr} ${year} — ${currencySymbol(currency)}${gross.toLocaleString(undefined, { maximumFractionDigits: 0 })} gross`,
+                month: monthStr,
+                year,
+                month_index: monthIdx,
+                total_gross: gross,
+                warning: hasPaid ? 'Some payslips in this month have a status of "paid". This data also needs reconciling with your payroll engine (Xero or Sage).' : undefined,
+              },
+              userId: session?.user?.id || '',
+              userName,
+            })
+            if (result.success) {
+              showSuccess('Payroll month deletion request sent to Admin Approvals for review')
+            } else {
+              showError('Failed to create approval request: ' + result.error)
+            }
+            return
+          }
+
+          const warning = hasPaid
+            ? 'WARNING: Some payslips in this month have a status of "paid". This data also needs reconciling with your payroll engine (Xero or Sage).\n\n'
+            : ''
+          if (!confirm(`${warning}Delete all payroll data for ${monthStr} ${year}? This will remove payslips and pay run data for this month. Timesheet and shift recorded time will NOT be deleted.`)) return
+          const key = `${year}-${String(monthIdx + 1).padStart(2, '0')}`
+          await supabase.from('payslips').delete().eq('company_id', selectedCompanyId).like('pay_period_start', `${key}%`)
+          await supabase.from('pay_runs').delete().eq('company_id', selectedCompanyId).eq('pay_month', monthStr).eq('pay_year', year)
+
+          const { data: me } = await supabase.from('employees').select('first_name, last_name').eq('user_id', session?.user?.id).maybeSingle()
+          const userName = me ? `${me.first_name} ${me.last_name}`.trim() : (session?.user?.email || 'Unknown')
+          await supabase.from('payroll_audit_log').insert({
+            company_id: selectedCompanyId,
+            action: 'payroll_month_deleted',
+            detail: `Deleted payroll data for ${monthStr} ${year}`,
+            performed_by: session?.user?.id,
+            performer_name: userName,
+          })
+          showSuccess(`Payroll data for ${monthStr} ${year} deleted`)
+          loadAll()
+        }
+
+        return (
         <div className="admin-settings-group">
           <h3 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 700 }}>Payroll Schedule — {fyLabel}</h3>
           <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
@@ -3534,6 +3589,7 @@ export default function AdminPayrollNew() {
                   <th>Emp Status</th>
                   <th>Shift Status</th>
                   <th>Zero Hrs Status</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -3574,6 +3630,21 @@ export default function AdminPayrollNew() {
                       <td><span className={`admin-badge ${getStatusCls(empStatus)}`}>{empStatus}</span></td>
                       <td><span className={`admin-badge ${getStatusCls(shiftStatus)}`}>{shiftStatus}</span></td>
                       <td><span className={`admin-badge ${getStatusCls(zeroStatus)}`}>{zeroStatus}</span></td>
+                      <td>
+                        {monthPayslips.length > 0 && (
+                          <button
+                            className="admin-btn-icon"
+                            title="Delete payroll data for this month"
+                            style={{ color: '#c62828' }}
+                            onClick={() => {
+                              const hasPaid = monthPayslips.some(p => p.status === 'paid')
+                              deletePayrollMonth(m.label, m.year, m.month, gross, hasPaid)
+                            }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
@@ -3581,7 +3652,8 @@ export default function AdminPayrollNew() {
             </table>
           </div>
         </div>
-      )}
+        )
+      })()}
 
 
       {/* ── LOGS ───────────────────────────────────────────────── */}

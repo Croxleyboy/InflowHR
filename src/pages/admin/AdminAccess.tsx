@@ -4,6 +4,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { useToast } from '../../context/ToastContext'
+import { isTwoStepEnabled, createApprovalRecord } from '../../lib/approvalHelper'
 
 interface GuestUser {
   id: string
@@ -92,7 +93,7 @@ function defaultPerms(roleKey: string): Record<string, boolean> {
 
 export default function AdminAccess() {
   const { selectedCompanyId } = useAdminCompany()
-  const { employeeName, isSuperAdmin, companyUser } = useAuth()
+  const { employeeName, isSuperAdmin, companyUser, session } = useAuth()
   const { companyFeatures } = useFeatures()
   const { showError, showSuccess } = useToast()
 
@@ -220,8 +221,36 @@ export default function AdminAccess() {
   }
 
   async function revokeAccess(id: number) {
-    if (!confirm('Revoke this employee\'s admin portal access?')) return
+    if (!selectedCompanyId) return
     const row = accessList.find(a => a.id === id)
+
+    const twoStep = await isTwoStepEnabled(selectedCompanyId)
+    if (twoStep) {
+      const userName = employeeName || session?.user?.email || 'Unknown'
+      const empRow = row?.employee as { first_name?: string; last_name?: string } | undefined
+      const targetName = empRow ? `${empRow.first_name || ''} ${empRow.last_name || ''}`.trim() : 'Unknown'
+      const result = await createApprovalRecord({
+        companyId: selectedCompanyId,
+        category: 'access_request',
+        action: 'revoke',
+        recordId: String(id),
+        recordSummary: {
+          description: `Revoke access: ${targetName} (${row?.role_key || 'portal'})`,
+          employee_name: targetName,
+          role: row?.role_key,
+        },
+        userId: session?.user?.id || '',
+        userName,
+      })
+      if (result.success) {
+        showSuccess('Revocation request sent to Admin Approvals for review')
+      } else {
+        showError('Failed to create approval request: ' + result.error)
+      }
+      return
+    }
+
+    if (!confirm('Revoke this employee\'s admin portal access?')) return
     const { error } = await supabase.from('admin_portal_access').delete().eq('id', id)
     if (error) { showError('Failed to revoke: ' + error.message); return }
 
