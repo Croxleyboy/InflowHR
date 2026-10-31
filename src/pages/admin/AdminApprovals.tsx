@@ -224,7 +224,7 @@ export default function AdminApprovals() {
         await supabase.from('payroll_audit_log').insert({
           company_id: selectedCompanyId,
           action: 'payroll_month_deleted',
-          detail: `Deleted payroll data for ${month} ${year}${workerType ? ` (${workerType})` : ''}`,
+          detail: `Deleted payroll data for ${key} (${summary.month || 'Unknown'} ${year})`,
           performed_by: session?.user?.id,
           performer_name: approverName,
         })
