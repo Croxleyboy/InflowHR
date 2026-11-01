@@ -496,8 +496,12 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           notice_period: row.notice_period || null,
           weekly_hours: row.weekly_hours || null,
           annual_salary: row.annual_salary || null,
-          tax_code: row.tax_code || null,
+          tax_code: row.tax_code || '1257L',
+          tax_code_source: row.tax_code ? 'manual' : 'auto',
+          tax_code_updated_at: new Date().toISOString(),
           payroll_id: row.payroll_id || null,
+          payroll_id_source: row.payroll_id ? 'manual' : 'auto',
+          payroll_id_updated_at: new Date().toISOString(),
           leave_allowance: row.leave_allowance ?? 15,
           qualifications: row.qualifications || null,
           religion: row.religion || null,
@@ -506,6 +510,10 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         if (!empErr && newEmp) {
           empCount++
           employeeId = newEmp.id
+          if (!row.payroll_id) {
+            const { data: pidData } = await supabase.rpc('next_payroll_id', { p_company_id: setupCompanyId })
+            if (pidData) await supabase.from('employees').update({ payroll_id: pidData, payroll_id_source: 'auto', payroll_id_updated_at: new Date().toISOString() }).eq('id', newEmp.id)
+          }
         } else if (empErr) {
           errors.push(`${row.firstname} ${row.surname}: ${empErr.message}`)
         }

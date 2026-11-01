@@ -3091,8 +3091,12 @@ export default function AdminOnboarding() {
       notice_period: record.notice_period || null,
       weekly_hours: record.weekly_hours || null,
       annual_salary: record.annual_salary || null,
-      tax_code: record.tax_code || null,
+      tax_code: record.tax_code || '1257L',
+      tax_code_source: record.tax_code ? 'manual' : 'auto',
+      tax_code_updated_at: new Date().toISOString(),
       payroll_id: record.payroll_id || null,
+      payroll_id_source: record.payroll_id ? 'manual' : 'auto',
+      payroll_id_updated_at: new Date().toISOString(),
       leave_allowance: record.leave_allowance ?? 15,
       persona: (record as any).user_persona || 'information-worker',
     }).select('id').single()
@@ -3102,6 +3106,12 @@ export default function AdminOnboarding() {
     }
 
     if (newEmp) {
+      if (!record.payroll_id) {
+        const { data: pidData } = await supabase.rpc('next_payroll_id', { p_company_id: selectedCompanyId })
+        if (pidData) {
+          await supabase.from('employees').update({ payroll_id: pidData, payroll_id_source: 'auto', payroll_id_updated_at: new Date().toISOString() }).eq('id', newEmp.id)
+        }
+      }
       const isZh = record.employment_category === 'shift_worker' && record.contract_type === 'Zero hours shift worker'
       const allowance = isZh ? 0 : (record.leave_allowance ?? 15)
       const { data: leaveTypes } = await supabase.from('leave_types').select('id, name, deducts_from_allowance').eq('company_id', selectedCompanyId)

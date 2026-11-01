@@ -54,6 +54,10 @@ interface Employee {
   personal_email: string | null
   manager_name: string | null
   manager_email: string | null
+  payroll_id_source: string | null
+  payroll_id_updated_at: string | null
+  tax_code_source: string | null
+  tax_code_updated_at: string | null
   leave_allowance: number | null
   salary_group: string | null
   qualifications: string | null
@@ -231,7 +235,8 @@ export default function AdminEmployees() {
       annual_salary: emp.annual_salary ?? '', hourly_rate: emp.hourly_rate ?? '',
       tax_code: emp.tax_code || '',
       payroll_id: emp.payroll_id || '', personal_email: emp.personal_email || '',
-      manager_name: emp.manager_name || '', manager_email: emp.manager_email || '',
+      manager_name: emp.manager_name || (emp.manager_id ? (() => { const m = employees.find(e => e.id === emp.manager_id); return m ? `${m.first_name} ${m.last_name}` : '' })() : ''),
+      manager_email: emp.manager_email || (emp.manager_id ? (employees.find(e => e.id === emp.manager_id)?.email || '') : ''),
       leave_allowance: emp.leave_allowance ?? 15,
       salary_group: emp.salary_group || 'N/A',
       qualifications: emp.qualifications || '',
@@ -265,6 +270,15 @@ export default function AdminEmployees() {
 
     // Fetch current record before update for audit trail
     const { data: oldRecord } = await supabase.from('employees').select('*').eq('id', id).single()
+
+    if (oldRecord && payload.tax_code !== oldRecord.tax_code) {
+      payload.tax_code_source = 'manual'
+      payload.tax_code_updated_at = new Date().toISOString()
+    }
+    if (oldRecord && payload.payroll_id !== oldRecord.payroll_id) {
+      payload.payroll_id_source = 'manual'
+      payload.payroll_id_updated_at = new Date().toISOString()
+    }
 
     const { error } = await supabase.from('employees').update(payload).eq('id', id)
     if (error) { showError('Failed to save employee: ' + error.message); return }
@@ -932,8 +946,8 @@ export default function AdminEmployees() {
                       <div><span style={{ color: '#999', display: 'block' }}>Start Date</span><strong>{formatDate(selectedEmployee.start_date)}</strong></div>
                       <div><span style={{ color: '#999', display: 'block' }}>Service</span><strong>{calculateDuration(selectedEmployee.start_date)}</strong></div>
                       <div><span style={{ color: '#999', display: 'block' }}>Location</span><strong>{selectedEmployee.location || '—'}</strong></div>
-                      <div><span style={{ color: '#999', display: 'block' }}>Manager</span><strong>{selectedEmployee.manager_name || '—'}</strong></div>
-                      <div><span style={{ color: '#999', display: 'block' }}>Manager Email</span><strong style={{ fontSize: 11 }}>{selectedEmployee.manager_email || '—'}</strong></div>
+                      <div><span style={{ color: '#999', display: 'block' }}>Manager</span><strong>{selectedEmployee.manager_name || (selectedEmployee.manager_id ? (() => { const m = employees.find(e => e.id === selectedEmployee.manager_id); return m ? `${m.first_name} ${m.last_name}` : '—' })() : '—')}</strong></div>
+                      <div><span style={{ color: '#999', display: 'block' }}>Manager Email</span><strong style={{ fontSize: 11 }}>{selectedEmployee.manager_email || (selectedEmployee.manager_id ? (employees.find(e => e.id === selectedEmployee.manager_id)?.email || '—') : '—')}</strong></div>
                       {features.inflowonboarder_integration && (
                         <>
                           <div><span style={{ color: '#999', display: 'block' }}>Company Device</span><strong>{selectedEmployee.has_company_device ? 'Yes' : 'No'}</strong></div>
@@ -1181,6 +1195,16 @@ export default function AdminEmployees() {
                           <button className="admin-btn-icon admin-btn-danger" title="Delete permanently" onClick={() => permanentlyDeleteEmployee(emp)}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                           </button>
+                          {features.inflowonboarder_integration && emp.is_active && !emp.is_frozen && (
+                            <>
+                              <button className="admin-btn-icon" title="Start Role Change" style={{ color: '#e65100' }} onClick={() => navigate('/admin/onboarding', { state: { tab: 'jml', jmlSection: 'movers', prefill: { empId: emp.id, empName: `${emp.first_name} ${emp.last_name}`, empEmail: emp.email } } })}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M11 13l-7 7"/><path d="M3 21h5v-5"/></svg>
+                              </button>
+                              <button className="admin-btn-icon" title="Start Offboarding" style={{ color: '#c62828' }} onClick={() => navigate('/admin/onboarding', { state: { tab: 'jml', jmlSection: 'leavers', prefill: { empId: emp.id, empName: `${emp.first_name} ${emp.last_name}`, empEmail: emp.email } } })}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                              </button>
+                            </>
+                          )}
                         </>
                       )}
                     </td>
@@ -1498,16 +1522,30 @@ export default function AdminEmployees() {
                                 <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
                                   <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Payroll</legend>
                                   <div className="admin-detail-grid admin-detail-grid-3">
-                                    {[
-                                      { k: 'annual_salary', l: `Annual Salary (${currencySymbol(currency)})`, t: 'number' },
-                                      { k: 'tax_code', l: 'Tax Code' },
-                                      { k: 'payroll_id', l: 'Payroll ID' },
-                                    ].map(f => (
-                                      <div key={f.k} className="admin-form-field">
-                                        <label style={{ fontSize: 12 }}>{f.l}</label>
-                                        <input className="admin-inline-input" type={f.t || 'text'} value={editForm[f.k] ?? ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))} />
-                                      </div>
-                                    ))}
+                                    <div className="admin-form-field">
+                                      <label style={{ fontSize: 12 }}>Annual Salary ({currencySymbol(currency)})</label>
+                                      <input className="admin-inline-input" type="number" value={editForm.annual_salary ?? ''} onChange={e => setEditForm(p => ({...p, annual_salary: e.target.value}))} />
+                                    </div>
+                                    <div className="admin-form-field">
+                                      <label style={{ fontSize: 12 }}>Tax Code</label>
+                                      <input className="admin-inline-input" value={editForm.tax_code ?? ''} onChange={e => setEditForm(p => ({...p, tax_code: e.target.value}))} />
+                                      {selectedEmployee?.tax_code_source && (
+                                        <span style={{ fontSize: 10, color: '#999', marginTop: 2, display: 'block' }}>
+                                          {selectedEmployee.tax_code_source === 'auto' ? 'Default' : selectedEmployee.tax_code_source === 'manual' ? 'Set manually' : `From ${selectedEmployee.tax_code_source}`}
+                                          {selectedEmployee.tax_code_updated_at && ` · ${new Date(selectedEmployee.tax_code_updated_at).toLocaleDateString('en-GB')}`}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="admin-form-field">
+                                      <label style={{ fontSize: 12 }}>Payroll ID</label>
+                                      <input className="admin-inline-input" value={editForm.payroll_id ?? ''} onChange={e => setEditForm(p => ({...p, payroll_id: e.target.value}))} />
+                                      {selectedEmployee?.payroll_id_source && (
+                                        <span style={{ fontSize: 10, color: '#999', marginTop: 2, display: 'block' }}>
+                                          {selectedEmployee.payroll_id_source === 'auto' ? 'Auto-generated' : selectedEmployee.payroll_id_source === 'manual' ? 'Set manually' : `From ${selectedEmployee.payroll_id_source}`}
+                                          {selectedEmployee.payroll_id_updated_at && ` · ${new Date(selectedEmployee.payroll_id_updated_at).toLocaleDateString('en-GB')}`}
+                                        </span>
+                                      )}
+                                    </div>
                                     {editForm.employment_category === 'shift_worker' && (
                                       <div className="admin-form-field">
                                         <label style={{ fontSize: 12 }}>Hourly Rate ({currencySymbol(currency)})</label>
@@ -1576,8 +1614,8 @@ export default function AdminEmployees() {
                                   {emp.employment_category !== 'contractor' && <div><strong>Weekly Hours:</strong> {emp.weekly_hours ?? '—'}</div>}
                                   {emp.employment_category !== 'contractor' && <div><strong>Notice Period:</strong> {emp.notice_period || '—'}</div>}
                                   {emp.employment_category !== 'contractor' && <div><strong>Probation End:</strong> {emp.probation_end_date ? new Date(emp.probation_end_date).toLocaleDateString('en-GB') : '—'}</div>}
-                                  <div><strong>Manager:</strong> {emp.manager_name || '—'}</div>
-                                  <div><strong>Manager Email:</strong> {emp.manager_email || '—'}</div>
+                                  <div><strong>Manager:</strong> {emp.manager_name || (emp.manager_id ? (() => { const m = employees.find(x => x.id === emp.manager_id); return m ? `${m.first_name} ${m.last_name}` : '—' })() : '—')}</div>
+                                  <div><strong>Manager Email:</strong> {emp.manager_email || (emp.manager_id ? (employees.find(x => x.id === emp.manager_id)?.email || '—') : '—')}</div>
                                   {emp.employment_category !== 'contractor' && <div><strong>Leave Allowance:</strong> {emp.leave_allowance ?? 15} days</div>}
                                   {emp.employment_category !== 'contractor' && <div><strong>Lieu Days:</strong> {lieuDays[emp.id]?.lieu_days ?? 0} days</div>}
                                   {emp.employment_category !== 'contractor' && <div><strong>Salary Group:</strong> {emp.salary_group || 'N/A'}</div>}
