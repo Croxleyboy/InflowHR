@@ -3218,14 +3218,14 @@ export default function AdminOnboarding() {
     if (fyStart > now) fyStart.setFullYear(fyStart.getFullYear() - 1)
     const fyEnd = new Date(fyStart.getFullYear() + 1, fyStart.getMonth(), 0)
     const fyRecs = offboardRecords.filter(r => {
-      const d = r.leaving_date || r.created_at
+      const d = r.end_date || r.created_at
       return d >= toLocalDateStr(fyStart) && d <= toLocalDateStr(fyEnd)
     })
     const monthNames = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar']
     const monthlyBreakdown = monthNames.map((label, i) => {
       const m = (fyStartMonth - 1 + i) % 12
       const y = m < fyStartMonth - 1 ? fyStart.getFullYear() + 1 : fyStart.getFullYear()
-      const count = fyRecs.filter(r => { const d = new Date(r.leaving_date || r.created_at); return d.getMonth() === m && d.getFullYear() === y }).length
+      const count = fyRecs.filter(r => { const d = new Date(r.end_date || r.created_at); return d.getMonth() === m && d.getFullYear() === y }).length
       return { label, count }
     })
     return {
@@ -3233,7 +3233,7 @@ export default function AdminOnboarding() {
       fyTotal: fyRecs.length,
       inProgress: offboardRecords.filter(r => !r.is_complete).length,
       completed: offboardRecords.filter(r => r.is_complete).length,
-      overdue: offboardRecords.filter(r => !r.is_complete && r.leaving_date && r.leaving_date < today).length,
+      overdue: offboardRecords.filter(r => !r.is_complete && r.end_date && r.end_date < today).length,
       monthlyBreakdown,
     }
   }, [offboardRecords, fyStartMonth])

@@ -2277,7 +2277,7 @@ function OrgChart({ employees }: { employees: Employee[] }) {
 
   function expandAll() {
     const all = new Set<string>()
-    activeEmployees.forEach(e => all.add(e.id))
+    orgChartEmployees.forEach((e: any) => all.add(e.id))
     setExpandedIds(all)
   }
 
