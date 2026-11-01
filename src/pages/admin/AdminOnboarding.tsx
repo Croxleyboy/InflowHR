@@ -711,11 +711,13 @@ export default function AdminOnboarding() {
     if (state?.tab === 'jml') {
       setTab('jml')
       if (state.jmlSection) setJmlSection(state.jmlSection)
-      if (state.prefill) {
+      if (state.prefill && state.jmlSection === 'movers') {
         const pf = state.prefill
-        setMoverSelectedEmployee({ id: pf.empId, first_name: pf.empName.split(' ')[0], last_name: pf.empName.split(' ').slice(1).join(' '), email: pf.empEmail, job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: resolvePersonaId(pf.personaChange.old), has_company_device: true })
+        const oldPersona = pf.personaChange ? resolvePersonaId(pf.personaChange.old) : ''
+        const newPersona = pf.personaChange ? resolvePersonaId(pf.personaChange.new) : ''
+        setMoverSelectedEmployee({ id: pf.empId, first_name: pf.empName.split(' ')[0], last_name: pf.empName.split(' ').slice(1).join(' '), email: pf.empEmail, job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: oldPersona, has_company_device: true })
         setMoverEmployeeSearch(pf.empName)
-        setMoverForm({ employee_id: pf.empId, employee_name: pf.empName, employee_email: pf.empEmail, changes: { persona: { old: resolvePersonaId(pf.personaChange.old), new: resolvePersonaId(pf.personaChange.new) } }, change_type: 'persona_change', reason: '', additionalFields: [] })
+        setMoverForm({ employee_id: pf.empId, employee_name: pf.empName, employee_email: pf.empEmail, changes: pf.personaChange ? { persona: { old: oldPersona, new: newPersona } } : {}, change_type: pf.personaChange ? 'persona_change' : 'role_change', reason: '', additionalFields: [] })
       }
       window.history.replaceState({}, '')
     }
