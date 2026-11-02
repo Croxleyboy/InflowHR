@@ -80,6 +80,12 @@ interface ShiftCorrection {
 }
 
 type FilterTab = 'only_me' | 'everyone' | 'availability' | 'replacements' | 'tasks'
+const VISIBLE_TABS: { key: FilterTab; labelKey: string }[] = [
+  { key: 'only_me', labelKey: 'shifts.only_me' },
+  { key: 'everyone', labelKey: 'shifts.everyone' },
+  { key: 'availability', labelKey: 'shifts.availability' },
+  { key: 'replacements', labelKey: 'shifts.replacements' },
+]
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -519,6 +525,14 @@ export default function MyShifts() {
         <div className="shifts-header-center">
           <h1 className="shifts-header-title">{t('shifts.title')}</h1>
         </div>
+        <button className="shifts-header-bell" onClick={() => { setFilter('tasks'); setGroupPages({}) }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          {(correctionFlags.length + corrections.filter(c => c.status === 'declined').length) > 0 && (
+            <span className="shifts-header-bell-badge">{correctionFlags.length + corrections.filter(c => c.status === 'declined').length}</span>
+          )}
+        </button>
         <button className="shifts-header-refresh" onClick={handleRefresh}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
             <path d="M21 12a9 9 0 0 1-15.36 6.36" /><path d="M3 12a9 9 0 0 1 15.36-6.36" />
@@ -556,22 +570,13 @@ export default function MyShifts() {
 
       {/* Filter Tabs */}
       <div className="shifts-tabs">
-        {([
-          { key: 'only_me' as FilterTab, label: t('shifts.only_me') },
-          { key: 'everyone' as FilterTab, label: t('shifts.everyone') },
-          { key: 'availability' as FilterTab, label: t('shifts.availability') },
-          { key: 'replacements' as FilterTab, label: t('shifts.replacements') },
-          { key: 'tasks' as FilterTab, label: 'Actions' },
-        ]).map(f => (
+        {VISIBLE_TABS.map(f => (
           <button
             key={f.key}
             className={`shifts-tab${filter === f.key ? ' shifts-tab-active' : ''}`}
-            onClick={() => { setFilter(f.key); if (f.key === 'tasks') setGroupPages({}); if (f.key === 'availability') navigate('/shifts/availability'); if (f.key === 'replacements') navigate('/shifts/swap') }}
+            onClick={() => { setFilter(f.key); if (f.key === 'availability') navigate('/shifts/availability'); if (f.key === 'replacements') navigate('/shifts/swap') }}
           >
-            {f.label}
-            {f.key === 'tasks' && (correctionFlags.length + corrections.filter(c => c.status === 'declined').length) > 0 && (
-              <span className="shifts-tab-badge">{correctionFlags.length + corrections.filter(c => c.status === 'declined').length}</span>
-            )}
+            {t(f.labelKey)}
           </button>
         ))}
       </div>
