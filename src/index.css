@@ -873,6 +873,20 @@ body {
 .shifts-header-center { flex: 1; min-width: 0; }
 .shifts-header-title { font-size: 20px; font-weight: 800; color: #fff; margin: 0; }
 .shifts-header-subtitle { font-size: 13px; color: rgba(255,255,255,0.8); margin: 2px 0 0; }
+.shifts-header-bell {
+  background: rgba(255,255,255,0.18); border: none; cursor: pointer;
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; position: relative;
+}
+.shifts-header-bell-badge {
+  position: absolute; top: -2px; right: -2px;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; font-size: 10px; font-weight: 800;
+  background: #dc2626; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid #e65100;
+}
 .shifts-header-refresh {
   background: rgba(255,255,255,0.18); border: none; cursor: pointer;
   width: 36px; height: 36px; border-radius: 50%;
