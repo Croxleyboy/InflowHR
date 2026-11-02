@@ -356,7 +356,7 @@ export default function AdminCompanies() {
       }
     }
 
-    setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' })
+    setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP', isMsp: false, mspTier: 'starter', mspDiscount: 20, managedByMspId: '' })
     setLogoFile(null)
     setLogoPreview(null)
     setShowForm(false)
