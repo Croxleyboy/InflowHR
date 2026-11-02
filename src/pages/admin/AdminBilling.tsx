@@ -690,7 +690,6 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
 
   const packAEnabled = enabledKeys.has('pack_a')
   const packBEnabled = enabledKeys.has('pack_b')
-  const enabledSupport = useMemo(() => supportPackages.filter(sp => enabledKeys.has(sp.feature_key)), [supportPackages, enabledKeys])
   const enabledLaunch = useMemo(() => launchPackages.filter(sp => enabledKeys.has(sp.feature_key)), [launchPackages, enabledKeys])
   const enabledMonthlySupport = useMemo(() => monthlySupportPlans.filter(sp => enabledKeys.has(sp.feature_key)), [monthlySupportPlans, enabledKeys])
 

@@ -83,7 +83,7 @@ async function verifyAdminOrManager(
   if (!cu) return json({ error: 'Access denied' }, 403)
   if (cu.role === 'admin' || cu.role === 'hr') return { userId: user.id, userEmail: user.email! }
   if (cu.employee_id) {
-    const { data: onb } = await sb.from('onboardings')
+    const { data: onb } = await sb.from('onboarding')
       .select('employee_id, employees!inner(manager_id)')
       .eq('id', onboardingId)
       .maybeSingle()
@@ -1526,11 +1526,11 @@ Deno.serve(async (req) => {
         .maybeSingle()
       if (!m365Row || !m365Row.m365_upn) return json({ error: 'No M365 account found for this starter' }, 400)
 
-      const { data: onb } = await sb.from('onboardings')
-        .select('employee_id, employees!inner(first_name, last_name)')
+      const { data: onb } = await sb.from('onboarding')
+        .select('firstname, surname')
         .eq('id', onboarding_id)
         .maybeSingle()
-      const empName = onb ? `${(onb as any).employees.first_name} ${(onb as any).employees.last_name}` : 'New starter'
+      const empName = onb ? `${onb.firstname} ${onb.surname}` : 'New starter'
 
       const idempotencyKey = `inflowhr-pass-${onboarding_id}-${Date.now()}`
 

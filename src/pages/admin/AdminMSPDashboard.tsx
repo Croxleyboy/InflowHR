@@ -159,9 +159,18 @@ export default function AdminMSPDashboard() {
     if (!grantEmail || !grantCompanyId || !mspCompanyId) return
     setGranting(true)
     try {
+      const { data: emp, error: empErr } = await supabase
+        .from('employees')
+        .select('id')
+        .eq('company_id', mspCompanyId)
+        .eq('email', grantEmail.trim().toLowerCase())
+        .eq('status', 'active')
+        .single()
+      if (empErr || !emp) throw new Error('Employee not found in your MSP company. Check the email address.')
+
       const { error } = await supabase.rpc('grant_msp_user_access' as any, {
+        p_employee_id: emp.id,
         p_msp_company_id: mspCompanyId,
-        p_employee_email: grantEmail,
         p_managed_company_id: grantCompanyId,
         p_permissions: { full_access: true },
       })
