@@ -109,10 +109,11 @@ export default function AdminSubscriptions() {
   const [aiLimitInput, setAiLimitInput] = useState('')
   const [aiLimitSaving, setAiLimitSaving] = useState(false)
 
-  // Guest auth settings state
+  // Login settings state
   const [guestOtpEnabled, setGuestOtpEnabled] = useState(true)
   const [guestSsoEnabled, setGuestSsoEnabled] = useState(false)
-  const [guestAuthLoading, setGuestAuthLoading] = useState(false)
+  const [accountLoginEnabled, setAccountLoginEnabled] = useState(false)
+  const [loginSettingsLoading, setLoginSettingsLoading] = useState(false)
 
   // Feature change log state
   const [changeLog, setChangeLog] = useState<FeatureChangeLog[]>([])
@@ -221,22 +222,27 @@ export default function AdminSubscriptions() {
     if (data) {
       setGuestOtpEnabled(data.otp_enabled)
       setGuestSsoEnabled(data.sso_enabled)
+      setAccountLoginEnabled(data.account_login_enabled ?? false)
     }
   }
 
-  async function toggleGuestAuth(key: 'guest_otp_enabled' | 'guest_sso_enabled', newValue: boolean) {
-    const otpNext = key === 'guest_otp_enabled' ? newValue : guestOtpEnabled
-    const ssoNext = key === 'guest_sso_enabled' ? newValue : guestSsoEnabled
-    if (!otpNext && !ssoNext) {
-      showError('At least one guest login method must remain enabled')
-      return
+  async function toggleLoginSetting(key: 'guest_otp_enabled' | 'guest_sso_enabled' | 'account_login_enabled', newValue: boolean) {
+    if (key === 'guest_otp_enabled' || key === 'guest_sso_enabled') {
+      const otpNext = key === 'guest_otp_enabled' ? newValue : guestOtpEnabled
+      const ssoNext = key === 'guest_sso_enabled' ? newValue : guestSsoEnabled
+      if (!otpNext && !ssoNext) {
+        showError('At least one guest login method must remain enabled')
+        return
+      }
     }
-    setGuestAuthLoading(true)
+    setLoginSettingsLoading(true)
     await supabase.from('platform_settings').update({ value: String(newValue) }).eq('key', key)
     if (key === 'guest_otp_enabled') setGuestOtpEnabled(newValue)
-    else setGuestSsoEnabled(newValue)
-    showSuccess(`Guest ${key === 'guest_otp_enabled' ? 'OTP' : 'SSO'} login ${newValue ? 'enabled' : 'disabled'}`)
-    setGuestAuthLoading(false)
+    else if (key === 'guest_sso_enabled') setGuestSsoEnabled(newValue)
+    else setAccountLoginEnabled(newValue)
+    const labels: Record<string, string> = { guest_otp_enabled: 'Guest OTP login', guest_sso_enabled: 'Guest SSO login', account_login_enabled: 'Account login' }
+    showSuccess(`${labels[key]} ${newValue ? 'enabled' : 'disabled'}`)
+    setLoginSettingsLoading(false)
   }
 
   useEffect(() => {
@@ -775,17 +781,35 @@ export default function AdminSubscriptions() {
                 <div className="admin-empty">No pricing items found</div>
               )}
 
-              {/* Guest Access Settings */}
+              {/* Login Page Settings */}
               <div style={{ marginTop: 32, padding: 20, background: '#f8fafc', borderRadius: 12, border: '1px solid #e5e7eb' }}>
-                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: '#1e293b' }}>Guest Access Settings</h3>
-                <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>Control how guest users authenticate across all companies. At least one method must remain enabled.</p>
+                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: '#1e293b' }}>Login Page Settings</h3>
+                <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>Control which login methods are visible on the login page. Changes take effect immediately.</p>
+
+                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Account Login</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={accountLoginEnabled}
+                      onChange={e => toggleLoginSetting('account_login_enabled', e.target.checked)}
+                      disabled={loginSettingsLoading}
+                      style={{ width: 18, height: 18, accentColor: '#1565c0' }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Email + Password (for trial users)</span>
+                    <span className="admin-badge admin-badge-declined" style={{ fontSize: 11, marginLeft: 4 }}>Off</span>
+                  </label>
+                </div>
+
+                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Guest Access</h4>
+                <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>At least one guest method must remain enabled.</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
                     <input
                       type="checkbox"
                       checked={guestOtpEnabled}
-                      onChange={e => toggleGuestAuth('guest_otp_enabled', e.target.checked)}
-                      disabled={guestAuthLoading}
+                      onChange={e => toggleLoginSetting('guest_otp_enabled', e.target.checked)}
+                      disabled={loginSettingsLoading}
                       style={{ width: 18, height: 18, accentColor: '#1565c0' }}
                     />
                     <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Email + One-Time Passcode (OTP)</span>
@@ -795,8 +819,8 @@ export default function AdminSubscriptions() {
                     <input
                       type="checkbox"
                       checked={guestSsoEnabled}
-                      onChange={e => toggleGuestAuth('guest_sso_enabled', e.target.checked)}
-                      disabled={guestAuthLoading}
+                      onChange={e => toggleLoginSetting('guest_sso_enabled', e.target.checked)}
+                      disabled={loginSettingsLoading}
                       style={{ width: 18, height: 18, accentColor: '#1565c0' }}
                     />
                     <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Microsoft SSO (Entra ID B2B)</span>
