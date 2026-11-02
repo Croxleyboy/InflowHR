@@ -32,6 +32,13 @@ interface MspStats {
   trial_companies: number
 }
 
+interface MspCompanyOption {
+  id: string
+  name: string
+  msp_tier: string | null
+  msp_wholesale_discount: number | null
+}
+
 export default function AdminMSPDashboard() {
   const { isSuperAdmin, isMspAdmin, mspCompanyId } = useAuth()
   const { setSelectedCompanyId } = useAdminCompany()
@@ -53,24 +60,60 @@ export default function AdminMSPDashboard() {
   const [grantCompanyId, setGrantCompanyId] = useState('')
   const [granting, setGranting] = useState(false)
 
+  // Super admin: list of MSP companies to choose from
+  const [mspCompanies, setMspCompanies] = useState<MspCompanyOption[]>([])
+  const [selectedMspId, setSelectedMspId] = useState<string | null>(null)
+
+  // Add client company form
+  const [allCompanies, setAllCompanies] = useState<{ id: string; name: string }[]>([])
+  const [addClientCompanyId, setAddClientCompanyId] = useState('')
+  const [addingClient, setAddingClient] = useState(false)
+
+  const effectiveMspId = mspCompanyId || selectedMspId
+
+  // Super admin: load list of MSP companies
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    ;(async () => {
+      const { data } = await supabase
+        .from('companies')
+        .select('id, name, msp_tier, msp_wholesale_discount')
+        .eq('is_msp', true)
+        .order('name')
+      const mspList = (data || []) as any as MspCompanyOption[]
+      setMspCompanies(mspList)
+      if (mspList.length === 1 && !mspCompanyId) {
+        setSelectedMspId(mspList[0].id)
+      }
+    })()
+  }, [isSuperAdmin, mspCompanyId])
+
+  // Load all non-MSP companies for the "add client" dropdown
+  useEffect(() => {
+    if (!isSuperAdmin || !effectiveMspId) return
+    ;(async () => {
+      const { data } = await supabase
+        .from('companies')
+        .select('id, name')
+        .neq('id', effectiveMspId)
+        .eq('is_active', true)
+        .order('name')
+      setAllCompanies((data || []) as any[])
+    })()
+  }, [isSuperAdmin, effectiveMspId])
+
   const loadData = useCallback(async () => {
-    if (!mspCompanyId && !isSuperAdmin) return
+    if (!effectiveMspId && !isSuperAdmin) return
+    if (!effectiveMspId) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
-      if (isSuperAdmin && !mspCompanyId) {
-        const { data } = await supabase.rpc('get_msp_dashboard' as any)
-        if (data) {
-          setManagedCompanies(data.companies || [])
-          setStats(data.stats || { managed_count: 0, total_employees: 0, active_companies: 0, trial_companies: 0 })
-        }
-        setLoading(false)
-        return
-      }
-
       const { data: mspCo } = await supabase
         .from('companies')
         .select('name, msp_tier, msp_wholesale_discount')
-        .eq('id', mspCompanyId!)
+        .eq('id', effectiveMspId)
         .single()
       if (mspCo) {
         setMspCompanyName((mspCo as any).name || '')
@@ -80,8 +123,8 @@ export default function AdminMSPDashboard() {
 
       const { data: managed } = await supabase
         .from('msp_managed_companies')
-        .select('managed_company_id, onboarded_at, companies:managed_company_id(id, name, domain, is_active, is_trial)')
-        .eq('msp_company_id', mspCompanyId!)
+        .select('managed_company_id, added_at, companies:managed_company_id(id, name, domain, is_active, is_trial)')
+        .eq('msp_company_id', effectiveMspId)
         .eq('is_active', true)
 
       const companies: ManagedCompany[] = []
@@ -100,7 +143,7 @@ export default function AdminMSPDashboard() {
           is_active: co.is_active,
           is_trial: co.is_trial,
           employee_count: count || 0,
-          onboarded_at: row.onboarded_at,
+          onboarded_at: row.added_at,
         })
       }
       setManagedCompanies(companies)
@@ -116,7 +159,7 @@ export default function AdminMSPDashboard() {
       const { data: users } = await supabase
         .from('msp_user_access')
         .select('id, employee_id, managed_company_id, permissions, is_active, employees:employee_id(first_name, last_name, email)')
-        .eq('msp_company_id', mspCompanyId!)
+        .eq('msp_company_id', effectiveMspId)
         .eq('is_active', true)
 
       const userRows: MspUserAccessRow[] = ((users || []) as any[]).map(u => ({
@@ -133,19 +176,19 @@ export default function AdminMSPDashboard() {
       console.error('MSP dashboard load error:', err)
     }
     setLoading(false)
-  }, [mspCompanyId, isSuperAdmin])
+  }, [effectiveMspId, isSuperAdmin])
 
   useEffect(() => { loadData() }, [loadData])
 
   const loadAuditLog = useCallback(async () => {
-    if (!mspCompanyId && !isSuperAdmin) return
+    if (!effectiveMspId && !isSuperAdmin) return
     setAuditLoading(true)
     const query = supabase.from('msp_audit_log').select('id, action, actor_id, managed_company_id, details, created_at').order('created_at', { ascending: false }).limit(100)
-    if (mspCompanyId) query.eq('msp_company_id', mspCompanyId)
+    if (effectiveMspId) query.eq('msp_company_id', effectiveMspId)
     const { data } = await query
     setAuditLog((data as any[]) || [])
     setAuditLoading(false)
-  }, [mspCompanyId, isSuperAdmin])
+  }, [effectiveMspId, isSuperAdmin])
 
   useEffect(() => { if (activeTab === 'audit') loadAuditLog() }, [activeTab, loadAuditLog])
 
@@ -155,14 +198,58 @@ export default function AdminMSPDashboard() {
     showToast('Switched to managed company', 'success')
   }
 
+  const handleAddClientCompany = async () => {
+    if (!addClientCompanyId || !effectiveMspId) return
+    setAddingClient(true)
+    try {
+      const { error } = await supabase
+        .from('msp_managed_companies')
+        .insert({
+          msp_company_id: effectiveMspId,
+          managed_company_id: addClientCompanyId,
+          added_by: (await supabase.auth.getUser()).data.user?.id,
+        })
+      if (error) {
+        if (error.code === '23505') {
+          showToast('This company is already linked to this MSP', 'error')
+        } else {
+          throw error
+        }
+      } else {
+        showToast('Client company added', 'success')
+        setAddClientCompanyId('')
+        loadData()
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to add client company', 'error')
+    }
+    setAddingClient(false)
+  }
+
+  const handleRemoveClientCompany = async (companyId: string) => {
+    if (!effectiveMspId) return
+    try {
+      const { error } = await supabase
+        .from('msp_managed_companies')
+        .update({ is_active: false })
+        .eq('msp_company_id', effectiveMspId)
+        .eq('managed_company_id', companyId)
+      if (error) throw error
+      showToast('Client company removed', 'success')
+      loadData()
+    } catch (err: any) {
+      showToast(err.message || 'Failed to remove client company', 'error')
+    }
+  }
+
   const handleGrantAccess = async () => {
-    if (!grantEmail || !grantCompanyId || !mspCompanyId) return
+    if (!grantEmail || !grantCompanyId || !effectiveMspId) return
     setGranting(true)
     try {
       const { data: emp, error: empErr } = await supabase
         .from('employees')
         .select('id')
-        .eq('company_id', mspCompanyId)
+        .eq('company_id', effectiveMspId)
         .eq('email', grantEmail.trim().toLowerCase())
         .eq('status', 'active')
         .single()
@@ -170,13 +257,13 @@ export default function AdminMSPDashboard() {
 
       const { error } = await supabase.rpc('grant_msp_user_access' as any, {
         p_employee_id: emp.id,
-        p_msp_company_id: mspCompanyId,
+        p_msp_company_id: effectiveMspId,
         p_managed_company_id: grantCompanyId,
         p_permissions: { full_access: true },
       })
       if (error) throw error
       await supabase.rpc('log_msp_action' as any, {
-        p_msp_company_id: mspCompanyId,
+        p_msp_company_id: effectiveMspId,
         p_managed_company_id: grantCompanyId,
         p_action: 'grant_access',
         p_details: { email: grantEmail },
@@ -192,7 +279,7 @@ export default function AdminMSPDashboard() {
   }
 
   const handleRevokeAccess = async (accessId: string) => {
-    if (!mspCompanyId) return
+    if (!effectiveMspId) return
     const revokedUser = mspUsers.find(u => u.id === accessId)
     try {
       const { error } = await supabase.rpc('revoke_msp_user_access' as any, {
@@ -201,7 +288,7 @@ export default function AdminMSPDashboard() {
       if (error) throw error
       if (revokedUser) {
         await supabase.rpc('log_msp_action' as any, {
-          p_msp_company_id: mspCompanyId,
+          p_msp_company_id: effectiveMspId,
           p_managed_company_id: revokedUser.managed_company_id,
           p_action: 'revoke_access',
           p_details: { email: revokedUser.employee_email, name: revokedUser.employee_name },
@@ -224,16 +311,59 @@ export default function AdminMSPDashboard() {
     return <div style={{ padding: 32, textAlign: 'center', color: '#666' }}>You do not have MSP access.</div>
   }
 
+  // Super admin needs to pick an MSP company first
+  if (isSuperAdmin && !effectiveMspId) {
+    return (
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: 32 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 16px' }}>MSP Partner Dashboard</h1>
+        {mspCompanies.length === 0 ? (
+          <p style={{ color: '#666' }}>No companies have been marked as MSP partners yet. Set a company as an MSP Partner in Company Management first.</p>
+        ) : (
+          <>
+            <p style={{ color: '#666', margin: '0 0 12px' }}>Select an MSP partner company to manage:</p>
+            <select
+              value=""
+              onChange={e => setSelectedMspId(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, background: '#fff' }}
+            >
+              <option value="">Select MSP company...</option>
+              {mspCompanies.map(co => (
+                <option key={co.id} value={co.id}>{co.name} — {tierDisplayLabel(co.msp_tier)}</option>
+              ))}
+            </select>
+          </>
+        )}
+      </div>
+    )
+  }
+
   if (loading) {
     return <div style={{ padding: 32, textAlign: 'center' }}>Loading MSP Dashboard...</div>
   }
 
-  const tierLabel = mspTier === 'gold' ? 'Gold' : mspTier === 'silver' ? 'Silver' : mspTier === 'bronze' ? 'Bronze' : 'Standard'
+  const tierLabel = tierDisplayLabel(mspTier)
+
+  // Companies already managed — exclude from "add client" dropdown
+  const managedIds = new Set(managedCompanies.map(c => c.id))
+  const availableClients = allCompanies.filter(c => !managedIds.has(c.id))
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>MSP Partner Dashboard</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>MSP Partner Dashboard</h1>
+          {isSuperAdmin && mspCompanies.length > 1 && (
+            <select
+              value={effectiveMspId || ''}
+              onChange={e => setSelectedMspId(e.target.value)}
+              style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, background: '#fff' }}
+            >
+              {mspCompanies.map(co => (
+                <option key={co.id} value={co.id}>{co.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
         {mspCompanyName && (
           <p style={{ margin: '4px 0 0', color: '#666', fontSize: 14 }}>
             {mspCompanyName} — {tierLabel} Partner
@@ -259,8 +389,41 @@ export default function AdminMSPDashboard() {
 
       {activeTab === 'companies' && (
         <div>
+          {/* Add client company form — super admin only */}
+          {isSuperAdmin && (
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 20, marginBottom: 20, background: '#f9fafb' }}>
+              <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 12px' }}>Add Client Company</h3>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1, minWidth: 250 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Company</label>
+                  <select
+                    value={addClientCompanyId}
+                    onChange={e => setAddClientCompanyId(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, background: '#fff' }}
+                  >
+                    <option value="">Select company to add...</option>
+                    {availableClients.map(co => (
+                      <option key={co.id} value={co.id}>{co.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={handleAddClientCompany}
+                  disabled={addingClient || !addClientCompanyId}
+                  style={{
+                    padding: '8px 20px', background: addingClient ? '#9ca3af' : '#16a34a', color: '#fff',
+                    border: 'none', borderRadius: 6, cursor: addingClient ? 'default' : 'pointer', fontWeight: 600, fontSize: 13,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {addingClient ? 'Adding...' : 'Add Client'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {managedCompanies.length === 0 ? (
-            <p style={{ color: '#666', textAlign: 'center', padding: 32 }}>No managed companies yet.</p>
+            <p style={{ color: '#666', textAlign: 'center', padding: 32 }}>No managed companies yet. {isSuperAdmin ? 'Use the form above to add a client company.' : ''}</p>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
               {managedCompanies.map(co => (
@@ -280,17 +443,30 @@ export default function AdminMSPDashboard() {
                   </div>
                   <div style={{ display: 'flex', gap: 20, fontSize: 13, color: '#555', marginBottom: 14 }}>
                     <span>{co.employee_count} employee{co.employee_count !== 1 ? 's' : ''}</span>
-                    <span>Onboarded: {formatDate(co.onboarded_at)}</span>
+                    <span>Added: {formatDate(co.onboarded_at)}</span>
                   </div>
-                  <button
-                    onClick={() => handleManageCompany(co.id)}
-                    style={{
-                      width: '100%', padding: '8px 0', background: '#4f46e5', color: '#fff',
-                      border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 13,
-                    }}
-                  >
-                    Manage Company
-                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => handleManageCompany(co.id)}
+                      style={{
+                        flex: 1, padding: '8px 0', background: '#4f46e5', color: '#fff',
+                        border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                      }}
+                    >
+                      Manage Company
+                    </button>
+                    {isSuperAdmin && (
+                      <button
+                        onClick={() => handleRemoveClientCompany(co.id)}
+                        style={{
+                          padding: '8px 12px', background: '#fee2e2', color: '#991b1b',
+                          border: '1px solid #fecaca', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12,
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -427,6 +603,13 @@ export default function AdminMSPDashboard() {
       )}
     </div>
   )
+}
+
+function tierDisplayLabel(tier: string | null): string {
+  if (tier === 'starter') return 'Starter'
+  if (tier === 'growth') return 'Growth'
+  if (tier === 'enterprise') return 'Enterprise'
+  return 'Standard'
 }
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
