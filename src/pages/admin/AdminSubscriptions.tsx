@@ -109,6 +109,11 @@ export default function AdminSubscriptions() {
   const [aiLimitInput, setAiLimitInput] = useState('')
   const [aiLimitSaving, setAiLimitSaving] = useState(false)
 
+  // Guest auth settings state
+  const [guestOtpEnabled, setGuestOtpEnabled] = useState(true)
+  const [guestSsoEnabled, setGuestSsoEnabled] = useState(false)
+  const [guestAuthLoading, setGuestAuthLoading] = useState(false)
+
   // Feature change log state
   const [changeLog, setChangeLog] = useState<FeatureChangeLog[]>([])
   const [changeLogLoading, setChangeLogLoading] = useState(false)
@@ -211,9 +216,33 @@ export default function AdminSubscriptions() {
     setChangeLogLoading(false)
   }
 
+  async function loadGuestAuthSettings() {
+    const { data } = await supabase.rpc('get_guest_auth_methods')
+    if (data) {
+      setGuestOtpEnabled(data.otp_enabled)
+      setGuestSsoEnabled(data.sso_enabled)
+    }
+  }
+
+  async function toggleGuestAuth(key: 'guest_otp_enabled' | 'guest_sso_enabled', newValue: boolean) {
+    const otpNext = key === 'guest_otp_enabled' ? newValue : guestOtpEnabled
+    const ssoNext = key === 'guest_sso_enabled' ? newValue : guestSsoEnabled
+    if (!otpNext && !ssoNext) {
+      showError('At least one guest login method must remain enabled')
+      return
+    }
+    setGuestAuthLoading(true)
+    await supabase.from('platform_settings').update({ value: String(newValue) }).eq('key', key)
+    if (key === 'guest_otp_enabled') setGuestOtpEnabled(newValue)
+    else setGuestSsoEnabled(newValue)
+    showSuccess(`Guest ${key === 'guest_otp_enabled' ? 'OTP' : 'SSO'} login ${newValue ? 'enabled' : 'disabled'}`)
+    setGuestAuthLoading(false)
+  }
+
   useEffect(() => {
     loadPricing()
     loadCompanies()
+    loadGuestAuthSettings()
   }, [])
 
   useEffect(() => {
@@ -745,6 +774,35 @@ export default function AdminSubscriptions() {
               {pricing.length === 0 && (
                 <div className="admin-empty">No pricing items found</div>
               )}
+
+              {/* Guest Access Settings */}
+              <div style={{ marginTop: 32, padding: 20, background: '#f8fafc', borderRadius: 12, border: '1px solid #e5e7eb' }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: '#1e293b' }}>Guest Access Settings</h3>
+                <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>Control how guest users authenticate across all companies. At least one method must remain enabled.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={guestOtpEnabled}
+                      onChange={e => toggleGuestAuth('guest_otp_enabled', e.target.checked)}
+                      disabled={guestAuthLoading}
+                      style={{ width: 18, height: 18, accentColor: '#1565c0' }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Email + One-Time Passcode (OTP)</span>
+                    <span className="admin-badge admin-badge-approved" style={{ fontSize: 11, marginLeft: 4 }}>Default</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={guestSsoEnabled}
+                      onChange={e => toggleGuestAuth('guest_sso_enabled', e.target.checked)}
+                      disabled={guestAuthLoading}
+                      style={{ width: 18, height: 18, accentColor: '#1565c0' }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Microsoft SSO (Entra ID B2B)</span>
+                  </label>
+                </div>
+              </div>
             </div>
           )}
         </>
