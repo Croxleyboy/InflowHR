@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
@@ -68,6 +68,11 @@ export default function AdminMSPDashboard() {
   const [allCompanies, setAllCompanies] = useState<{ id: string; name: string }[]>([])
   const [addClientCompanyId, setAddClientCompanyId] = useState('')
   const [addingClient, setAddingClient] = useState(false)
+
+  // Onboard new client form
+  const [showOnboardForm, setShowOnboardForm] = useState(false)
+  const [onboardForm, setOnboardForm] = useState({ name: '', domain: '', authMode: 'sso' as 'sso' | 'non_sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP', isTrial: false, trialStart: '', trialEnd: '' })
+  const [onboarding, setOnboarding] = useState(false)
 
   const effectiveMspId = mspCompanyId || selectedMspId
 
@@ -242,6 +247,138 @@ export default function AdminMSPDashboard() {
     }
   }
 
+  const handleOnboardNewClient = async () => {
+    if (!onboardForm.name.trim() || !effectiveMspId) return
+    if (onboardForm.authMode === 'sso' && !onboardForm.domain.trim()) {
+      showToast('Email domain is required for SSO companies', 'error')
+      return
+    }
+    if (onboardForm.isTrial && (!onboardForm.trialStart || !onboardForm.trialEnd)) {
+      showToast('Trial companies require both start and end dates', 'error')
+      return
+    }
+    setOnboarding(true)
+    try {
+      const domain = onboardForm.authMode === 'sso' ? onboardForm.domain.trim().toLowerCase().replace(/^@/, '') : ''
+      const isNonSso = onboardForm.authMode === 'non_sso'
+
+      const insertPayload: Record<string, unknown> = {
+        name: onboardForm.name.trim(),
+        domain,
+        microsoft_tenant_id: isNonSso ? null : `pending-${Date.now()}`,
+        is_active: true,
+        is_trial: onboardForm.isTrial,
+        auth_mode: onboardForm.authMode,
+        timezone: onboardForm.timezone,
+        date_format: onboardForm.date_format,
+        currency: onboardForm.currency,
+        managed_by_msp_id: effectiveMspId,
+      }
+      if (onboardForm.isTrial) {
+        insertPayload.trial_start_date = onboardForm.trialStart
+        insertPayload.trial_end_date = onboardForm.trialEnd
+      }
+
+      const { data: newCo, error: insertError } = await supabase.from('companies').insert(insertPayload).select('id').single()
+      if (insertError) throw new Error(insertError.message)
+
+      if (newCo) {
+        // Link as managed company
+        await supabase.from('msp_managed_companies').insert({
+          msp_company_id: effectiveMspId,
+          managed_company_id: newCo.id,
+          added_by: (await supabase.auth.getUser()).data.user?.id,
+        })
+
+        // Non-SSO account setup
+        if (isNonSso) {
+          const slug = onboardForm.name.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20)
+          const username = `${slug}admin`
+          const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%'
+          let password = ''
+          for (let i = 0; i < 14; i++) password += chars[Math.floor(Math.random() * chars.length)]
+          const email = `${username}@nonsso.inflowhr.local`
+          await callRpcDirect('create_nonsso_account', {
+            p_email: email,
+            p_password: password,
+            p_company_id: newCo.id,
+            p_company_name: onboardForm.name.trim(),
+          })
+        }
+
+        // Default leave types
+        await supabase.from('leave_types').insert([
+          { name: 'Annual Leave', company_id: newCo.id, deducts_from_allowance: true },
+          { name: 'Sick Leave', company_id: newCo.id, deducts_from_allowance: false },
+          { name: 'Jury Duty', company_id: newCo.id, deducts_from_allowance: false },
+          { name: 'Bereavement', company_id: newCo.id, deducts_from_allowance: true },
+          { name: 'Exam Leave', company_id: newCo.id, deducts_from_allowance: true },
+          { name: 'Carers Leave', company_id: newCo.id, deducts_from_allowance: true },
+          { name: 'Career Break', company_id: newCo.id, deducts_from_allowance: true },
+          { name: 'Lieu Days', company_id: newCo.id, deducts_from_allowance: false },
+        ])
+
+        // Default features
+        const allFeatureKeys = ['expenses', 'leave', 'kudos', 'elearning', 'timesheets', 'payroll', 'performance', 'shifts', 'benefits', 'legal_timesheets', 'space_booking', 'asset_management', 'email_notifications']
+        const defaultEnabled = ['expenses', 'leave', 'kudos', 'elearning', 'timesheets']
+        await supabase.from('company_features').insert(
+          allFeatureKeys.map(key => ({
+            company_id: newCo.id,
+            feature_key: key,
+            is_enabled: onboardForm.isTrial ? true : defaultEnabled.includes(key),
+            custom_price: onboardForm.isTrial ? 0 : null,
+          }))
+        )
+
+        // Email notification settings
+        await supabase.from('email_notification_settings').insert({
+          company_id: newCo.id,
+          leave_enabled: false,
+          expenses_enabled: false,
+          shifts_enabled: false,
+          kudos_enabled: false,
+          space_booking_enabled: false,
+          performance_reminders_enabled: false,
+          elearning_reminders_enabled: false,
+        })
+
+        // Welcome announcement
+        await supabase.from('announcements').insert({
+          title: 'Welcome to your new HR App',
+          body: "Take a look within 'Settings' and choose the guide to get to know your app and its features.",
+          submitted_by_name: 'InflowHR',
+          is_pinned: true,
+          company_id: newCo.id,
+        })
+
+        // Auto-grant support access
+        await callRpcDirect('grant_support_access_for_company', {
+          p_company_id: newCo.id,
+          p_hours: 48,
+        })
+
+        // Audit log
+        await supabase.rpc('log_msp_action' as any, {
+          p_msp_company_id: effectiveMspId,
+          p_managed_company_id: newCo.id,
+          p_action: 'onboard_client',
+          p_details: { company_name: onboardForm.name.trim(), auth_mode: onboardForm.authMode },
+        })
+      }
+
+      showToast(`${onboardForm.name.trim()} onboarded successfully`, 'success')
+      setOnboardForm({ name: '', domain: '', authMode: 'sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP', isTrial: false, trialStart: '', trialEnd: '' })
+      setShowOnboardForm(false)
+      loadData()
+      // Refresh the "link existing" dropdown too
+      const { data: refreshed } = await supabase.from('companies').select('id, name').neq('id', effectiveMspId).eq('is_active', true).order('name')
+      setAllCompanies((refreshed || []) as any[])
+    } catch (err: any) {
+      showToast(err.message || 'Failed to onboard client', 'error')
+    }
+    setOnboarding(false)
+  }
+
   const handleGrantAccess = async () => {
     if (!grantEmail || !grantCompanyId || !effectiveMspId) return
     setGranting(true)
@@ -389,41 +526,177 @@ export default function AdminMSPDashboard() {
 
       {activeTab === 'companies' && (
         <div>
-          {/* Add client company form — super admin only */}
+          {/* Client company actions — super admin only */}
           {isSuperAdmin && (
-            <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 20, marginBottom: 20, background: '#f9fafb' }}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 12px' }}>Add Client Company</h3>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                <div style={{ flex: 1, minWidth: 250 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Company</label>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setShowOnboardForm(!showOnboardForm)}
+                style={{
+                  padding: '10px 20px', background: showOnboardForm ? '#e5e7eb' : '#4f46e5', color: showOnboardForm ? '#374151' : '#fff',
+                  border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+                }}
+              >
+                {showOnboardForm ? 'Cancel' : 'Onboard New Client'}
+              </button>
+              {!showOnboardForm && availableClients.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <select
                     value={addClientCompanyId}
                     onChange={e => setAddClientCompanyId(e.target.value)}
-                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, background: '#fff' }}
+                    style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, background: '#fff', minWidth: 220 }}
                   >
-                    <option value="">Select company to add...</option>
+                    <option value="">Link existing company...</option>
                     {availableClients.map(co => (
                       <option key={co.id} value={co.id}>{co.name}</option>
                     ))}
                   </select>
+                  <button
+                    onClick={handleAddClientCompany}
+                    disabled={addingClient || !addClientCompanyId}
+                    style={{
+                      padding: '8px 16px', background: addingClient ? '#9ca3af' : '#16a34a', color: '#fff',
+                      border: 'none', borderRadius: 6, cursor: addingClient ? 'default' : 'pointer', fontWeight: 600, fontSize: 13,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {addingClient ? 'Linking...' : 'Link'}
+                  </button>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Onboard new client form */}
+          {isSuperAdmin && showOnboardForm && (
+            <div style={{ border: '1px solid #d1d5db', borderRadius: 10, padding: 24, marginBottom: 20, background: '#f9fafb' }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 16px' }}>Onboard New Client Company</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Company Name *</label>
+                  <input
+                    value={onboardForm.name}
+                    onChange={e => setOnboardForm({ ...onboardForm, name: e.target.value })}
+                    placeholder="Acme Ltd"
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Auth Mode</label>
+                  <select
+                    value={onboardForm.authMode}
+                    onChange={e => setOnboardForm({ ...onboardForm, authMode: e.target.value as 'sso' | 'non_sso' })}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, background: '#fff' }}
+                  >
+                    <option value="sso">SSO (Microsoft / Google)</option>
+                    <option value="non_sso">Non-SSO (Username / Password)</option>
+                  </select>
+                </div>
+                {onboardForm.authMode === 'sso' && (
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Email Domain *</label>
+                    <input
+                      value={onboardForm.domain}
+                      onChange={e => setOnboardForm({ ...onboardForm, domain: e.target.value })}
+                      placeholder="acme.co.uk"
+                      style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14 }}
+                    />
+                  </div>
+                )}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Timezone</label>
+                  <select
+                    value={onboardForm.timezone}
+                    onChange={e => setOnboardForm({ ...onboardForm, timezone: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, background: '#fff' }}
+                  >
+                    <option value="Europe/London">Europe/London</option>
+                    <option value="America/New_York">America/New_York</option>
+                    <option value="America/Chicago">America/Chicago</option>
+                    <option value="America/Los_Angeles">America/Los_Angeles</option>
+                    <option value="Asia/Dubai">Asia/Dubai</option>
+                    <option value="Asia/Singapore">Asia/Singapore</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Date Format</label>
+                  <select
+                    value={onboardForm.date_format}
+                    onChange={e => setOnboardForm({ ...onboardForm, date_format: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, background: '#fff' }}
+                  >
+                    <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                    <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                    <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Currency</label>
+                  <select
+                    value={onboardForm.currency}
+                    onChange={e => setOnboardForm({ ...onboardForm, currency: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, background: '#fff' }}
+                  >
+                    <option value="GBP">GBP (£)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="AED">AED (د.إ)</option>
+                    <option value="SGD">SGD (S$)</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={onboardForm.isTrial}
+                    onChange={e => setOnboardForm({ ...onboardForm, isTrial: e.target.checked })}
+                  />
+                  Trial company
+                </label>
+                {onboardForm.isTrial && (
+                  <>
+                    <input
+                      type="date"
+                      value={onboardForm.trialStart}
+                      onChange={e => setOnboardForm({ ...onboardForm, trialStart: e.target.value })}
+                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+                    />
+                    <span style={{ fontSize: 13, color: '#666' }}>to</span>
+                    <input
+                      type="date"
+                      value={onboardForm.trialEnd}
+                      onChange={e => setOnboardForm({ ...onboardForm, trialEnd: e.target.value })}
+                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+                    />
+                  </>
+                )}
+              </div>
+              <div style={{ marginTop: 20, display: 'flex', gap: 12 }}>
                 <button
-                  onClick={handleAddClientCompany}
-                  disabled={addingClient || !addClientCompanyId}
+                  onClick={handleOnboardNewClient}
+                  disabled={onboarding || !onboardForm.name.trim()}
                   style={{
-                    padding: '8px 20px', background: addingClient ? '#9ca3af' : '#16a34a', color: '#fff',
-                    border: 'none', borderRadius: 6, cursor: addingClient ? 'default' : 'pointer', fontWeight: 600, fontSize: 13,
-                    whiteSpace: 'nowrap',
+                    padding: '10px 24px', background: onboarding ? '#9ca3af' : '#4f46e5', color: '#fff',
+                    border: 'none', borderRadius: 8, cursor: onboarding ? 'default' : 'pointer', fontWeight: 600, fontSize: 14,
                   }}
                 >
-                  {addingClient ? 'Adding...' : 'Add Client'}
+                  {onboarding ? 'Creating...' : 'Create & Link Company'}
+                </button>
+                <button
+                  onClick={() => setShowOnboardForm(false)}
+                  style={{
+                    padding: '10px 24px', background: '#fff', color: '#374151',
+                    border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+                  }}
+                >
+                  Cancel
                 </button>
               </div>
             </div>
           )}
 
           {managedCompanies.length === 0 ? (
-            <p style={{ color: '#666', textAlign: 'center', padding: 32 }}>No managed companies yet. {isSuperAdmin ? 'Use the form above to add a client company.' : ''}</p>
+            <p style={{ color: '#666', textAlign: 'center', padding: 32 }}>No managed companies yet. {isSuperAdmin ? 'Click "Onboard New Client" to create one, or link an existing company.' : ''}</p>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
               {managedCompanies.map(co => (
