@@ -26,6 +26,10 @@ interface Company {
   timezone: string
   date_format: string
   currency: string
+  is_msp: boolean
+  msp_tier: string | null
+  msp_wholesale_discount: number | null
+  managed_by_msp_id: string | null
 }
 
 interface Employee {
@@ -74,7 +78,7 @@ export default function AdminCompanies() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' as 'sso' | 'non_sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' })
+  const [form, setForm] = useState({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' as 'sso' | 'non_sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP', isMsp: false, mspTier: 'starter' as string, mspDiscount: 20 as number, managedByMspId: '' as string })
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -89,7 +93,7 @@ export default function AdminCompanies() {
   const [importingFor, setImportingFor] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null)
   const [editingCompany, setEditingCompany] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', domain: '', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' })
+  const [editForm, setEditForm] = useState({ name: '', domain: '', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP', isMsp: false, mspTier: 'starter' as string, mspDiscount: 20 as number, managedByMspId: '' as string })
   const [savingEdit, setSavingEdit] = useState(false)
   const [createdCredentials, setCreatedCredentials] = useState<{ username: string; password: string; companyName: string } | null>(null)
   const [editingTrialEnd, setEditingTrialEnd] = useState<string | null>(null)
@@ -203,6 +207,14 @@ export default function AdminCompanies() {
     if (form.isTrial) {
       insertPayload.trial_start_date = form.trialStart
       insertPayload.trial_end_date = form.trialEnd
+    }
+    if (form.isMsp) {
+      insertPayload.is_msp = true
+      insertPayload.msp_tier = form.mspTier
+      insertPayload.msp_wholesale_discount = form.mspDiscount
+    }
+    if (form.managedByMspId) {
+      insertPayload.managed_by_msp_id = form.managedByMspId
     }
     const { data: newCo, error: insertError } = await supabase.from('companies').insert(insertPayload).select('id').single()
 
@@ -500,7 +512,7 @@ export default function AdminCompanies() {
 
   function startEditCompany(c: Company) {
     setEditingCompany(c.id)
-    setEditForm({ name: c.name, domain: c.domain, timezone: c.timezone || 'Europe/London', date_format: c.date_format || 'DD/MM/YYYY', currency: c.currency || 'GBP' })
+    setEditForm({ name: c.name, domain: c.domain, timezone: c.timezone || 'Europe/London', date_format: c.date_format || 'DD/MM/YYYY', currency: c.currency || 'GBP', isMsp: c.is_msp || false, mspTier: c.msp_tier || 'starter', mspDiscount: c.msp_wholesale_discount ?? 20, managedByMspId: c.managed_by_msp_id || '' })
   }
 
   async function saveEditCompany(id: string) {
@@ -515,6 +527,10 @@ export default function AdminCompanies() {
     updates.timezone = editForm.timezone
     updates.date_format = editForm.date_format
     updates.currency = editForm.currency
+    updates.is_msp = editForm.isMsp
+    updates.msp_tier = editForm.isMsp ? editForm.mspTier : null
+    updates.msp_wholesale_discount = editForm.isMsp ? editForm.mspDiscount : null
+    updates.managed_by_msp_id = editForm.managedByMspId || null
     const { error } = await supabase.from('companies').update(updates).eq('id', id)
     if (error) { showError('Failed to update company: ' + error.message); setSavingEdit(false); return }
     setEditingCompany(null)
@@ -871,6 +887,47 @@ export default function AdminCompanies() {
             </select>
           </div>
         </div>
+        <div className="co-edit-row" style={{ marginTop: 8 }}>
+          <div className="admin-form-field">
+            <label>MSP Partner</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <label className="admin-toggle-switch">
+                <input type="checkbox" checked={editForm.isMsp} onChange={e => setEditForm(f => ({ ...f, isMsp: e.target.checked, managedByMspId: e.target.checked ? '' : f.managedByMspId }))} />
+                <span className="admin-toggle-slider" />
+              </label>
+              <span style={{ fontSize: 13, color: editForm.isMsp ? '#7c3aed' : '#999', fontWeight: 600 }}>
+                {editForm.isMsp ? 'Yes' : 'No'}
+              </span>
+            </div>
+          </div>
+          {editForm.isMsp && (
+            <>
+              <div className="admin-form-field">
+                <label>MSP Tier</label>
+                <select className="admin-input" value={editForm.mspTier} onChange={e => setEditForm(f => ({ ...f, mspTier: e.target.value, mspDiscount: e.target.value === 'enterprise' ? 40 : e.target.value === 'growth' ? 30 : 20 }))}>
+                  <option value="starter">Starter (20%)</option>
+                  <option value="growth">Growth (30%)</option>
+                  <option value="enterprise">Enterprise (40%)</option>
+                </select>
+              </div>
+              <div className="admin-form-field">
+                <label>Wholesale Discount %</label>
+                <input className="admin-input" type="number" min={0} max={100} value={editForm.mspDiscount} onChange={e => setEditForm(f => ({ ...f, mspDiscount: Number(e.target.value) }))} />
+              </div>
+            </>
+          )}
+          {!editForm.isMsp && (
+            <div className="admin-form-field">
+              <label>Managed By MSP</label>
+              <select className="admin-input" value={editForm.managedByMspId} onChange={e => setEditForm(f => ({ ...f, managedByMspId: e.target.value }))}>
+                <option value="">None (direct customer)</option>
+                {companies.filter(co => co.is_msp && co.is_active && co.id !== c.id).map(msp => (
+                  <option key={msp.id} value={msp.id}>{msp.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditCompany(c.id)} disabled={savingEdit}>
             {savingEdit ? 'Saving...' : 'Save Changes'}
@@ -906,6 +963,15 @@ export default function AdminCompanies() {
                 </span>
                 {renderAuthBadge(c)}
                 {renderTrialBadge(c)}
+                {c.is_msp && (
+                  <span className="admin-badge" style={{ background: '#ede9fe', color: '#7c3aed' }}>
+                    MSP {c.msp_tier ? `(${c.msp_tier})` : ''}
+                  </span>
+                )}
+                {c.managed_by_msp_id && (() => {
+                  const msp = companies.find(co => co.id === c.managed_by_msp_id)
+                  return msp ? <span className="admin-badge" style={{ background: '#f3e8ff', color: '#6d28d9' }}>Managed by {msp.name}</span> : null
+                })()}
               </div>
             </div>
 
@@ -1075,6 +1141,55 @@ export default function AdminCompanies() {
               </div>
             )}
             <div style={{ marginTop: 16, marginBottom: 8 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: '#333' }}>MSP Partner</div>
+              <div className="admin-form-grid">
+                <div className="admin-form-field">
+                  <label>MSP Partner</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <label className="admin-toggle-switch">
+                      <input type="checkbox" checked={form.isMsp} onChange={e => setForm(f => ({ ...f, isMsp: e.target.checked, managedByMspId: e.target.checked ? '' : f.managedByMspId }))} />
+                      <span className="admin-toggle-slider" />
+                    </label>
+                    <span style={{ fontSize: 13, color: form.isMsp ? '#7c3aed' : '#999', fontWeight: 600 }}>
+                      {form.isMsp ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                </div>
+                {form.isMsp && (
+                  <>
+                    <div className="admin-form-field">
+                      <label>MSP Tier</label>
+                      <select className="admin-input" value={form.mspTier} onChange={e => setForm(f => ({ ...f, mspTier: e.target.value, mspDiscount: e.target.value === 'enterprise' ? 40 : e.target.value === 'growth' ? 30 : 20 }))}>
+                        <option value="starter">Starter (20%)</option>
+                        <option value="growth">Growth (30%)</option>
+                        <option value="enterprise">Enterprise (40%)</option>
+                      </select>
+                    </div>
+                    <div className="admin-form-field">
+                      <label>Wholesale Discount %</label>
+                      <input className="admin-input" type="number" min={0} max={100} value={form.mspDiscount} onChange={e => setForm(f => ({ ...f, mspDiscount: Number(e.target.value) }))} />
+                    </div>
+                  </>
+                )}
+                {!form.isMsp && (
+                  <div className="admin-form-field">
+                    <label>Managed By MSP</label>
+                    <select className="admin-input" value={form.managedByMspId} onChange={e => setForm(f => ({ ...f, managedByMspId: e.target.value }))}>
+                      <option value="">None (direct customer)</option>
+                      {companies.filter(co => co.is_msp && co.is_active).map(msp => (
+                        <option key={msp.id} value={msp.id}>{msp.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              {form.isMsp && (
+                <div style={{ background: '#f3e8ff', borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 13, color: '#7c3aed' }}>
+                  MSP partners can manage client companies from the MSP Dashboard. Their billing is handled at wholesale rates.
+                </div>
+              )}
+            </div>
+            <div style={{ marginTop: 16, marginBottom: 8 }}>
               <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: '#333' }}>Regional Settings</div>
               <div className="admin-form-grid">
                 <div className="admin-form-field">
@@ -1138,7 +1253,7 @@ export default function AdminCompanies() {
               <button className="admin-btn admin-btn-primary" onClick={addCompany} disabled={saving}>
                 {saving ? 'Saving...' : 'Register Company'}
               </button>
-              <button className="admin-btn" onClick={() => { setShowForm(false); setLogoFile(null); setLogoPreview(null); setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' }) }}>Cancel</button>
+              <button className="admin-btn" onClick={() => { setShowForm(false); setLogoFile(null); setLogoPreview(null); setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP', isMsp: false, mspTier: 'starter', mspDiscount: 20, managedByMspId: '' }) }}>Cancel</button>
             </div>
           </div>
         )}
