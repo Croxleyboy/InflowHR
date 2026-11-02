@@ -680,7 +680,6 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
   const baseline = useMemo(() => pricing.find(p => p.feature_key === 'hr_core' || !p.is_addon), [pricing])
   const packAPricing = useMemo(() => pricing.find(p => p.feature_key === 'pack_a'), [pricing])
   const packBPricing = useMemo(() => pricing.find(p => p.feature_key === 'pack_b'), [pricing])
-  const supportPackages = useMemo(() => pricing.filter(p => p.is_support_package), [pricing])
   const launchPackages = useMemo(() => pricing.filter(p => p.is_support_package && p.support_type === 'launch'), [pricing])
   const monthlySupportPlans = useMemo(() => pricing.filter(p => p.is_support_package && p.support_type === 'monthly'), [pricing])
   const enabledKeys = useMemo(() => new Set(features.filter(f => f.is_enabled).map(f => f.feature_key)), [features])
