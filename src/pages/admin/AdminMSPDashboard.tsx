@@ -11,10 +11,10 @@ interface ManagedCompany {
   name: string
   domain: string
   is_active: boolean
-  is_trial: boolean
   employee_count: number
   onboarded_at: string | null
   consent_status: 'pending' | 'approved' | 'rejected'
+  consent_expires_at: string | null
 }
 
 interface MspUserAccessRow {
@@ -31,7 +31,20 @@ interface MspStats {
   managed_count: number
   total_employees: number
   active_companies: number
-  trial_companies: number
+  pending_consent: number
+}
+
+interface MspOversightRow {
+  id: string
+  msp_company_id: string
+  msp_company_name: string
+  managed_company_id: string
+  managed_company_name: string
+  managed_company_domain: string
+  consent_status: string
+  consent_expires_at: string | null
+  added_at: string
+  is_active: boolean
 }
 
 interface MspCompanyOption {
@@ -49,12 +62,12 @@ export default function AdminMSPDashboard() {
 
   const [managedCompanies, setManagedCompanies] = useState<ManagedCompany[]>([])
   const [mspUsers, setMspUsers] = useState<MspUserAccessRow[]>([])
-  const [stats, setStats] = useState<MspStats>({ managed_count: 0, total_employees: 0, active_companies: 0, trial_companies: 0 })
+  const [stats, setStats] = useState<MspStats>({ managed_count: 0, total_employees: 0, active_companies: 0, pending_consent: 0 })
   const [loading, setLoading] = useState(true)
   const [mspCompanyName, setMspCompanyName] = useState('')
   const [mspTier, setMspTier] = useState<string | null>(null)
   const [mspDiscount, setMspDiscount] = useState<number | null>(null)
-  const [activeTab, setActiveTab] = useState<'companies' | 'users' | 'audit'>('companies')
+  const [activeTab, setActiveTab] = useState<'companies' | 'users' | 'audit' | 'oversight'>('companies')
   const [auditLog, setAuditLog] = useState<{ id: string; action: string; actor_id: string; managed_company_id: string; details: any; created_at: string }[]>([])
   const [auditLoading, setAuditLoading] = useState(false)
 
@@ -73,8 +86,12 @@ export default function AdminMSPDashboard() {
 
   // Onboard new client form
   const [showOnboardForm, setShowOnboardForm] = useState(false)
-  const [onboardForm, setOnboardForm] = useState({ name: '', domain: '', authMode: 'sso' as 'sso' | 'non_sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP', isTrial: false, trialStart: '', trialEnd: '' })
+  const [onboardForm, setOnboardForm] = useState({ name: '', domain: '', authMode: 'sso' as 'sso' | 'non_sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' })
   const [onboarding, setOnboarding] = useState(false)
+
+  // Super admin oversight
+  const [oversightData, setOversightData] = useState<MspOversightRow[]>([])
+  const [oversightLoading, setOversightLoading] = useState(false)
 
   const effectiveMspId = mspCompanyId || selectedMspId
 
@@ -130,7 +147,7 @@ export default function AdminMSPDashboard() {
 
       const { data: managed } = await supabase
         .from('msp_managed_companies')
-        .select('id, managed_company_id, added_at, consent_status, companies:managed_company_id(id, name, domain, is_active, is_trial)')
+        .select('id, managed_company_id, added_at, consent_status, consent_expires_at, companies:managed_company_id(id, name, domain, is_active)')
         .eq('msp_company_id', effectiveMspId)
         .eq('is_active', true)
 
@@ -149,10 +166,10 @@ export default function AdminMSPDashboard() {
           name: co.name,
           domain: co.domain,
           is_active: co.is_active,
-          is_trial: co.is_trial,
           employee_count: count || 0,
           onboarded_at: row.added_at,
           consent_status: row.consent_status || 'pending',
+          consent_expires_at: row.consent_expires_at || null,
         })
       }
       setManagedCompanies(companies)
@@ -161,8 +178,8 @@ export default function AdminMSPDashboard() {
       setStats({
         managed_count: companies.length,
         total_employees: totalEmps,
-        active_companies: companies.filter(c => c.is_active && !c.is_trial).length,
-        trial_companies: companies.filter(c => c.is_trial).length,
+        active_companies: companies.filter(c => c.is_active && c.consent_status === 'approved').length,
+        pending_consent: companies.filter(c => c.consent_status === 'pending').length,
       })
 
       const { data: users } = await supabase
@@ -201,6 +218,36 @@ export default function AdminMSPDashboard() {
 
   useEffect(() => { if (activeTab === 'audit') loadAuditLog() }, [activeTab, loadAuditLog])
 
+  const loadOversightData = useCallback(async () => {
+    if (!isSuperAdmin) return
+    setOversightLoading(true)
+    try {
+      const { data } = await supabase
+        .from('msp_managed_companies')
+        .select('id, msp_company_id, managed_company_id, consent_status, consent_expires_at, added_at, is_active, msp:msp_company_id(name), managed:managed_company_id(name, domain)')
+        .order('added_at', { ascending: false })
+        .limit(200)
+      const rows: MspOversightRow[] = ((data || []) as any[]).map(r => ({
+        id: r.id,
+        msp_company_id: r.msp_company_id,
+        msp_company_name: r.msp?.name || '—',
+        managed_company_id: r.managed_company_id,
+        managed_company_name: r.managed?.name || '—',
+        managed_company_domain: r.managed?.domain || '',
+        consent_status: r.consent_status,
+        consent_expires_at: r.consent_expires_at,
+        added_at: r.added_at,
+        is_active: r.is_active,
+      }))
+      setOversightData(rows)
+    } catch (err) {
+      // silent
+    }
+    setOversightLoading(false)
+  }, [isSuperAdmin])
+
+  useEffect(() => { if (activeTab === 'oversight') loadOversightData() }, [activeTab, loadOversightData])
+
   const handleManageCompany = (companyId: string) => {
     setSelectedCompanyId(companyId)
     navigate('/admin')
@@ -225,7 +272,7 @@ export default function AdminMSPDashboard() {
         type: 'action',
         notification_type: 'msp_consent_request',
         is_read: false,
-        metadata: { msp_managed_id: mspManagedId, msp_company_name: mspCompanyName },
+        metadata: { msp_managed_id: mspManagedId, msp_company_name: mspCompanyName, consent_expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() },
       })
     }
   }
@@ -234,6 +281,7 @@ export default function AdminMSPDashboard() {
     if (!addClientCompanyId || !effectiveMspId) return
     setAddingClient(true)
     try {
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
       const { data: insertedRow, error } = await supabase
         .from('msp_managed_companies')
         .insert({
@@ -241,6 +289,7 @@ export default function AdminMSPDashboard() {
           managed_company_id: addClientCompanyId,
           added_by: (await supabase.auth.getUser()).data.user?.id,
           consent_status: 'pending',
+          consent_expires_at: expiresAt,
         })
         .select('id')
         .single()
@@ -284,10 +333,6 @@ export default function AdminMSPDashboard() {
       showToast('Email domain is required for SSO companies', 'error')
       return
     }
-    if (onboardForm.isTrial && (!onboardForm.trialStart || !onboardForm.trialEnd)) {
-      showToast('Trial companies require both start and end dates', 'error')
-      return
-    }
     setOnboarding(true)
     try {
       const domain = onboardForm.authMode === 'sso' ? onboardForm.domain.trim().toLowerCase().replace(/^@/, '') : ''
@@ -298,28 +343,25 @@ export default function AdminMSPDashboard() {
         domain,
         microsoft_tenant_id: isNonSso ? null : `pending-${Date.now()}`,
         is_active: true,
-        is_trial: onboardForm.isTrial,
+        is_trial: false,
         auth_mode: onboardForm.authMode,
         timezone: onboardForm.timezone,
         date_format: onboardForm.date_format,
         currency: onboardForm.currency,
         managed_by_msp_id: effectiveMspId,
       }
-      if (onboardForm.isTrial) {
-        insertPayload.trial_start_date = onboardForm.trialStart
-        insertPayload.trial_end_date = onboardForm.trialEnd
-      }
 
       const { data: newCo, error: insertError } = await supabase.from('companies').insert(insertPayload).select('id').single()
       if (insertError) throw new Error(insertError.message)
 
       if (newCo) {
-        // Link as managed company (consent pending until client admin approves)
+        const onboardExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
         const { data: mspRow } = await supabase.from('msp_managed_companies').insert({
           msp_company_id: effectiveMspId,
           managed_company_id: newCo.id,
           added_by: (await supabase.auth.getUser()).data.user?.id,
           consent_status: 'pending',
+          consent_expires_at: onboardExpiresAt,
         }).select('id').single()
 
         // Non-SSO account setup
@@ -357,8 +399,8 @@ export default function AdminMSPDashboard() {
           allFeatureKeys.map(key => ({
             company_id: newCo.id,
             feature_key: key,
-            is_enabled: onboardForm.isTrial ? true : defaultEnabled.includes(key),
-            custom_price: onboardForm.isTrial ? 0 : null,
+            is_enabled: defaultEnabled.includes(key),
+            custom_price: null,
           }))
         )
 
@@ -402,7 +444,7 @@ export default function AdminMSPDashboard() {
       }
 
       showToast(`${onboardForm.name.trim()} onboarded successfully`, 'success')
-      setOnboardForm({ name: '', domain: '', authMode: 'sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP', isTrial: false, trialStart: '', trialEnd: '' })
+      setOnboardForm({ name: '', domain: '', authMode: 'sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' })
       setShowOnboardForm(false)
       loadData()
       // Refresh the "link existing" dropdown too
@@ -549,7 +591,7 @@ export default function AdminMSPDashboard() {
         <StatCard label="Managed Companies" value={stats.managed_count} color="#4f46e5" />
         <StatCard label="Total Employees" value={stats.total_employees} color="#0891b2" />
         <StatCard label="Active Companies" value={stats.active_companies} color="#16a34a" />
-        <StatCard label="Trial Companies" value={stats.trial_companies} color="#d97706" />
+        <StatCard label="Pending Consent" value={stats.pending_consent} color="#d97706" />
       </div>
 
       {/* Tabs */}
@@ -557,6 +599,7 @@ export default function AdminMSPDashboard() {
         <TabBtn label="Managed Companies" active={activeTab === 'companies'} onClick={() => setActiveTab('companies')} />
         <TabBtn label="MSP Users" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
         <TabBtn label="Audit Log" active={activeTab === 'audit'} onClick={() => setActiveTab('audit')} />
+        {isSuperAdmin && <TabBtn label="MSP Oversight" active={activeTab === 'oversight'} onClick={() => setActiveTab('oversight')} />}
       </div>
 
       {activeTab === 'companies' && (
@@ -678,33 +721,6 @@ export default function AdminMSPDashboard() {
                   </select>
                 </div>
               </div>
-              <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={onboardForm.isTrial}
-                    onChange={e => setOnboardForm({ ...onboardForm, isTrial: e.target.checked })}
-                  />
-                  Trial company
-                </label>
-                {onboardForm.isTrial && (
-                  <>
-                    <input
-                      type="date"
-                      value={onboardForm.trialStart}
-                      onChange={e => setOnboardForm({ ...onboardForm, trialStart: e.target.value })}
-                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
-                    />
-                    <span style={{ fontSize: 13, color: '#666' }}>to</span>
-                    <input
-                      type="date"
-                      value={onboardForm.trialEnd}
-                      onChange={e => setOnboardForm({ ...onboardForm, trialEnd: e.target.value })}
-                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
-                    />
-                  </>
-                )}
-              </div>
               <div style={{ marginTop: 20, display: 'flex', gap: 12 }}>
                 <button
                   onClick={handleOnboardNewClient}
@@ -743,23 +759,28 @@ export default function AdminMSPDashboard() {
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       <span style={{
                         fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12,
-                        background: co.is_trial ? '#fef3c7' : co.is_active ? '#dcfce7' : '#fee2e2',
-                        color: co.is_trial ? '#92400e' : co.is_active ? '#166534' : '#991b1b',
+                        background: co.is_active ? '#dcfce7' : '#fee2e2',
+                        color: co.is_active ? '#166534' : '#991b1b',
                       }}>
-                        {co.is_trial ? 'Trial' : co.is_active ? 'Active' : 'Inactive'}
+                        {co.is_active ? 'Active' : 'Inactive'}
                       </span>
-                      <span style={{
-                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12,
-                        background: co.consent_status === 'approved' ? '#dcfce7' : co.consent_status === 'rejected' ? '#fee2e2' : '#fef3c7',
-                        color: co.consent_status === 'approved' ? '#166534' : co.consent_status === 'rejected' ? '#991b1b' : '#92400e',
-                      }}>
-                        {co.consent_status === 'approved' ? 'Consent Approved' : co.consent_status === 'rejected' ? 'Consent Rejected' : 'Consent Pending'}
-                      </span>
+                      {(() => {
+                        const isExpired = co.consent_status === 'pending' && co.consent_expires_at && new Date(co.consent_expires_at) < new Date()
+                        const bg = co.consent_status === 'approved' ? '#dcfce7' : co.consent_status === 'rejected' || isExpired ? '#fee2e2' : '#fef3c7'
+                        const fg = co.consent_status === 'approved' ? '#166534' : co.consent_status === 'rejected' || isExpired ? '#991b1b' : '#92400e'
+                        const label = co.consent_status === 'approved' ? 'Consent Approved' : co.consent_status === 'rejected' ? 'Consent Rejected' : isExpired ? 'Invite Expired' : 'Consent Pending'
+                        return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: bg, color: fg }}>{label}</span>
+                      })()}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 20, fontSize: 13, color: '#555', marginBottom: 14 }}>
+                  <div style={{ display: 'flex', gap: 20, fontSize: 13, color: '#555', marginBottom: 14, flexWrap: 'wrap' }}>
                     <span>{co.employee_count} employee{co.employee_count !== 1 ? 's' : ''}</span>
                     <span>Added: {formatDate(co.onboarded_at)}</span>
+                    {co.consent_status === 'pending' && co.consent_expires_at && (
+                      <span style={{ color: new Date(co.consent_expires_at) < new Date() ? '#991b1b' : '#92400e' }}>
+                        {new Date(co.consent_expires_at) < new Date() ? 'Expired' : 'Expires'}: {formatDate(co.consent_expires_at)}
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {co.consent_status === 'approved' ? (
@@ -774,7 +795,9 @@ export default function AdminMSPDashboard() {
                       </button>
                     ) : (
                       <span style={{ flex: 1, padding: '8px 0', textAlign: 'center', fontSize: 13, color: '#888', fontStyle: 'italic' }}>
-                        {co.consent_status === 'pending' ? 'Awaiting client consent' : 'Client declined access'}
+                        {co.consent_status === 'pending'
+                          ? (co.consent_expires_at && new Date(co.consent_expires_at) < new Date() ? 'Invite expired — remove and re-invite' : 'Awaiting client consent')
+                          : 'Client declined access'}
                       </span>
                     )}
                     <button
@@ -918,6 +941,68 @@ export default function AdminMSPDashboard() {
                 })}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'oversight' && isSuperAdmin && (
+        <div>
+          <p style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
+            All MSP partner relationships across every MSP company. Shows which companies are being managed, consent status, and invite expiry.
+          </p>
+          {oversightLoading ? (
+            <p style={{ textAlign: 'center', color: '#888', padding: 32 }}>Loading MSP oversight data...</p>
+          ) : oversightData.length === 0 ? (
+            <p style={{ textAlign: 'center', color: '#888', padding: 32 }}>No MSP relationships found.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 700 }}>
+                <thead>
+                  <tr style={{ background: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>MSP Partner</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Client Company</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Domain</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Status</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Invited</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Expires</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Active</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {oversightData.map(row => {
+                    const isExpired = row.consent_status === 'pending' && row.consent_expires_at && new Date(row.consent_expires_at) < new Date()
+                    const statusBg = row.consent_status === 'approved' ? '#dcfce7' : row.consent_status === 'rejected' || isExpired ? '#fee2e2' : '#fef3c7'
+                    const statusFg = row.consent_status === 'approved' ? '#166534' : row.consent_status === 'rejected' || isExpired ? '#991b1b' : '#92400e'
+                    const statusLabel = row.consent_status === 'approved' ? 'Approved' : row.consent_status === 'rejected' ? 'Rejected' : isExpired ? 'Expired' : 'Pending'
+                    return (
+                      <tr key={row.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 600 }}>{row.msp_company_name}</td>
+                        <td style={{ padding: '8px 12px' }}>{row.managed_company_name}</td>
+                        <td style={{ padding: '8px 12px', color: '#666' }}>{row.managed_company_domain}</td>
+                        <td style={{ padding: '8px 12px' }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: statusBg, color: statusFg }}>
+                            {statusLabel}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{formatDate(row.added_at)}</td>
+                        <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: isExpired ? '#991b1b' : '#666' }}>
+                          {row.consent_expires_at ? formatDate(row.consent_expires_at) : '—'}
+                        </td>
+                        <td style={{ padding: '8px 12px' }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12,
+                            background: row.is_active ? '#dcfce7' : '#fee2e2',
+                            color: row.is_active ? '#166534' : '#991b1b',
+                          }}>
+                            {row.is_active ? 'Yes' : 'No'}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

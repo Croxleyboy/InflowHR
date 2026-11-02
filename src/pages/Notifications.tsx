@@ -73,7 +73,7 @@ interface MspConsentNotification {
   title: string
   message: string
   created_at: string
-  metadata: { msp_managed_id?: string; msp_company_name?: string } | null
+  metadata: { msp_managed_id?: string; msp_company_name?: string; consent_expires_at?: string } | null
 }
 
 
@@ -1889,32 +1889,43 @@ export default function Notifications() {
           {mspConsentNotifications.length > 0 && (
             <div style={{ marginBottom: 16 }}>
               <h3 className="notif-section-heading">MSP Partner Requests</h3>
-              {mspConsentNotifications.map(notif => (
-                <div key={`msp-consent-${notif.id}`} className="notif-card" style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 16, marginBottom: 8, background: '#fffbeb' }}>
+              {mspConsentNotifications.map(notif => {
+                const expiresAt = notif.metadata?.consent_expires_at ? new Date(notif.metadata.consent_expires_at) : null
+                const isExpired = expiresAt ? expiresAt < new Date() : false
+                return (
+                <div key={`msp-consent-${notif.id}`} className="notif-card" style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 16, marginBottom: 8, background: isExpired ? '#fef2f2' : '#fffbeb' }}>
                   <NotifIcon type="msp_consent" />
                   <div className="notif-card-content">
                     <span className="notif-card-title">{notif.title}</span>
                     <span className="notif-card-sub">{notif.message}</span>
                     <span className="notif-card-date">{formatNotifDate(notif.created_at)}</span>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                      <button
-                        onClick={() => handleMspConsentResponse(notif, true)}
-                        disabled={mspConsentProcessing === notif.id}
-                        style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: mspConsentProcessing === notif.id ? 'default' : 'pointer' }}
-                      >
-                        {mspConsentProcessing === notif.id ? 'Processing...' : 'Approve'}
-                      </button>
-                      <button
-                        onClick={() => handleMspConsentResponse(notif, false)}
-                        disabled={mspConsentProcessing === notif.id}
-                        style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: mspConsentProcessing === notif.id ? 'default' : 'pointer' }}
-                      >
-                        Reject
-                      </button>
-                    </div>
+                    {expiresAt && (
+                      <span style={{ fontSize: 12, color: isExpired ? '#991b1b' : '#92400e', fontWeight: 600, marginTop: 4 }}>
+                        {isExpired ? 'This invite has expired. The MSP will need to send a new one.' : `Expires: ${expiresAt.getDate().toString().padStart(2, '0')}/${(expiresAt.getMonth() + 1).toString().padStart(2, '0')}/${expiresAt.getFullYear()}`}
+                      </span>
+                    )}
+                    {!isExpired && (
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <button
+                          onClick={() => handleMspConsentResponse(notif, true)}
+                          disabled={mspConsentProcessing === notif.id}
+                          style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: mspConsentProcessing === notif.id ? 'default' : 'pointer' }}
+                        >
+                          {mspConsentProcessing === notif.id ? 'Processing...' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={() => handleMspConsentResponse(notif, false)}
+                          disabled={mspConsentProcessing === notif.id}
+                          style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: mspConsentProcessing === notif.id ? 'default' : 'pointer' }}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
