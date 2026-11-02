@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
+import { supabase } from '../lib/supabase'
 
 export default function Login() {
   const { signInWithMicrosoft, signInWithGoogle, signInWithPassword } = useAuth()
@@ -18,6 +19,13 @@ export default function Login() {
   const [guestError, setGuestError] = useState('')
   const [guestLoading, setGuestLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [guestAuthMethods, setGuestAuthMethods] = useState<{ otp_enabled: boolean; sso_enabled: boolean } | null>(null)
+
+  useEffect(() => {
+    supabase.rpc('get_guest_auth_methods' as any).then(({ data }: any) => {
+      if (data) setGuestAuthMethods(data)
+    })
+  }, [])
 
   async function handleAccountLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -149,46 +157,83 @@ export default function Login() {
 
           {loginMode === 'guest' ? (
             <>
-              <form className="login-account-form" onSubmit={handleGuestLogin}>
-                <p className="login-account-info">
-                  Enter the email address and one-time passcode provided by your company administrator.
-                </p>
-                <div className="login-input-group">
-                  <input
-                    type="email"
-                    className="login-account-input"
-                    placeholder=" "
-                    value={guestEmail}
-                    onChange={e => setGuestEmail(e.target.value)}
-                    autoComplete="email"
-                    id="guest-email"
-                  />
-                  <label htmlFor="guest-email" className="login-input-label">Email Address</label>
-                </div>
-                <div className="login-input-group">
-                  <input
-                    type="text"
-                    className="login-account-input"
-                    placeholder=" "
-                    value={guestOtp}
-                    onChange={e => setGuestOtp(e.target.value.toUpperCase())}
-                    autoComplete="one-time-code"
-                    style={{ letterSpacing: '0.15em', fontFamily: 'monospace' }}
-                    id="guest-otp"
-                  />
-                  <label htmlFor="guest-otp" className="login-input-label">One-Time Passcode</label>
-                </div>
-                {guestError && <p className="login-account-error">{guestError}</p>}
-                <button
-                  type="submit"
-                  className="login-primary-btn"
-                  disabled={guestLoading || !guestEmail || !guestOtp}
-                >
-                  {guestLoading ? (
-                    <span className="login-btn-loading"><span className="login-spinner"></span> Verifying...</span>
-                  ) : 'Sign In as Guest'}
-                </button>
-              </form>
+              {!guestAuthMethods ? (
+                <p className="login-account-info" style={{ textAlign: 'center', padding: '24px 0' }}>Loading...</p>
+              ) : !guestAuthMethods.otp_enabled && !guestAuthMethods.sso_enabled ? (
+                <p className="login-account-info" style={{ textAlign: 'center', padding: '24px 0' }}>Guest access is currently disabled. Please contact your administrator.</p>
+              ) : (
+                <>
+                  {guestAuthMethods.sso_enabled && (
+                    <>
+                      <p className="login-account-info">
+                        Sign in with your company Microsoft account to access the portal as a guest.
+                      </p>
+                      <div className="login-sso-buttons">
+                        <button className="login-microsoft-btn" onClick={signInWithMicrosoft}>
+                          <svg width="20" height="20" viewBox="0 0 21 21">
+                            <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+                            <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+                            <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+                            <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+                          </svg>
+                          Sign in with Microsoft
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {guestAuthMethods.sso_enabled && guestAuthMethods.otp_enabled && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
+                      <div style={{ flex: 1, height: 1, background: 'var(--border-color, #e0e0e0)' }} />
+                      <span style={{ fontSize: 13, color: 'var(--text-muted, #888)', whiteSpace: 'nowrap' }}>or use a passcode</span>
+                      <div style={{ flex: 1, height: 1, background: 'var(--border-color, #e0e0e0)' }} />
+                    </div>
+                  )}
+                  {guestAuthMethods.otp_enabled && (
+                    <form className="login-account-form" onSubmit={handleGuestLogin}>
+                      {!guestAuthMethods.sso_enabled && (
+                        <p className="login-account-info">
+                          Enter the email address and one-time passcode provided by your company administrator.
+                        </p>
+                      )}
+                      <div className="login-input-group">
+                        <input
+                          type="email"
+                          className="login-account-input"
+                          placeholder=" "
+                          value={guestEmail}
+                          onChange={e => setGuestEmail(e.target.value)}
+                          autoComplete="email"
+                          id="guest-email"
+                        />
+                        <label htmlFor="guest-email" className="login-input-label">Email Address</label>
+                      </div>
+                      <div className="login-input-group">
+                        <input
+                          type="text"
+                          className="login-account-input"
+                          placeholder=" "
+                          value={guestOtp}
+                          onChange={e => setGuestOtp(e.target.value.toUpperCase())}
+                          autoComplete="one-time-code"
+                          style={{ letterSpacing: '0.15em', fontFamily: 'monospace' }}
+                          id="guest-otp"
+                        />
+                        <label htmlFor="guest-otp" className="login-input-label">One-Time Passcode</label>
+                      </div>
+                      {guestError && <p className="login-account-error">{guestError}</p>}
+                      <button
+                        type="submit"
+                        className="login-primary-btn"
+                        disabled={guestLoading || !guestEmail || !guestOtp}
+                      >
+                        {guestLoading ? (
+                          <span className="login-btn-loading"><span className="login-spinner"></span> Verifying...</span>
+                        ) : 'Sign In as Guest'}
+                      </button>
+                    </form>
+                  )}
+                </>
+              )}
 
               <div className="login-trust-badges" style={{ marginTop: 24 }}>
                 <div className="login-trust-badge">

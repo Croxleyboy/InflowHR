@@ -88,19 +88,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [guestCompanyId, setGuestCompanyId] = useState<string | null>(null)
 
   async function loadCompanyData(userId: string, email: string) {
-    // ── Batch 1: three independent checks in parallel ──
-    const [{ data: saResult }, { data: mspResult }, { data: guestRow }] = await Promise.all([
+    // ── Batch 1: two independent checks in parallel ──
+    const [{ data: saResult }, { data: mspResult }] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       supabase.rpc('is_super_admin' as any),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       supabase.rpc('is_msp_admin' as any),
-      supabase
-        .from('guest_users')
-        .select('id, company_id, role_key, read_only, is_active, otp_expires_at')
-        .eq('auth_user_id', userId)
-        .eq('is_active', true)
-        .maybeSingle(),
     ])
+
+    // ── Guest lookup: first by auth_user_id, then SSO email fallback ──
+    let guestRow = (await supabase
+      .from('guest_users')
+      .select('id, company_id, role_key, read_only, is_active, otp_expires_at, auth_method')
+      .eq('auth_user_id', userId)
+      .eq('is_active', true)
+      .maybeSingle()).data
+
+    if (!guestRow && email) {
+      const { data: ssoGuest } = await supabase
+        .from('guest_users')
+        .select('id, company_id, role_key, read_only, is_active, otp_expires_at, auth_method')
+        .eq('email', email.toLowerCase())
+        .eq('auth_method', 'sso')
+        .eq('is_active', true)
+        .is('auth_user_id', null)
+        .maybeSingle()
+
+      if (ssoGuest) {
+        await supabase
+          .from('guest_users')
+          .update({ auth_user_id: userId, last_login_at: new Date().toISOString() })
+          .eq('id', ssoGuest.id)
+        guestRow = ssoGuest
+      }
+    }
 
     setIsSuperAdmin(saResult === true)
     setIsMspAdmin(mspResult === true)

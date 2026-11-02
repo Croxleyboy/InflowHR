@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    const { action, email, company_id, role_key, read_only, guest_id } = await req.json()
+    const { action, email, company_id, role_key, read_only, guest_id, auth_method } = await req.json()
 
     if (!action) {
       return new Response(JSON.stringify({ error: 'action required' }), { status: 400, headers: corsHeaders })
@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
       }
 
       const normalEmail = email.trim().toLowerCase()
-      const otp = generateOtp()
+      const method = auth_method === 'sso' ? 'sso' : 'otp'
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
 
       // Check if guest already exists for this company+email
@@ -92,6 +92,34 @@ Deno.serve(async (req) => {
       if (existing) {
         return new Response(JSON.stringify({ error: 'A guest account already exists for this email in this company' }), { status: 409, headers: corsHeaders })
       }
+
+      if (method === 'sso') {
+        const { data: guest, error: insertErr } = await supabase
+          .from('guest_users')
+          .insert({
+            company_id,
+            email: normalEmail,
+            otp_hash: null,
+            auth_method: 'sso',
+            role_key: role_key || 'read_only',
+            read_only: read_only !== false,
+            is_active: true,
+            otp_expires_at: expiresAt,
+            auth_user_id: null,
+            created_by: user.email || user.id,
+          })
+          .select()
+          .single()
+
+        if (insertErr) {
+          return new Response(JSON.stringify({ error: 'Failed to create guest: ' + insertErr.message }), { status: 500, headers: corsHeaders })
+        }
+
+        return new Response(JSON.stringify({ guest }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      // OTP path
+      const otp = generateOtp()
 
       // Create or find auth user
       let authUserId: string
@@ -115,13 +143,13 @@ Deno.serve(async (req) => {
 
       const otpHashed = await hashOtp(otp)
 
-      // Insert guest_users row
       const { data: guest, error: insertErr } = await supabase
         .from('guest_users')
         .insert({
           company_id,
           email: normalEmail,
           otp_hash: otpHashed,
+          auth_method: 'otp',
           role_key: role_key || 'read_only',
           read_only: read_only !== false,
           is_active: true,
@@ -146,13 +174,17 @@ Deno.serve(async (req) => {
 
       const { data: guest } = await supabase
         .from('guest_users')
-        .select('id, auth_user_id, company_id')
+        .select('id, auth_user_id, company_id, auth_method')
         .eq('id', guest_id)
         .eq('company_id', company_id)
         .single()
 
       if (!guest) {
         return new Response(JSON.stringify({ error: 'Guest not found' }), { status: 404, headers: corsHeaders })
+      }
+
+      if (guest.auth_method === 'sso') {
+        return new Response(JSON.stringify({ error: 'SSO guests do not use passcodes. To extend access, update the guest record.' }), { status: 400, headers: corsHeaders })
       }
 
       const otp = generateOtp()

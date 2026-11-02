@@ -13,6 +13,7 @@ interface GuestUser {
   read_only: boolean
   is_active: boolean
   otp_expires_at: string
+  auth_method: 'otp' | 'sso'
   created_by: string | null
   created_at: string
   last_login_at: string | null
@@ -115,6 +116,8 @@ export default function AdminAccess() {
   const [guestReadOnly, setGuestReadOnly] = useState(true)
   const [guestSaving, setGuestSaving] = useState(false)
   const [showOtp, setShowOtp] = useState<{ id: string; otp: string } | null>(null)
+  const [guestAuthMethod, setGuestAuthMethod] = useState<'otp' | 'sso'>('otp')
+  const [guestAuthMethods, setGuestAuthMethods] = useState<{ otp_enabled: boolean; sso_enabled: boolean }>({ otp_enabled: true, sso_enabled: false })
 
   const [delegations, setDelegations] = useState<{ id: string; delegator_id: string; delegate_id: string; start_date: string; end_date: string; scope: string; reason: string; is_active: boolean }[]>([])
   const [showNewAdminDel, setShowNewAdminDel] = useState(false)
@@ -166,6 +169,10 @@ export default function AdminAccess() {
         : { role_key: rk, role_label: ROLE_LABELS[rk], permissions: defaultPerms(rk) }
     })
     setRoles(merged)
+
+    const { data: authMethods } = await supabase.rpc('get_guest_auth_methods')
+    if (authMethods) setGuestAuthMethods(authMethods)
+
     setLoading(false)
   }, [selectedCompanyId])
 
@@ -342,15 +349,19 @@ export default function AdminAccess() {
           company_id: selectedCompanyId,
           role_key: guestRole,
           read_only: guestReadOnly,
+          auth_method: guestAuthMethod,
         }),
       })
       const result = await res.json()
       if (!res.ok) { showError(result.error || 'Failed to create guest'); setGuestSaving(false); return }
-      setShowOtp({ id: result.guest.id, otp: result.otp })
+      if (guestAuthMethod === 'otp' && result.otp) {
+        setShowOtp({ id: result.guest.id, otp: result.otp })
+      }
       setGuestEmail('')
       setGuestRole('read_only')
       setGuestReadOnly(true)
-      showSuccess('Guest account created')
+      setGuestAuthMethod('otp')
+      showSuccess(guestAuthMethod === 'sso' ? 'SSO guest account created — guest can now sign in with Microsoft' : 'Guest account created')
       loadData()
     } catch { showError('Failed to create guest account') }
     setGuestSaving(false)
@@ -694,7 +705,12 @@ export default function AdminAccess() {
       {!loading && tab === 'guests' && (
         <>
           <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
-            Create temporary guest accounts for external users such as accountants, auditors or consultants. Guest users sign in with a one-time passcode that expires after 48 hours.
+            Create temporary guest accounts for external users such as accountants, auditors or consultants.{' '}
+            {guestAuthMethods.otp_enabled && guestAuthMethods.sso_enabled
+              ? 'Guests can sign in with a one-time passcode or Microsoft SSO.'
+              : guestAuthMethods.sso_enabled
+              ? 'Guests sign in with Microsoft SSO (B2B guest account required in your Entra tenant).'
+              : 'Guest users sign in with a one-time passcode that expires after 48 hours.'}
           </p>
 
           {isCompanyAdmin && (
@@ -735,6 +751,20 @@ export default function AdminAccess() {
                   <option value="full">Full Access</option>
                 </select>
               </div>
+              {guestAuthMethods.otp_enabled && guestAuthMethods.sso_enabled && (
+                <div style={{ flex: 0, minWidth: 150 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Auth Method</label>
+                  <select
+                    value={guestAuthMethod}
+                    onChange={e => setGuestAuthMethod(e.target.value as 'otp' | 'sso')}
+                    className="admin-select"
+                    style={{ width: '100%' }}
+                  >
+                    <option value="otp">Email + Passcode</option>
+                    <option value="sso">Microsoft SSO</option>
+                  </select>
+                </div>
+              )}
               <button
                 className="admin-btn-sm admin-btn-save"
                 onClick={createGuest}
@@ -785,6 +815,7 @@ export default function AdminAccess() {
                 <thead>
                   <tr>
                     <th>Email</th>
+                    <th>Auth</th>
                     <th>Role</th>
                     <th>Permissions</th>
                     <th>Status</th>
@@ -802,6 +833,11 @@ export default function AdminAccess() {
                     return (
                       <tr key={g.id}>
                         <td style={{ fontWeight: 600, fontSize: 13 }}>{g.email}</td>
+                        <td>
+                          <span className={`admin-badge ${g.auth_method === 'sso' ? 'admin-badge-approved' : 'admin-badge-pending'}`} style={{ fontSize: 11 }}>
+                            {g.auth_method === 'sso' ? 'SSO' : 'OTP'}
+                          </span>
+                        </td>
                         <td>
                           {isCompanyAdmin ? (
                             <select
@@ -839,13 +875,15 @@ export default function AdminAccess() {
                         <td style={{ fontSize: 13, color: '#64748b' }}>{g.created_by || '—'}</td>
                         {isCompanyAdmin && (
                           <td className="admin-actions" style={{ display: 'flex', gap: 4 }}>
-                            <button
-                              className="admin-btn-icon"
-                              title="Regenerate passcode"
-                              onClick={() => regenerateOtp(g.id)}
-                            >
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                            </button>
+                            {g.auth_method !== 'sso' && (
+                              <button
+                                className="admin-btn-icon"
+                                title="Regenerate passcode"
+                                onClick={() => regenerateOtp(g.id)}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                              </button>
+                            )}
                             {g.is_active && (
                               <button
                                 className="admin-btn-icon admin-btn-danger"
