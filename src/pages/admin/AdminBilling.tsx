@@ -18,6 +18,7 @@ interface PricingRow {
   pack: string | null
   is_support_package: boolean
   flat_price: number | null
+  support_type: 'launch' | 'monthly' | null
 }
 
 interface CompanyFeature {
@@ -174,7 +175,10 @@ function generateInvoicePDF(
 
   if (supportItems && supportItems.length > 0) {
     supportItems.forEach(sp => {
-      drawRow(sp.name, 'Support', `${formatCurrency(sp.price, currency)} flat`, '', `${formatCurrency(sp.price, currency)}`, false, true)
+      const isLaunch = sp.name.startsWith('Launch') || sp.name.includes('Launch')
+      const type = isLaunch ? 'Launch' : 'Support'
+      const suffix = isLaunch ? 'one-off' : (sp.price > 0 ? '/mo' : 'incl.')
+      drawRow(sp.name, type, `${formatCurrency(sp.price, currency)} ${suffix}`, '', `${formatCurrency(sp.price, currency)}`, false, true)
     })
   }
 
@@ -677,6 +681,8 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
   const packAPricing = useMemo(() => pricing.find(p => p.feature_key === 'pack_a'), [pricing])
   const packBPricing = useMemo(() => pricing.find(p => p.feature_key === 'pack_b'), [pricing])
   const supportPackages = useMemo(() => pricing.filter(p => p.is_support_package), [pricing])
+  const launchPackages = useMemo(() => pricing.filter(p => p.is_support_package && p.support_type === 'launch'), [pricing])
+  const monthlySupportPlans = useMemo(() => pricing.filter(p => p.is_support_package && p.support_type === 'monthly'), [pricing])
   const enabledKeys = useMemo(() => new Set(features.filter(f => f.is_enabled).map(f => f.feature_key)), [features])
   const enabledAddons = useMemo(() => {
     return pricing.filter(p => p.is_addon && !p.is_support_package && enabledKeys.has(p.feature_key))
@@ -685,6 +691,8 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
   const packAEnabled = enabledKeys.has('pack_a')
   const packBEnabled = enabledKeys.has('pack_b')
   const enabledSupport = useMemo(() => supportPackages.filter(sp => enabledKeys.has(sp.feature_key)), [supportPackages, enabledKeys])
+  const enabledLaunch = useMemo(() => launchPackages.filter(sp => enabledKeys.has(sp.feature_key)), [launchPackages, enabledKeys])
+  const enabledMonthlySupport = useMemo(() => monthlySupportPlans.filter(sp => enabledKeys.has(sp.feature_key)), [monthlySupportPlans, enabledKeys])
 
   const effectivePrice = useCallback((pr: PricingRow): number => {
     const cf = features.find(f => f.feature_key === pr.feature_key)
@@ -695,7 +703,9 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
   const hasCustomCore = baseline ? (baselinePrice !== baseline.default_price) : false
   const packAPrice = packAPricing && packAEnabled ? effectivePrice(packAPricing) : 0
   const packBPrice = packBPricing && packBEnabled ? effectivePrice(packBPricing) : 0
-  const supportTotal = enabledSupport.reduce((sum, sp) => sum + (sp.flat_price ?? 0), 0)
+  const launchTotal = enabledLaunch.reduce((sum, sp) => sum + (sp.flat_price ?? 0), 0)
+  const monthlySupportTotal = enabledMonthlySupport.reduce((sum, sp) => sum + (sp.flat_price ?? 0), 0)
+  const supportTotal = launchTotal + monthlySupportTotal
   const isFixed = billingType === 'fixed' && fixedAnnualPrice > 0
   const fixedMonthly = isFixed ? fixedAnnualPrice / 12 : 0
   const perUserTotal = baselinePrice + packAPrice + packBPrice
@@ -806,7 +816,7 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
         invoicePacks,
         snap.employee_count,
         companyId,
-        enabledSupport.map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
+        [...enabledLaunch, ...enabledMonthlySupport].map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
         monthlyPlatformFee,
         currency,
         monthAdj,
@@ -824,7 +834,7 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
         invoicePacks,
         employeeCount,
         companyId,
-        enabledSupport.map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
+        [...enabledLaunch, ...enabledMonthlySupport].map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
         monthlyPlatformFee,
         currency,
         monthAdj,
@@ -852,7 +862,8 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
     if (packBEnabled && packBPricing) {
       allFeatures.push({ name: 'Pack B: ' + packBPricing.display_name, type: 'Pack B' })
     }
-    enabledSupport.forEach(sp => allFeatures.push({ name: sp.display_name, type: 'Support' }))
+    enabledLaunch.forEach(sp => allFeatures.push({ name: sp.display_name, type: 'Launch' }))
+    enabledMonthlySupport.forEach(sp => allFeatures.push({ name: sp.display_name, type: 'Support' }))
     generateAnnualInvoicePDF(companyName, getFYLabel(), fixedAnnualPrice, allFeatures, companyId, currency)
   }
 
@@ -1023,7 +1034,7 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
         </div>
       )}
 
-      {!isFixed && (packAEnabled || packBEnabled || enabledSupport.length > 0) && (
+      {!isFixed && (packAEnabled || packBEnabled || enabledLaunch.length > 0 || enabledMonthlySupport.length > 0) && (
         <div className="billing-addons" style={{ flexWrap: 'wrap', gap: 6 }}>
           {packAEnabled && (
             <span className="billing-addon-chip" style={{ background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7', fontWeight: 600 }}>Pack A: People Operations</span>
@@ -1031,9 +1042,14 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
           {packBEnabled && (
             <span className="billing-addon-chip" style={{ background: '#f3e5f5', color: '#7b1fa2', border: '1px solid #ce93d8', fontWeight: 600 }}>Pack B: Pro Integrations</span>
           )}
-          {enabledSupport.map(sp => (
+          {enabledLaunch.map(sp => (
             <span key={sp.feature_key} className="billing-addon-chip" style={{ background: '#fff3e0', color: '#e65100', border: '1px solid #ffcc80' }}>
-              {sp.display_name} &mdash; {formatCurrency(sp.flat_price ?? 0, currency)}
+              {sp.display_name} &mdash; {formatCurrency(sp.flat_price ?? 0, currency)} (one-off)
+            </span>
+          ))}
+          {enabledMonthlySupport.map(sp => (
+            <span key={sp.feature_key} className="billing-addon-chip" style={{ background: '#e0f2f1', color: '#00695c', border: '1px solid #80cbc4' }}>
+              {sp.display_name} &mdash; {sp.flat_price ? `${formatCurrency(sp.flat_price, currency)}/mo` : 'Included'}
             </span>
           ))}
         </div>
@@ -1287,12 +1303,20 @@ function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: 
                 </tr>
               </>
             )}
-            {enabledSupport.map(sp => (
+            {enabledLaunch.map(sp => (
               <tr key={sp.feature_key}>
                 <td style={{ color: '#e65100' }}>{sp.display_name}</td>
-                <td><span className="admin-badge" style={{ background: '#fff3e0', color: '#e65100' }}>Support</span></td>
-                {!isFixed && <td>{formatCurrency(sp.flat_price ?? 0, currency)} flat</td>}
+                <td><span className="admin-badge" style={{ background: '#fff3e0', color: '#e65100' }}>Launch</span></td>
+                {!isFixed && <td>{formatCurrency(sp.flat_price ?? 0, currency)} one-off</td>}
                 <td>{formatCurrency(sp.flat_price ?? 0, currency)}</td>
+              </tr>
+            ))}
+            {enabledMonthlySupport.map(sp => (
+              <tr key={sp.feature_key}>
+                <td style={{ color: '#00695c' }}>{sp.display_name}</td>
+                <td><span className="admin-badge" style={{ background: '#e0f2f1', color: '#00695c' }}>Support</span></td>
+                {!isFixed && <td>{sp.flat_price ? `${formatCurrency(sp.flat_price, currency)}/mo` : 'Included'}</td>}
+                <td>{sp.flat_price ? `${formatCurrency(sp.flat_price, currency)}` : 'Included'}</td>
               </tr>
             ))}
             <tr>
