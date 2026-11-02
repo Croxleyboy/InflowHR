@@ -68,6 +68,14 @@ interface TapNotification {
   metadata: { onboarding_id?: number } | null
 }
 
+interface MspConsentNotification {
+  id: string
+  title: string
+  message: string
+  created_at: string
+  metadata: { msp_managed_id?: string; msp_company_name?: string } | null
+}
+
 
 function formatNotifDate(dateStr: string) {
   const d = new Date(dateStr)
@@ -308,6 +316,18 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'msp_consent') {
+    return (
+      <div className="notif-icon" style={{ background: '#7c3aed' }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="8.5" cy="7" r="4"/>
+          <line x1="20" y1="8" x2="20" y2="14"/>
+          <line x1="23" y1="11" x2="17" y2="11"/>
+        </svg>
+      </div>
+    )
+  }
   if (type === 'tap_ready') {
     return (
       <div className="notif-icon" style={{ background: '#2e7d32' }}>
@@ -349,6 +369,8 @@ export default function Notifications() {
   const [remindersExpanded, setRemindersExpanded] = useState(locState?.expandReminders || false)
   const [notifSearch, setNotifSearch] = useState('')
   const [tapNotifications, setTapNotifications] = useState<TapNotification[]>([])
+  const [mspConsentNotifications, setMspConsentNotifications] = useState<MspConsentNotification[]>([])
+  const [mspConsentProcessing, setMspConsentProcessing] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -797,6 +819,18 @@ export default function Notifications() {
         .order('created_at', { ascending: false })
         .limit(10)
       setTapNotifications((tapRows || []) as TapNotification[])
+
+      // MSP consent request notifications for client company admins
+      const { data: mspConsentRows } = await supabase
+        .from('notifications')
+        .select('id, title, message, created_at, metadata')
+        .eq('employee_id', HARDCODED_EMPLOYEE_ID)
+        .eq('company_id', companyId)
+        .eq('notification_type', 'msp_consent_request')
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+        .limit(10)
+      setMspConsentNotifications((mspConsentRows || []) as MspConsentNotification[])
     }
 
     const currentTime = `${String(todayDate.getHours()).padStart(2, '0')}:${String(todayDate.getMinutes()).padStart(2, '0')}`
@@ -818,6 +852,24 @@ export default function Notifications() {
     if (!HARDCODED_EMAIL) return
     fetchData()
   }, [fetchData, HARDCODED_EMAIL])
+
+  const handleMspConsentResponse = async (notif: MspConsentNotification, approved: boolean) => {
+    if (!notif.metadata?.msp_managed_id) return
+    setMspConsentProcessing(notif.id)
+    try {
+      const { error } = await supabase.rpc('respond_to_msp_consent' as any, {
+        p_msp_managed_id: notif.metadata.msp_managed_id,
+        p_approved: approved,
+      })
+      if (error) throw error
+      await supabase.from('notifications').update({ is_read: true }).eq('id', notif.id)
+      setMspConsentNotifications(prev => prev.filter(n => n.id !== notif.id))
+      showToast(approved ? 'MSP access approved' : 'MSP access rejected', 'success')
+    } catch (err: any) {
+      showToast(err.message || 'Failed to respond to consent request', 'error')
+    }
+    setMspConsentProcessing(null)
+  }
 
   const pendingCount = actions.length + swapActions.length
 
@@ -1831,6 +1883,38 @@ export default function Notifications() {
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {mspConsentNotifications.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <h3 className="notif-section-heading">MSP Partner Requests</h3>
+              {mspConsentNotifications.map(notif => (
+                <div key={`msp-consent-${notif.id}`} className="notif-card" style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 16, marginBottom: 8, background: '#fffbeb' }}>
+                  <NotifIcon type="msp_consent" />
+                  <div className="notif-card-content">
+                    <span className="notif-card-title">{notif.title}</span>
+                    <span className="notif-card-sub">{notif.message}</span>
+                    <span className="notif-card-date">{formatNotifDate(notif.created_at)}</span>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      <button
+                        onClick={() => handleMspConsentResponse(notif, true)}
+                        disabled={mspConsentProcessing === notif.id}
+                        style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: mspConsentProcessing === notif.id ? 'default' : 'pointer' }}
+                      >
+                        {mspConsentProcessing === notif.id ? 'Processing...' : 'Approve'}
+                      </button>
+                      <button
+                        onClick={() => handleMspConsentResponse(notif, false)}
+                        disabled={mspConsentProcessing === notif.id}
+                        style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: mspConsentProcessing === notif.id ? 'default' : 'pointer' }}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
