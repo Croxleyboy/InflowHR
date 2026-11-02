@@ -20,6 +20,7 @@ interface PricingItem {
   pack: string | null
   is_support_package: boolean
   flat_price: number | null
+  support_type: 'launch' | 'monthly' | null
 }
 
 interface CompanyOption {
@@ -467,6 +468,8 @@ export default function AdminSubscriptions() {
   const corePricing = pricing.find(p => p.feature_key === 'hr_core')
   const packAPricing = pricing.find(p => p.feature_key === 'pack_a')
   const packBPricing = pricing.find(p => p.feature_key === 'pack_b')
+  const launchPackages = pricing.filter(p => p.is_support_package && p.support_type === 'launch')
+  const monthlySupportPlans = pricing.filter(p => p.is_support_package && p.support_type === 'monthly')
   const supportPackages = pricing.filter(p => p.is_support_package)
   const PACK_ALL_KEYS = ['hr_core', 'pack_a', 'pack_b', ...PACK_A_FEATURE_KEYS, ...PACK_B_FEATURE_KEYS]
   const individualAddons = pricing.filter(p => p.is_addon && !p.is_support_package && !PACK_ALL_KEYS.includes(p.feature_key))
@@ -477,10 +480,15 @@ export default function AdminSubscriptions() {
   const coreCost = corePricing ? getEffectivePrice('hr_core') * employeeCount : 0
   const packACost = packAEnabled && packAPricing ? getEffectivePrice('pack_a') * employeeCount : 0
   const packBCost = packBEnabled && packBPricing ? getEffectivePrice('pack_b') * employeeCount : 0
-  const supportCost = supportPackages.reduce((sum, sp) => {
+  const launchCost = launchPackages.reduce((sum, sp) => {
     if (!isFeatureEnabled(sp.feature_key)) return sum
     return sum + (sp.flat_price ?? 0)
   }, 0)
+  const monthlySupportCost = monthlySupportPlans.reduce((sum, sp) => {
+    if (!isFeatureEnabled(sp.feature_key)) return sum
+    return sum + (sp.flat_price ?? 0)
+  }, 0)
+  const supportCost = launchCost + monthlySupportCost
   const addonCost = individualAddons.reduce((sum, a) => {
     if (!isFeatureEnabled(a.feature_key)) return sum
     return sum + (a.flat_price != null ? a.flat_price : a.default_price * employeeCount)
@@ -625,12 +633,12 @@ export default function AdminSubscriptions() {
                 </div>
               )}
 
-              {/* Support Packages */}
-              {supportPackages.length > 0 && (
+              {/* Launch Packages (one-off) */}
+              {launchPackages.length > 0 && (
                 <>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: '#333', marginTop: 8 }}>Support Packages</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#333', marginTop: 8 }}>Launch Packages <span style={{ fontSize: 11, fontWeight: 400, color: '#888' }}>(one-off)</span></div>
                   <div className="sub-pricing-grid">
-                    {supportPackages.map(sp => (
+                    {launchPackages.map(sp => (
                       <div key={sp.id} className="sub-pricing-card sub-pricing-card-addon" style={{ borderLeft: '4px solid #e65100' }}>
                         <div className="sub-pricing-name">{sp.display_name}</div>
                         <div className="sub-pricing-desc">{sp.description}</div>
@@ -646,6 +654,43 @@ export default function AdminSubscriptions() {
                             onChange={e => setEditFlatPrices(prev => ({ ...prev, [sp.id]: e.target.value }))}
                           />
                           <span>(one-off)</span>
+                        </div>
+                        <div className="sub-pricing-actions">
+                          <label className="admin-toggle-switch">
+                            <input type="checkbox" checked={sp.is_active} onChange={() => togglePricingActive(sp)} />
+                            <span className="admin-toggle-slider" />
+                          </label>
+                          <button className="sub-pricing-save" onClick={() => savePricingItem(sp)} disabled={savingPricing === sp.id}>
+                            {savingPricing === sp.id ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Monthly Support Plans */}
+              {monthlySupportPlans.length > 0 && (
+                <>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#333', marginTop: 8 }}>Monthly Support Plans <span style={{ fontSize: 11, fontWeight: 400, color: '#888' }}>(recurring)</span></div>
+                  <div className="sub-pricing-grid">
+                    {monthlySupportPlans.map(sp => (
+                      <div key={sp.id} className="sub-pricing-card sub-pricing-card-addon" style={{ borderLeft: '4px solid #00897b' }}>
+                        <div className="sub-pricing-name">{sp.display_name}</div>
+                        <div className="sub-pricing-desc">{sp.description}</div>
+                        <div className="sub-pricing-input-row">
+                          <label>Monthly Price</label>
+                          <span>{currencySymbol(currency)}</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="sub-pricing-input"
+                            value={editFlatPrices[sp.id] || ''}
+                            onChange={e => setEditFlatPrices(prev => ({ ...prev, [sp.id]: e.target.value }))}
+                          />
+                          <span>/month</span>
                         </div>
                         <div className="sub-pricing-actions">
                           <label className="admin-toggle-switch">
@@ -1064,11 +1109,12 @@ export default function AdminSubscriptions() {
                     )
                   })()}
 
-                  {/* Support Packages */}
-                  {supportPackages.length > 0 && (
+                  {/* Launch Packages (one-off) */}
+                  {launchPackages.length > 0 && (
                     <div style={{ background: '#fff8e1', border: '2px solid #f9a825', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: '#e65100', marginBottom: 10 }}>Support Packages</div>
-                      {supportPackages.map(sp => {
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#e65100', marginBottom: 4 }}>Launch Packages</div>
+                      <div style={{ fontSize: 11, color: '#888', marginBottom: 10 }}>One-off, fixed-price launch services. All prices ex VAT.</div>
+                      {launchPackages.map(sp => {
                         const purchased = isFeatureEnabled(sp.feature_key)
                         return (
                           <div key={sp.feature_key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid #ffe082' }}>
@@ -1087,6 +1133,38 @@ export default function AdminSubscriptions() {
                             </div>
                             <div style={{ fontWeight: 700, fontSize: 14, color: '#e65100' }}>
                               {formatCurrency(sp.flat_price ?? 0, currency)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Monthly Support Plans */}
+                  {monthlySupportPlans.length > 0 && (
+                    <div style={{ background: '#e0f2f1', border: '2px solid #00897b', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#00695c', marginBottom: 4 }}>Monthly Support Plan</div>
+                      <div style={{ fontSize: 11, color: '#888', marginBottom: 10 }}>Standard is included with every subscription. Add Plus for priority support.</div>
+                      {monthlySupportPlans.map(sp => {
+                        const purchased = isFeatureEnabled(sp.feature_key)
+                        const isStandard = sp.feature_key === 'support_standard'
+                        return (
+                          <div key={sp.feature_key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid #80cbc4' }}>
+                            <label className="admin-toggle-switch">
+                              <input
+                                type="checkbox"
+                                checked={isStandard ? true : purchased}
+                                onChange={() => !isStandard && toggleSupportPackage(sp.feature_key, purchased)}
+                                disabled={isStandard || savingFeature === sp.feature_key}
+                              />
+                              <span className="admin-toggle-slider" />
+                            </label>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13 }}>{sp.display_name}{isStandard && <span style={{ marginLeft: 6, fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Included</span>}</div>
+                              <div style={{ fontSize: 12, color: '#666' }}>{sp.description}</div>
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: '#00695c' }}>
+                              {isStandard ? 'Included' : `${formatCurrency(sp.flat_price ?? 0, currency)}/mo`}
                             </div>
                           </div>
                         )
