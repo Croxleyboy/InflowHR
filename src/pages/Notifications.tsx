@@ -864,9 +864,9 @@ export default function Notifications() {
       if (error) throw error
       await supabase.from('notifications').update({ is_read: true }).eq('id', notif.id)
       setMspConsentNotifications(prev => prev.filter(n => n.id !== notif.id))
-      showToast(approved ? 'MSP access approved' : 'MSP access rejected', 'success')
+      showSuccess(approved ? 'MSP access approved' : 'MSP access rejected')
     } catch (err: any) {
-      showToast(err.message || 'Failed to respond to consent request', 'error')
+      showError(err.message || 'Failed to respond to consent request')
     }
     setMspConsentProcessing(null)
   }
