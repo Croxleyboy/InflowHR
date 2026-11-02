@@ -7,12 +7,14 @@ import { useNavigate } from 'react-router-dom'
 
 interface ManagedCompany {
   id: string
+  msp_managed_id: string
   name: string
   domain: string
   is_active: boolean
   is_trial: boolean
   employee_count: number
   onboarded_at: string | null
+  consent_status: 'pending' | 'approved' | 'rejected'
 }
 
 interface MspUserAccessRow {
@@ -76,7 +78,7 @@ export default function AdminMSPDashboard() {
 
   const effectiveMspId = mspCompanyId || selectedMspId
 
-  // Super admin: load list of MSP companies
+  // Super admin: load list of MSP companies (super admins can view but need MSP grant to manage)
   useEffect(() => {
     if (!isSuperAdmin) return
     ;(async () => {
@@ -93,9 +95,9 @@ export default function AdminMSPDashboard() {
     })()
   }, [isSuperAdmin, mspCompanyId])
 
-  // Load all non-MSP companies for the "add client" dropdown
+  // Load all non-MSP companies for the "add client" dropdown (available to MSP admins)
   useEffect(() => {
-    if (!isSuperAdmin || !effectiveMspId) return
+    if (!effectiveMspId) return
     ;(async () => {
       const { data } = await supabase
         .from('companies')
@@ -105,7 +107,7 @@ export default function AdminMSPDashboard() {
         .order('name')
       setAllCompanies((data || []) as any[])
     })()
-  }, [isSuperAdmin, effectiveMspId])
+  }, [effectiveMspId])
 
   const loadData = useCallback(async () => {
     if (!effectiveMspId && !isSuperAdmin) return
@@ -128,7 +130,7 @@ export default function AdminMSPDashboard() {
 
       const { data: managed } = await supabase
         .from('msp_managed_companies')
-        .select('managed_company_id, added_at, companies:managed_company_id(id, name, domain, is_active, is_trial)')
+        .select('id, managed_company_id, added_at, consent_status, companies:managed_company_id(id, name, domain, is_active, is_trial)')
         .eq('msp_company_id', effectiveMspId)
         .eq('is_active', true)
 
@@ -143,12 +145,14 @@ export default function AdminMSPDashboard() {
           .eq('status', 'active')
         companies.push({
           id: co.id,
+          msp_managed_id: row.id,
           name: co.name,
           domain: co.domain,
           is_active: co.is_active,
           is_trial: co.is_trial,
           employee_count: count || 0,
           onboarded_at: row.added_at,
+          consent_status: row.consent_status || 'pending',
         })
       }
       setManagedCompanies(companies)
@@ -203,17 +207,43 @@ export default function AdminMSPDashboard() {
     showToast('Switched to managed company', 'success')
   }
 
+  const sendConsentNotification = async (managedCompanyId: string, mspManagedId: string) => {
+    const { data: admins } = await supabase
+      .from('employees')
+      .select('id, company_id')
+      .eq('company_id', managedCompanyId)
+      .eq('role', 'admin')
+      .eq('status', 'active')
+    if (!admins || admins.length === 0) return
+
+    for (const admin of admins) {
+      await supabase.from('notifications').insert({
+        employee_id: admin.id,
+        company_id: admin.company_id,
+        title: 'MSP Partner Access Request',
+        message: `${mspCompanyName} has requested to manage your company as an MSP partner. Please review and approve or reject this request.`,
+        type: 'action',
+        notification_type: 'msp_consent_request',
+        is_read: false,
+        metadata: { msp_managed_id: mspManagedId, msp_company_name: mspCompanyName },
+      })
+    }
+  }
+
   const handleAddClientCompany = async () => {
     if (!addClientCompanyId || !effectiveMspId) return
     setAddingClient(true)
     try {
-      const { error } = await supabase
+      const { data: insertedRow, error } = await supabase
         .from('msp_managed_companies')
         .insert({
           msp_company_id: effectiveMspId,
           managed_company_id: addClientCompanyId,
           added_by: (await supabase.auth.getUser()).data.user?.id,
+          consent_status: 'pending',
         })
+        .select('id')
+        .single()
       if (error) {
         if (error.code === '23505') {
           showToast('This company is already linked to this MSP', 'error')
@@ -221,7 +251,8 @@ export default function AdminMSPDashboard() {
           throw error
         }
       } else {
-        showToast('Client company added', 'success')
+        if (insertedRow) await sendConsentNotification(addClientCompanyId, insertedRow.id)
+        showToast('Client company linked — consent request sent to their admin', 'success')
         setAddClientCompanyId('')
         loadData()
       }
@@ -283,12 +314,13 @@ export default function AdminMSPDashboard() {
       if (insertError) throw new Error(insertError.message)
 
       if (newCo) {
-        // Link as managed company
-        await supabase.from('msp_managed_companies').insert({
+        // Link as managed company (consent pending until client admin approves)
+        const { data: mspRow } = await supabase.from('msp_managed_companies').insert({
           msp_company_id: effectiveMspId,
           managed_company_id: newCo.id,
           added_by: (await supabase.auth.getUser()).data.user?.id,
-        })
+          consent_status: 'pending',
+        }).select('id').single()
 
         // Non-SSO account setup
         if (isNonSso) {
@@ -356,6 +388,9 @@ export default function AdminMSPDashboard() {
           p_company_id: newCo.id,
           p_hours: 48,
         })
+
+        // Send consent notification to the new company's admins
+        if (mspRow) await sendConsentNotification(newCo.id, mspRow.id)
 
         // Audit log
         await supabase.rpc('log_msp_action' as any, {
@@ -526,50 +561,49 @@ export default function AdminMSPDashboard() {
 
       {activeTab === 'companies' && (
         <div>
-          {/* Client company actions — super admin only */}
-          {isSuperAdmin && (
-            <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-              <button
-                onClick={() => setShowOnboardForm(!showOnboardForm)}
-                style={{
-                  padding: '10px 20px', background: showOnboardForm ? '#e5e7eb' : '#4f46e5', color: showOnboardForm ? '#374151' : '#fff',
-                  border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14,
-                }}
-              >
-                {showOnboardForm ? 'Cancel' : 'Onboard New Client'}
-              </button>
-              {!showOnboardForm && availableClients.length > 0 && (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <select
-                    value={addClientCompanyId}
-                    onChange={e => setAddClientCompanyId(e.target.value)}
-                    style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, background: '#fff', minWidth: 220 }}
-                  >
-                    <option value="">Link existing company...</option>
-                    {availableClients.map(co => (
-                      <option key={co.id} value={co.id}>{co.name}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={handleAddClientCompany}
-                    disabled={addingClient || !addClientCompanyId}
-                    style={{
-                      padding: '8px 16px', background: addingClient ? '#9ca3af' : '#16a34a', color: '#fff',
-                      border: 'none', borderRadius: 6, cursor: addingClient ? 'default' : 'pointer', fontWeight: 600, fontSize: 13,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {addingClient ? 'Linking...' : 'Link'}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Client company actions — available to MSP admins */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setShowOnboardForm(!showOnboardForm)}
+              style={{
+                padding: '10px 20px', background: showOnboardForm ? '#e5e7eb' : '#4f46e5', color: showOnboardForm ? '#374151' : '#fff',
+                border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+              }}
+            >
+              {showOnboardForm ? 'Cancel' : 'Onboard New Client'}
+            </button>
+            {!showOnboardForm && availableClients.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  value={addClientCompanyId}
+                  onChange={e => setAddClientCompanyId(e.target.value)}
+                  style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, background: '#fff', minWidth: 220 }}
+                >
+                  <option value="">Link existing company...</option>
+                  {availableClients.map(co => (
+                    <option key={co.id} value={co.id}>{co.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleAddClientCompany}
+                  disabled={addingClient || !addClientCompanyId}
+                  style={{
+                    padding: '8px 16px', background: addingClient ? '#9ca3af' : '#16a34a', color: '#fff',
+                    border: 'none', borderRadius: 6, cursor: addingClient ? 'default' : 'pointer', fontWeight: 600, fontSize: 13,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {addingClient ? 'Linking...' : 'Link'}
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Onboard new client form */}
-          {isSuperAdmin && showOnboardForm && (
+          {showOnboardForm && (
             <div style={{ border: '1px solid #d1d5db', borderRadius: 10, padding: 24, marginBottom: 20, background: '#f9fafb' }}>
               <h3 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 16px' }}>Onboard New Client Company</h3>
+              <p style={{ fontSize: 13, color: '#666', margin: '0 0 16px' }}>The client company admin will receive a consent request and must approve before you can manage their data.</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Company Name *</label>
@@ -696,7 +730,7 @@ export default function AdminMSPDashboard() {
           )}
 
           {managedCompanies.length === 0 ? (
-            <p style={{ color: '#666', textAlign: 'center', padding: 32 }}>No managed companies yet. {isSuperAdmin ? 'Click "Onboard New Client" to create one, or link an existing company.' : ''}</p>
+            <p style={{ color: '#666', textAlign: 'center', padding: 32 }}>No managed companies yet. Click "Onboard New Client" to create one, or link an existing company.</p>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
               {managedCompanies.map(co => (
@@ -706,39 +740,52 @@ export default function AdminMSPDashboard() {
                       <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{co.name}</h3>
                       <p style={{ margin: '2px 0 0', fontSize: 13, color: '#888' }}>{co.domain}</p>
                     </div>
-                    <span style={{
-                      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12,
-                      background: co.is_trial ? '#fef3c7' : co.is_active ? '#dcfce7' : '#fee2e2',
-                      color: co.is_trial ? '#92400e' : co.is_active ? '#166534' : '#991b1b',
-                    }}>
-                      {co.is_trial ? 'Trial' : co.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12,
+                        background: co.is_trial ? '#fef3c7' : co.is_active ? '#dcfce7' : '#fee2e2',
+                        color: co.is_trial ? '#92400e' : co.is_active ? '#166534' : '#991b1b',
+                      }}>
+                        {co.is_trial ? 'Trial' : co.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12,
+                        background: co.consent_status === 'approved' ? '#dcfce7' : co.consent_status === 'rejected' ? '#fee2e2' : '#fef3c7',
+                        color: co.consent_status === 'approved' ? '#166534' : co.consent_status === 'rejected' ? '#991b1b' : '#92400e',
+                      }}>
+                        {co.consent_status === 'approved' ? 'Consent Approved' : co.consent_status === 'rejected' ? 'Consent Rejected' : 'Consent Pending'}
+                      </span>
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: 20, fontSize: 13, color: '#555', marginBottom: 14 }}>
                     <span>{co.employee_count} employee{co.employee_count !== 1 ? 's' : ''}</span>
                     <span>Added: {formatDate(co.onboarded_at)}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => handleManageCompany(co.id)}
-                      style={{
-                        flex: 1, padding: '8px 0', background: '#4f46e5', color: '#fff',
-                        border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 13,
-                      }}
-                    >
-                      Manage Company
-                    </button>
-                    {isSuperAdmin && (
+                    {co.consent_status === 'approved' ? (
                       <button
-                        onClick={() => handleRemoveClientCompany(co.id)}
+                        onClick={() => handleManageCompany(co.id)}
                         style={{
-                          padding: '8px 12px', background: '#fee2e2', color: '#991b1b',
-                          border: '1px solid #fecaca', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12,
+                          flex: 1, padding: '8px 0', background: '#4f46e5', color: '#fff',
+                          border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 13,
                         }}
                       >
-                        Remove
+                        Manage Company
                       </button>
+                    ) : (
+                      <span style={{ flex: 1, padding: '8px 0', textAlign: 'center', fontSize: 13, color: '#888', fontStyle: 'italic' }}>
+                        {co.consent_status === 'pending' ? 'Awaiting client consent' : 'Client declined access'}
+                      </span>
                     )}
+                    <button
+                      onClick={() => handleRemoveClientCompany(co.id)}
+                      style={{
+                        padding: '8px 12px', background: '#fee2e2', color: '#991b1b',
+                        border: '1px solid #fecaca', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12,
+                      }}
+                    >
+                      Remove
+                    </button>
                   </div>
                 </div>
               ))}
