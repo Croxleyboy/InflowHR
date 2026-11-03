@@ -25,5 +25,5 @@ CREATE POLICY "bank_holidays_read"
 
 CREATE POLICY "bank_holidays_admin_write"
   ON bank_holidays FOR ALL
-  USING (company_id = get_my_company_id() AND is_admin())
-  WITH CHECK (company_id = get_my_company_id() AND is_admin());
+  USING (company_id = get_my_company_id() AND (is_company_admin() OR is_super_admin()))
+  WITH CHECK (company_id = get_my_company_id() AND (is_company_admin() OR is_super_admin()));
