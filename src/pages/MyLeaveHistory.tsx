@@ -6,8 +6,6 @@ import { useAuth } from '../context/AuthContext'
 import Chevron from '../components/Chevron'
 import { formatDate } from '../lib/formatters'
 
-type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected' | 'cancelled'
-
 interface LeaveRequest {
   id: number
   leave_type_id: number
@@ -57,9 +55,9 @@ export default function MyLeaveHistory() {
   const { employeeId: EMPLOYEE_ID, companyUser } = useAuth()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [typeMap, setTypeMap] = useState<Map<number, LeaveType>>(new Map())
-  const [filter, setFilter] = useState<StatusFilter>('all')
   const [loading, setLoading] = useState(true)
   const [offThisWeek, setOffThisWeek] = useState(0)
+  const [showDismissed, setShowDismissed] = useState(false)
 
   function translateLeaveType(name: string): string {
     return LEAVE_TYPE_KEY_MAP[name] ? t(LEAVE_TYPE_KEY_MAP[name]) : name
@@ -122,16 +120,15 @@ export default function MyLeaveHistory() {
     return () => window.removeEventListener('focus', onFocus)
   }, [fetchData, EMPLOYEE_ID])
 
-  const filtered = filter === 'all'
-    ? requests
-    : requests.filter(r => r.status === filter)
+  const activeRequests = requests.filter(r => r.status === 'approved' || r.status === 'pending')
+  const dismissedRequests = requests.filter(r => r.status === 'cancelled' || r.status === 'rejected')
 
   const todayStr = (() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })()
-  const upcoming = filtered.filter(r => r.end_date >= todayStr).sort((a, b) => a.start_date.localeCompare(b.start_date))
-  const previous = filtered.filter(r => r.end_date < todayStr)
+  const upcoming = activeRequests.filter(r => r.end_date >= todayStr).sort((a, b) => a.start_date.localeCompare(b.start_date))
+  const previous = activeRequests.filter(r => r.end_date < todayStr)
 
   function statusColor(status: string): string {
     if (status === 'approved') return '#43a047'
@@ -170,30 +167,11 @@ export default function MyLeaveHistory() {
           <span className="leave-history-off-count">{offThisWeek}</span>
           <Chevron color="#c8e600" />
         </button>
-        <div className="leave-history-filter-wrap">
-          <label className="leave-history-filter-label">{t('leave_history.leave_status')}</label>
-          <div className="select-wrap">
-            <select
-              value={filter}
-              onChange={e => setFilter(e.target.value as StatusFilter)}
-              className="form-select"
-            >
-              <option value="all">{t('leave_history.filter_all')}</option>
-              <option value="approved">{t('leave_history.filter_approved')}</option>
-              <option value="pending">{t('leave_history.filter_pending')}</option>
-              <option value="rejected">{t('leave_history.filter_declined')}</option>
-              <option value="cancelled">{t('leave_history.filter_cancelled') || 'Cancelled'}</option>
-            </select>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2.5" className="select-arrow">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </div>
-        </div>
       </div>
 
       {loading && <p className="claims-empty">{t('common.loading')}</p>}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && activeRequests.length === 0 && dismissedRequests.length === 0 && (
         <p className="claims-empty">{t('leave_history.no_leave')}</p>
       )}
 
@@ -276,6 +254,61 @@ export default function MyLeaveHistory() {
               )
             })}
           </div>
+        </>
+      )}
+
+      {!loading && dismissedRequests.length > 0 && (
+        <>
+          <button className="leave-history-dismissed-toggle" onClick={() => setShowDismissed(v => !v)}>
+            <span className="leave-history-dismissed-label">
+              {t('leave_history.filter_cancelled') || 'Cancelled'} & {t('leave_history.filter_declined') || 'Declined'}
+            </span>
+            <span className="leave-history-dismissed-count">{dismissedRequests.length}</span>
+            <svg
+              width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`leave-history-dismissed-arrow${showDismissed ? ' open' : ''}`}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          {showDismissed && (
+            <div className="leave-history-list leave-history-dismissed-list">
+              {dismissedRequests.map(req => {
+                const lt = typeMap.get(req.leave_type_id)
+                const typeName = lt ? lt.name : 'Leave'
+                const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
+                return (
+                  <button
+                    key={req.id}
+                    className="leave-history-row leave-history-row-dismissed"
+                    style={{ '--leave-row-colour': colour } as React.CSSProperties}
+                    onClick={() => navigate(`/leave/${req.id}`)}
+                  >
+                    <div className="leave-history-row-main">
+                      <span className="leave-history-row-type">{translateLeaveType(typeName)}</span>
+                      <div className="leave-history-row-dates">
+                        <span className="leave-history-row-date-label">{t('leave_history.from')}</span>
+                        <span className="leave-history-row-date">{formatDate(req.start_date)}</span>
+                        <span className="leave-history-row-date-label">{t('leave_history.to')}</span>
+                        <span className="leave-history-row-date">{formatDate(req.end_date)}</span>
+                      </div>
+                    </div>
+                    <div className="leave-history-row-right">
+                      <div className="leave-history-row-days">
+                        <span className="leave-history-row-days-count" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
+                        <span className="leave-history-row-days-label">{t('leave_history.days')}</span>
+                      </div>
+                      <span className="leave-history-row-status" style={{ color: statusColor(req.status) }}>
+                        {tStatus(req.status)}
+                      </span>
+                    </div>
+                    <Chevron color="#c8e600" />
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </>
       )}
     </div>
