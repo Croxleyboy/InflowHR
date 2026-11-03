@@ -21,17 +21,17 @@ ALTER TABLE bank_holidays ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "bank_holidays_read"
   ON bank_holidays FOR SELECT
-  USING (company_id = get_my_company_id());
+  USING (is_my_company(company_id) OR is_super_admin());
 
 CREATE POLICY "bank_holidays_admin_insert"
   ON bank_holidays FOR INSERT
-  WITH CHECK (company_id = get_my_company_id() AND (is_company_admin() OR is_super_admin()));
+  WITH CHECK ((is_my_company(company_id) AND is_company_admin()) OR is_super_admin());
 
 CREATE POLICY "bank_holidays_admin_update"
   ON bank_holidays FOR UPDATE
-  USING (company_id = get_my_company_id() AND (is_company_admin() OR is_super_admin()))
-  WITH CHECK (company_id = get_my_company_id() AND (is_company_admin() OR is_super_admin()));
+  USING ((is_my_company(company_id) AND is_company_admin()) OR is_super_admin())
+  WITH CHECK ((is_my_company(company_id) AND is_company_admin()) OR is_super_admin());
 
 CREATE POLICY "bank_holidays_admin_delete"
   ON bank_holidays FOR DELETE
-  USING (company_id = get_my_company_id() AND (is_company_admin() OR is_super_admin()));
+  USING ((is_my_company(company_id) AND is_company_admin()) OR is_super_admin());
