@@ -263,6 +263,7 @@ export default function MyLeave() {
         </div>
       )}
 
+      <div className="ml-top-section">
       <div className="ml-annual-card">
         <div className="ml-annual-top">
           <div className="ml-ring-wrap">
@@ -404,6 +405,8 @@ export default function MyLeave() {
           </div>
         </div>
       )}
+
+      </div>{/* ml-top-section */}
 
       <div className="my-leave-cards">
         <button className="my-leave-card" onClick={() => navigate('/leave/new')}>

@@ -6244,20 +6244,27 @@ body {
     grid-column: 1 / -1;
   }
 
-  .desktop-content .ml-annual-card {
-    max-width: 520px;
+  .desktop-content .ml-top-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+    max-width: 800px;
     margin: 16px auto;
   }
 
+  .desktop-content .ml-annual-card {
+    margin: 0;
+  }
+
   .desktop-content .ml-other-types {
-    max-width: 520px;
-    margin: 0 auto;
-    padding: 0 0 8px;
+    margin: 0;
+    padding: 0;
   }
 
   .desktop-content .ml-other-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: 10px;
   }
 
@@ -6265,6 +6272,8 @@ body {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 12px;
+    max-width: 800px;
+    margin: 0 auto;
   }
 
   .desktop-content .settings-page {
