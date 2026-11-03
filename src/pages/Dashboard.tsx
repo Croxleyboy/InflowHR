@@ -6,7 +6,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useCheckIn } from '../context/CheckInContext'
 import { supabase } from '../lib/supabase'
-import { toLocalDateStr, currencySymbol, formatCurrency } from '../lib/formatters'
+import { toLocalDateStr, currencySymbol, formatCurrency, getFYRange } from '../lib/formatters'
 import { useUserPreferences } from '../hooks/useUserPreferences'
 import Chevron from '../components/Chevron'
 import DashboardDetailed from './DashboardDetailed'
@@ -562,25 +562,28 @@ export default function Dashboard() {
         .single()
         .then(({ data }) => { if (data) setPendingExpense(data.amount) })
 
-      supabase.from('leave_types')
-        .select('id, name')
-        .eq('company_id', companyUser.company_id)
-        .eq('name', 'Annual Leave')
-        .limit(1)
+      supabase.from('companies')
+        .select('fy_start_month')
+        .eq('id', companyUser.company_id)
         .single()
-        .then(async ({ data: annualType }) => {
+        .then(async ({ data: coData }) => {
+          const { fyYear, fyStart, fyEnd } = getFYRange(coData?.fy_start_month || 4)
+          const { data: annualType } = await supabase.from('leave_types')
+            .select('id, name')
+            .eq('company_id', companyUser.company_id)
+            .eq('name', 'Annual Leave')
+            .limit(1)
+            .single()
           if (!annualType) return
           const { data: balRow } = await supabase.from('leave_balances')
-            .select('total_allowance, lieu_days')
+            .select('total_allowance, carried_over, lieu_days')
             .eq('employee_id', employeeId)
             .eq('company_id', companyUser.company_id)
             .eq('leave_type_id', annualType.id)
-            .eq('year', new Date().getFullYear())
+            .eq('year', fyYear)
             .limit(1)
             .single()
           if (!balRow) return
-          const yearStart = `${new Date().getFullYear()}-01-01`
-          const yearEnd = `${new Date().getFullYear()}-12-31`
           const [approvedRes, pendingRes] = await Promise.all([
             supabase.from('leave_requests')
               .select('days_requested')
@@ -588,20 +591,20 @@ export default function Dashboard() {
               .eq('company_id', companyUser.company_id)
               .eq('leave_type_id', annualType.id)
               .eq('status', 'approved')
-              .gte('start_date', yearStart)
-              .lte('start_date', yearEnd),
+              .gte('start_date', fyStart)
+              .lte('start_date', fyEnd),
             supabase.from('leave_requests')
               .select('days_requested')
               .eq('employee_id', employeeId)
               .eq('company_id', companyUser.company_id)
               .eq('leave_type_id', annualType.id)
               .eq('status', 'pending')
-              .gte('start_date', yearStart)
-              .lte('start_date', yearEnd),
+              .gte('start_date', fyStart)
+              .lte('start_date', fyEnd),
           ])
           const approvedDays = (approvedRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
           const pendingDays = (pendingRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
-          setLeaveRemaining(balRow.total_allowance + (Number(balRow.lieu_days) || 0) - approvedDays)
+          setLeaveRemaining(balRow.total_allowance + (Number(balRow.carried_over) || 0) + (Number(balRow.lieu_days) || 0) - approvedDays)
           setLeavePending(pendingDays)
         })
 

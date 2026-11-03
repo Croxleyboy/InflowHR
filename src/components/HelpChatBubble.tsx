@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useTheme } from '../context/ThemeContext'
-import { formatCurrency, formatDate } from '../lib/formatters'
+import { formatCurrency, formatDate, getFYRange } from '../lib/formatters'
 
 const ASSISTANT_NAME = 'Employee Help'
 
@@ -222,23 +222,43 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
   switch (queryKey) {
     case 'leave_balance':
     case 'get_leave_balance': {
-      const { data } = await supabase
-        .from('leave_balances')
-        .select('total_allowance, used, carried_over, lieu_days, leave_type:leave_type_id(name)')
-        .eq('employee_id', employeeId)
-        .eq('company_id', companyId)
+      const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyId).single()
+      const { fyYear, fyStart, fyEnd } = getFYRange(co?.fy_start_month || 4)
+      const [balRes, reqRes] = await Promise.all([
+        supabase.from('leave_balances')
+          .select('leave_type_id, total_allowance, carried_over, lieu_days, leave_type:leave_type_id(name)')
+          .eq('employee_id', employeeId)
+          .eq('company_id', companyId)
+          .eq('year', fyYear),
+        supabase.from('leave_requests')
+          .select('leave_type_id, days_requested')
+          .eq('employee_id', employeeId)
+          .eq('company_id', companyId)
+          .eq('status', 'approved')
+          .gte('start_date', fyStart)
+          .lte('start_date', fyEnd)
+      ])
+      const data = balRes.data
       if (!data || data.length === 0) return 'No leave balance data found.'
+      const usedByType = new Map<string, number>()
+      for (const r of (reqRes.data || [])) {
+        usedByType.set(r.leave_type_id, (usedByType.get(r.leave_type_id) || 0) + Number(r.days_requested))
+      }
       const lines = data.map((b: any) => {
         const total = (b.total_allowance || 0) + (b.carried_over || 0) + (b.lieu_days || 0)
-        const remaining = total - (b.used || 0)
+        const used = usedByType.get(b.leave_type_id) || 0
+        const remaining = total - used
         const name = b.leave_type?.name || 'Leave'
         const parts = [`${b.total_allowance || 0} allowance`]
         if (b.carried_over) parts.push(`${b.carried_over} carried over`)
         if (b.lieu_days) parts.push(`${b.lieu_days} in lieu`)
-        return `${name}: ${remaining} days remaining (${b.used || 0} used of ${total} — ${parts.join(', ')})`
+        return `${name}: ${remaining} days remaining (${used} used of ${total} — ${parts.join(', ')})`
       })
-      const totalRemaining = data.reduce((sum: number, b: any) => sum + ((b.total_allowance || 0) + (b.carried_over || 0) + (b.lieu_days || 0) - (b.used || 0)), 0)
-      const totalUsed = data.reduce((sum: number, b: any) => sum + (b.used || 0), 0)
+      const totalRemaining = data.reduce((sum: number, b: any) => {
+        const total = (b.total_allowance || 0) + (b.carried_over || 0) + (b.lieu_days || 0)
+        return sum + total - (usedByType.get(b.leave_type_id) || 0)
+      }, 0)
+      const totalUsed = Array.from(usedByType.values()).reduce((s, v) => s + v, 0)
       lines.push(`\nTotal: ${totalRemaining} days remaining across all types (${totalUsed} used)`)
       return lines.join('\n')
     }
