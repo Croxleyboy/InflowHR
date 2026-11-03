@@ -367,7 +367,16 @@ export default function Notifications() {
   const [reminders, setReminders] = useState<PersonalReminder[]>([])
   const [checkinHistory, setCheckinHistory] = useState<PersonalReminder[]>([])
   const [remindersExpanded, setRemindersExpanded] = useState(locState?.expandReminders || false)
+
+  useEffect(() => {
+    if (locState?.tab) setTab(locState.tab)
+    if (locState?.expandReminders) setRemindersExpanded(true)
+  }, [locState?.tab, locState?.expandReminders])
+
   const [notifSearch, setNotifSearch] = useState('')
+  const [actionPage, setActionPage] = useState(0)
+  const [notifPage, setNotifPage] = useState(0)
+  const PAGE_SIZE = 10
   const [tapNotifications, setTapNotifications] = useState<TapNotification[]>([])
   const [mspConsentNotifications, setMspConsentNotifications] = useState<MspConsentNotification[]>([])
   const [mspConsentProcessing, setMspConsentProcessing] = useState<string | null>(null)
@@ -1422,13 +1431,13 @@ export default function Notifications() {
       </header>
 
       <div className="notif-tabs">
-        <button className={`notif-tab ${tab === 'company' ? 'notif-tab-active' : ''}`} onClick={() => setTab('company')}>
+        <button className={`notif-tab ${tab === 'company' ? 'notif-tab-active' : ''}`} onClick={() => { setTab('company'); setActionPage(0); setNotifPage(0) }}>
           {t('notifications.company')}
         </button>
-        <button className={`notif-tab ${tab === 'actions' ? 'notif-tab-active' : ''}`} onClick={() => setTab('actions')}>
+        <button className={`notif-tab ${tab === 'actions' ? 'notif-tab-active' : ''}`} onClick={() => { setTab('actions'); setActionPage(0) }}>
           {t('notifications.my_actions')} {pendingCount > 0 && <span className="notif-tab-badge">{pendingCount}</span>}
         </button>
-        <button className={`notif-tab ${tab === 'notifications' ? 'notif-tab-active' : ''}`} onClick={() => setTab('notifications')}>
+        <button className={`notif-tab ${tab === 'notifications' ? 'notif-tab-active' : ''}`} onClick={() => { setTab('notifications'); setNotifPage(0) }}>
           {t('notifications.my_notifications')}
         </button>
       </div>
@@ -1496,7 +1505,16 @@ export default function Notifications() {
           </div>
 
           {actions.length === 0 && swapActions.length === 0 && <p className="claims-empty">{t('notifications.no_actions')}</p>}
-          {swapActions.map(swap => (
+          {(() => {
+            const allActions = [
+              ...swapActions.map(s => ({ kind: 'swap' as const, item: s })),
+              ...actions.map(a => ({ kind: 'action' as const, item: a })),
+            ]
+            const totalPages = Math.ceil(allActions.length / PAGE_SIZE)
+            const paged = allActions.slice(actionPage * PAGE_SIZE, (actionPage + 1) * PAGE_SIZE)
+            return (
+              <>
+                {paged.map(entry => entry.kind === 'swap' ? (() => { const swap = entry.item as SwapAction; return (
             <button key={`swap-${swap.id}`} className="notif-action-card" onClick={() => navigate('/shifts/swap', { state: { tab: 'incoming' } })}>
               <div className={`notif-action-bar ${swap.swap_type === 'counter_offer' ? 'bar-blue' : 'bar-orange'}`} />
               <div className="notif-icon notif-icon-swap">
@@ -1524,8 +1542,7 @@ export default function Notifications() {
                 <path d="M12 6l10 10-10 10" stroke={swap.swap_type === 'counter_offer' ? '#1565c0' : '#e65100'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
-          ))}
-          {actions.map(item => (
+                ) })() : (() => { const item = entry.item as WorkflowItem; return (
             <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
               <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : item.record_type === 'M365 Provisioning' ? 'bar-blue' : item.record_type === 'M365 Offboarding' ? 'bar-red' : item.record_type === 'M365 Scheduling' ? 'bar-blue' : item.record_type === 'M365 Leaver Scheduling' ? 'bar-red' : 'bar-grey'}`} />
               <NotifIcon type={item.record_type} />
@@ -1552,7 +1569,17 @@ export default function Notifications() {
                 <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' || item.record_type === 'Skill Validation' ? '#7c3aed' : item.record_type === 'Skills Mapping' ? '#0891b2' : item.record_type === 'Conflict' ? '#e65100' : item.record_type === 'Missed Check-In' ? '#e53935' : item.record_type === 'M365 Provisioning' ? '#0078D4' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
-          ))}
+                ) })())}
+                {totalPages > 1 && (
+                  <div className="notif-pagination">
+                    <button disabled={actionPage === 0} onClick={() => setActionPage(p => p - 1)}>Previous</button>
+                    <span>Page {actionPage + 1} of {totalPages}</span>
+                    <button disabled={actionPage >= totalPages - 1} onClick={() => setActionPage(p => p + 1)}>Next</button>
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </div>
       )}
 
@@ -1940,7 +1967,7 @@ export default function Notifications() {
                   className="notif-search-input"
                   placeholder={t('notifications.search_placeholder')}
                   value={notifSearch}
-                  onChange={e => setNotifSearch(e.target.value)}
+                  onChange={e => { setNotifSearch(e.target.value); setNotifPage(0) }}
                 />
                 {notifSearch && (
                   <button className="notif-search-clear" onClick={() => setNotifSearch('')}>
@@ -1996,34 +2023,50 @@ export default function Notifications() {
               </svg>
             </div>
           ))}
-          {myNotifs.filter(n => {
-            if (!notifSearch) return true
-            const q = notifSearch.toLowerCase()
-            return (n.action || '').toLowerCase().includes(q)
-              || (n.task_description || '').toLowerCase().includes(q)
-              || (n.record_type || '').toLowerCase().includes(q)
-              || (n.approval_status || '').toLowerCase().includes(q)
-              || (n.emp_display_name || '').toLowerCase().includes(q)
-          }).map(n => (
-            <div key={n.id} className="notif-card">
-              <NotifIcon type={n.record_type} status={n.approval_status} />
-              <div className="notif-card-content">
-                <span className="notif-card-title">{getNotifTitle(n)}</span>
-                <span className="notif-card-sub">{n.task_description}{n.record_type === 'Expense' && n.approval_id && expenseReceipts.has(n.approval_id) && (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 6, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
-                )}</span>
-                <span className="notif-card-date">{formatNotifDate(n.created_at)}</span>
-              </div>
-              {(n.record_type === 'Expense' || n.record_type === 'Leave') && n.approval_id && (
-                <button className="notif-delete-btn" onClick={() => handleDeleteSubmission(n)} title={t('common.delete')}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          ))}
+          {(() => {
+            const filtered = myNotifs.filter(n => {
+              if (!notifSearch) return true
+              const q = notifSearch.toLowerCase()
+              return (n.action || '').toLowerCase().includes(q)
+                || (n.task_description || '').toLowerCase().includes(q)
+                || (n.record_type || '').toLowerCase().includes(q)
+                || (n.approval_status || '').toLowerCase().includes(q)
+                || (n.emp_display_name || '').toLowerCase().includes(q)
+            })
+            const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+            const paged = filtered.slice(notifPage * PAGE_SIZE, (notifPage + 1) * PAGE_SIZE)
+            return (
+              <>
+                {paged.map(n => (
+                  <div key={n.id} className="notif-card">
+                    <NotifIcon type={n.record_type} status={n.approval_status} />
+                    <div className="notif-card-content">
+                      <span className="notif-card-title">{getNotifTitle(n)}</span>
+                      <span className="notif-card-sub">{n.task_description}{n.record_type === 'Expense' && n.approval_id && expenseReceipts.has(n.approval_id) && (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 6, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                      )}</span>
+                      <span className="notif-card-date">{formatNotifDate(n.created_at)}</span>
+                    </div>
+                    {(n.record_type === 'Expense' || n.record_type === 'Leave') && n.approval_id && (
+                      <button className="notif-delete-btn" onClick={() => handleDeleteSubmission(n)} title={t('common.delete')}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {totalPages > 1 && (
+                  <div className="notif-pagination">
+                    <button disabled={notifPage === 0} onClick={() => setNotifPage(p => p - 1)}>Previous</button>
+                    <span>Page {notifPage + 1} of {totalPages}</span>
+                    <button disabled={notifPage >= totalPages - 1} onClick={() => setNotifPage(p => p + 1)}>Next</button>
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </div>
       )}
     </div>

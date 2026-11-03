@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useUserPreferences } from '../hooks/useUserPreferences'
 
 interface LeaveEntry {
@@ -79,6 +80,8 @@ export default function LeaveCalendar() {
   const navigate = useNavigate()
   const { t, lang, fyStartMonth } = useLanguage()
   const { companyUser } = useAuth()
+  const isDesktop = useMediaQuery('(min-width: 769px)')
+  const backPath = isDesktop ? '/leave' : '/leave/history'
   const { prefs } = useUserPreferences()
   const [leaves, setLeaves] = useState<LeaveEntry[]>([])
   const [bankHolidays, setBankHolidays] = useState<BankHoliday[]>([])
@@ -226,7 +229,7 @@ export default function LeaveCalendar() {
   return (
     <div className="feature-page leave-calendar-page">
       <header className="leave-calendar-header">
-        <button className="leave-calendar-back" onClick={() => navigate('/leave/history')}>
+        <button className="leave-calendar-back" onClick={() => navigate(backPath)}>
           <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
             <circle cx="18" cy="18" r="17" stroke="#43a047" strokeWidth="2" />
             <path d="M21 12l-6 6 6 6" stroke="#43a047" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
