@@ -51,7 +51,7 @@ export default function AdminLeave() {
   const [savingDeduct, setSavingDeduct] = useState<number | null>(null)
   const [savingCarry, setSavingCarry] = useState<number | null>(null)
   const [fyStartMonth, setFyStartMonth] = useState(4)
-  const [activeTab, setActiveTab] = useState<'requests' | 'settings' | 'compliance' | 'sickness'>('requests')
+  const [activeTab, setActiveTab] = useState<'requests' | 'settings' | 'compliance' | 'sickness' | 'bank_holidays'>('requests')
   const [managerNames, setManagerNames] = useState<Record<string, string>>({})
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -95,6 +95,15 @@ export default function AdminLeave() {
   const [sicknessLoading, setSicknessLoading] = useState(false)
   const [expandedSickEmployee, setExpandedSickEmployee] = useState<string | null>(null)
   const [sickPayStatusSaving, setSickPayStatusSaving] = useState<string | null>(null)
+
+  // Bank holidays state
+  const [bankHolidays, setBankHolidays] = useState<{ id: number; holiday_date: string; name: string }[]>([])
+  const [bhLoading, setBhLoading] = useState(false)
+  const [bhNewDate, setBhNewDate] = useState('')
+  const [bhNewName, setBhNewName] = useState('')
+  const [bhSaving, setBhSaving] = useState(false)
+  const [bhYear, setBhYear] = useState(new Date().getFullYear())
+  const [bhDeleting, setBhDeleting] = useState<number | null>(null)
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -450,6 +459,60 @@ export default function AdminLeave() {
     setZhcActionLoading(null)
   }
 
+  const loadBankHolidays = useCallback(async () => {
+    if (!selectedCompanyId) return
+    setBhLoading(true)
+    const yearStart = `${bhYear}-01-01`
+    const yearEnd = `${bhYear}-12-31`
+    const { data } = await supabase
+      .from('bank_holidays')
+      .select('id, holiday_date, name')
+      .eq('company_id', selectedCompanyId)
+      .gte('holiday_date', yearStart)
+      .lte('holiday_date', yearEnd)
+      .order('holiday_date')
+    setBankHolidays(data || [])
+    setBhLoading(false)
+  }, [selectedCompanyId, bhYear])
+
+  async function addBankHoliday() {
+    if (!selectedCompanyId || !bhNewDate || !bhNewName.trim()) return
+    setBhSaving(true)
+    const { error } = await supabase.from('bank_holidays').insert({ company_id: selectedCompanyId, holiday_date: bhNewDate, name: bhNewName.trim() })
+    if (error) { showError(error.code === '23505' ? 'This date already exists' : error.message); setBhSaving(false); return }
+    setBhNewDate(''); setBhNewName('')
+    await loadBankHolidays()
+    setBhSaving(false)
+  }
+
+  async function deleteBankHoliday(id: number) {
+    setBhDeleting(id)
+    await supabase.from('bank_holidays').delete().eq('id', id)
+    await loadBankHolidays()
+    setBhDeleting(null)
+  }
+
+  const UK_PRESETS: { date: string; name: string }[] = [
+    { date: `${bhYear}-01-01`, name: "New Year's Day" },
+    { date: `${bhYear}-03-29`, name: 'Good Friday' },
+    { date: `${bhYear}-03-31`, name: 'Easter Monday' },
+    { date: `${bhYear}-05-05`, name: 'Early May Bank Holiday' },
+    { date: `${bhYear}-05-26`, name: 'Spring Bank Holiday' },
+    { date: `${bhYear}-08-25`, name: 'Summer Bank Holiday' },
+    { date: `${bhYear}-12-25`, name: 'Christmas Day' },
+    { date: `${bhYear}-12-26`, name: 'Boxing Day' },
+  ]
+
+  async function loadPresetHolidays() {
+    if (!selectedCompanyId) return
+    setBhSaving(true)
+    const rows = UK_PRESETS.map(p => ({ company_id: selectedCompanyId, holiday_date: p.date, name: p.name }))
+    const { error } = await supabase.from('bank_holidays').upsert(rows, { onConflict: 'company_id,holiday_date' })
+    if (error) showError(error.message)
+    await loadBankHolidays()
+    setBhSaving(false)
+  }
+
   useEffect(() => {
     if (selectedCompanyId) {
       load(); loadWeekendSetting(); loadLeaveTypeSettings(); loadZhSettings(); loadZhcSettings(); loadSickPaySettings()
@@ -465,6 +528,10 @@ export default function AdminLeave() {
   useEffect(() => {
     if (activeTab === 'sickness' && sickPayEnabled && selectedCompanyId) loadSicknessData()
   }, [activeTab, sickPayEnabled, selectedCompanyId, loadSicknessData])
+
+  useEffect(() => {
+    if (activeTab === 'bank_holidays' && selectedCompanyId) loadBankHolidays()
+  }, [activeTab, selectedCompanyId, loadBankHolidays])
 
   async function load() {
     setLoading(true)
@@ -1080,6 +1147,9 @@ export default function AdminLeave() {
             Sickness
           </button>
         )}
+        <button className={`admin-tab${activeTab === 'bank_holidays' ? ' active' : ''}`} onClick={() => setActiveTab('bank_holidays')}>
+          Bank Holidays
+        </button>
       </div>
 
       {activeTab === 'requests' && !loading && chartData.monthData.some(d => d.total > 0) && (
@@ -2112,6 +2182,87 @@ export default function AdminLeave() {
             </div>
           )}
         </>
+      )}
+
+      {activeTab === 'bank_holidays' && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ background: 'var(--card-bg, #fff)', borderRadius: 10, padding: 16, border: '1px solid var(--border-color, #e0e0e0)', marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Bank Holidays</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button className="admin-btn-sm" onClick={() => setBhYear(y => y - 1)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <span style={{ fontSize: 14, fontWeight: 700, minWidth: 40, textAlign: 'center' }}>{bhYear}</span>
+                <button className="admin-btn-sm" onClick={() => setBhYear(y => y + 1)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 6 15 12 9 18"/></svg>
+                </button>
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: '#888', margin: '0 0 12px' }}>
+              Bank holidays appear on the employee leave calendar. Employees can still book leave on these days — this is for visibility only.
+            </p>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+              <button className="admin-btn-sm" onClick={loadPresetHolidays} disabled={bhSaving} style={{ background: '#1565c0', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600 }}>
+                {bhSaving ? 'Loading...' : `Load UK (England & Wales) ${bhYear}`}
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Date</label>
+                <input type="date" className="admin-input" value={bhNewDate} onChange={e => setBhNewDate(e.target.value)} style={{ fontSize: 13, padding: '6px 8px' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 140 }}>
+                <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Holiday Name</label>
+                <input type="text" className="admin-input" placeholder="e.g. Christmas Day" value={bhNewName} onChange={e => setBhNewName(e.target.value)} style={{ fontSize: 13, padding: '6px 8px' }} />
+              </div>
+              <button className="admin-btn" onClick={addBankHoliday} disabled={bhSaving || !bhNewDate || !bhNewName.trim()} style={{ padding: '6px 16px', fontSize: 13, whiteSpace: 'nowrap' }}>
+                Add
+              </button>
+            </div>
+
+            {bhLoading ? (
+              <p style={{ fontSize: 13, color: '#888' }}>Loading...</p>
+            ) : bankHolidays.length === 0 ? (
+              <p style={{ fontSize: 13, color: '#888' }}>No bank holidays set for {bhYear}. Use the preset button above or add them manually.</p>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table" style={{ fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Day</th>
+                      <th>Holiday</th>
+                      <th style={{ width: 60, textAlign: 'center' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bankHolidays.map(bh => {
+                      const d = new Date(bh.holiday_date + 'T00:00:00')
+                      return (
+                        <tr key={bh.id}>
+                          <td>{d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                          <td>{d.toLocaleDateString('en-GB', { weekday: 'short' })}</td>
+                          <td style={{ fontWeight: 600 }}>{bh.name}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button className="admin-btn-icon admin-btn-danger" title="Remove" disabled={bhDeleting === bh.id} onClick={() => deleteBankHoliday(bh.id)}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p style={{ fontSize: 11, color: '#aaa', marginTop: 8 }}>
+              {bankHolidays.length} bank holiday{bankHolidays.length !== 1 ? 's' : ''} set for {bhYear}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -64,6 +64,11 @@ function getCalendarDays(year: number, month: number): Date[] {
   return days
 }
 
+interface BankHoliday {
+  holiday_date: string
+  name: string
+}
+
 interface DayLeaveInfo {
   people: { id: string; name: string; avatar: string | null; halfDay: boolean }[]
   hasFullDay: boolean
@@ -76,6 +81,7 @@ export default function LeaveCalendar() {
   const { companyUser } = useAuth()
   const { prefs } = useUserPreferences()
   const [leaves, setLeaves] = useState<LeaveEntry[]>([])
+  const [bankHolidays, setBankHolidays] = useState<BankHoliday[]>([])
   const [loading, setLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [watchlistOnly, setWatchlistOnly] = useState(false)
@@ -120,6 +126,15 @@ export default function LeaveCalendar() {
       .eq('status', 'approved')
       .lte('start_date', rangeEnd)
       .gte('end_date', rangeStart)
+
+    const { data: bhData } = await supabase
+      .from('bank_holidays')
+      .select('holiday_date, name')
+      .eq('company_id', companyUser.company_id)
+      .gte('holiday_date', rangeStart)
+      .lte('holiday_date', rangeEnd)
+      .order('holiday_date')
+    setBankHolidays(bhData || [])
 
     if (reqs && reqs.length > 0) {
       const empIds = [...new Set(reqs.map((r: any) => r.employee_id))]
@@ -181,6 +196,12 @@ export default function LeaveCalendar() {
     return map
   }, [calDays, filteredLeaves])
 
+  const holidayMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const bh of bankHolidays) map.set(bh.holiday_date, bh.name)
+    return map
+  }, [bankHolidays])
+
   const thisMonday = getMonday(today)
   const weekCards = [
     { label: isEn ? 'This week' : 'Diese Woche', start: thisMonday, end: addDays(thisMonday, 6) },
@@ -200,6 +221,7 @@ export default function LeaveCalendar() {
 
   const slideDayInfo = slideDay ? dayMap.get(slideDay) : null
   const slideDayDate = slideDay ? new Date(slideDay + 'T00:00:00') : null
+  const slideDayHoliday = slideDay ? holidayMap.get(slideDay) : null
 
   return (
     <div className="feature-page leave-calendar-page">
@@ -289,10 +311,12 @@ export default function LeaveCalendar() {
               const info = dayMap.get(ds)
               const people = info?.people || []
               const isWeekend = day.getDay() === 0 || day.getDay() === 6
+              const holidayName = holidayMap.get(ds)
 
               let cubeClass = 'lc-cube'
               if (!isCurrentMonth) cubeClass += ' lc-cube-other'
               if (isToday) cubeClass += ' lc-cube-today'
+              if (holidayName) cubeClass += ' lc-cube-bank-holiday'
               if (isWeekend && !info?.hasFullDay && !info?.hasHalfDayOnly) cubeClass += ' lc-cube-weekend'
               if (info?.hasFullDay) {
                 cubeClass += ' lc-cube-full'
@@ -304,9 +328,13 @@ export default function LeaveCalendar() {
                 <button
                   key={ds}
                   className={cubeClass}
-                  onClick={() => people.length > 0 && setSlideDay(ds)}
+                  onClick={() => (people.length > 0 || holidayName) && setSlideDay(ds)}
+                  title={holidayName || undefined}
                 >
                   <span className="lc-cube-date">{day.getDate()}</span>
+                  {holidayName && people.length === 0 && (
+                    <span className="lc-cube-bh-dot" />
+                  )}
                   {people.length > 0 && (
                     <div className="lc-cube-avatars">
                       {people.slice(0, 3).map((p, i) => (
@@ -334,6 +362,7 @@ export default function LeaveCalendar() {
         <div className="lc-legend-item"><span className="lc-legend-dot lc-legend-full" />{isEn ? 'Full day leave' : 'Ganzer Tag'}</div>
         <div className="lc-legend-item"><span className="lc-legend-dot lc-legend-multi" />{isEn ? 'Multiple people' : 'Mehrere Personen'}</div>
         <div className="lc-legend-item"><span className="lc-legend-dot lc-legend-half" />{isEn ? 'Half day only' : 'Halber Tag'}</div>
+        <div className="lc-legend-item"><span className="lc-legend-dot lc-legend-bank-holiday" />{isEn ? 'Bank holiday' : 'Feiertag'}</div>
         <div className="lc-legend-item"><span className="lc-legend-dot lc-legend-none" />{isEn ? 'No leave' : 'Kein Urlaub'}</div>
       </div>
 
@@ -349,6 +378,12 @@ export default function LeaveCalendar() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             </div>
+            {slideDayHoliday && (
+              <div className="lc-slide-holiday-badge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                {slideDayHoliday}
+              </div>
+            )}
             <p className="lc-slide-count">
               {slideDayInfo?.people.length || 0} {isEn ? 'people on leave' : 'Personen im Urlaub'}
             </p>
