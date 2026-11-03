@@ -369,9 +369,10 @@ export default function Notifications() {
   const [remindersExpanded, setRemindersExpanded] = useState(locState?.expandReminders || false)
 
   useEffect(() => {
-    if (locState?.tab) setTab(locState.tab)
-    if (locState?.expandReminders) setRemindersExpanded(true)
-  }, [locState?.tab, locState?.expandReminders])
+    const s = location.state as { tab?: Tab; expandReminders?: boolean } | null
+    if (s?.tab) setTab(s.tab)
+    if (s?.expandReminders) setRemindersExpanded(true)
+  }, [location.key])
 
   const [notifSearch, setNotifSearch] = useState('')
   const [actionPage, setActionPage] = useState(0)
