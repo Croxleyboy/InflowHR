@@ -2466,7 +2466,15 @@ body {
 .ml-stat-num { font-size: 24px; font-weight: 800; color: var(--text); line-height: 1; }
 .ml-stat-used { color: #43a047; }
 .ml-stat-pending { color: #e65100; }
+.ml-stat-nottaken { color: #1976d2; }
 .ml-stat-desc { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+
+.ml-sick-inline {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text-muted);
+}
+.ml-sick-label { font-weight: 700; color: var(--text); }
+.ml-sick-count { color: var(--text-muted); }
 
 .ml-annual-breakdown {
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
@@ -6246,10 +6254,10 @@ body {
 
   .desktop-content .ml-top-section {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 3fr 2fr;
     gap: 20px;
-    align-items: start;
-    max-width: 800px;
+    align-items: stretch;
+    max-width: 900px;
     margin: 16px auto;
   }
 
@@ -6257,23 +6265,35 @@ body {
     margin: 0;
   }
 
-  .desktop-content .ml-other-types {
-    margin: 0;
-    padding: 0;
-  }
-
-  .desktop-content .ml-other-grid {
+  .desktop-content .ml-actions-panel {
     display: flex;
     flex-direction: column;
     gap: 10px;
   }
 
-  .desktop-content .my-leave-cards {
+  .desktop-content .ml-actions-panel .my-leave-im-off-btn {
+    width: 100%;
+    margin: auto 0 0;
+  }
+
+  .desktop-content .ml-actions-panel .my-leave-im-off-hint {
+    padding: 4px 0 0;
+  }
+
+  .desktop-content .ml-inline-history {
+    max-width: 900px;
+    margin: 20px auto 0;
+    padding: 0 16px;
+  }
+
+  .desktop-content .ml-inline-history .leave-history-tabs {
+    margin-bottom: 12px;
+  }
+
+  .desktop-content .ml-inline-history .leave-history-list {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-    max-width: 800px;
-    margin: 0 auto;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
   }
 
   .desktop-content .settings-page {
@@ -6309,14 +6329,6 @@ body {
 
   .desktop-content .benefits-page {
     padding-bottom: 24px;
-  }
-
-  .desktop-content .my-leave-im-off-btn {
-    max-width: 300px;
-    margin: 16px auto 0;
-  }
-  .desktop-content .my-leave-im-off-hint {
-    text-align: center;
   }
 
   .desktop-content .ts-history-weeks {

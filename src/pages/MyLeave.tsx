@@ -5,7 +5,9 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { getManagerEmail } from '../lib/workflow'
-import { getFYRange } from '../lib/formatters'
+import { getFYRange, formatDate } from '../lib/formatters'
+import { useMediaQuery } from '../hooks/useMediaQuery'
+import Chevron from '../components/Chevron'
 
 interface LeaveBalance {
   leave_type_id: number
@@ -26,9 +28,39 @@ interface OtherLeaveType {
   pending: number
 }
 
+interface LeaveRequest {
+  id: number
+  leave_type_id: number
+  start_date: string
+  end_date: string
+  days_requested: number
+  status: string
+  reason: string | null
+  created_at: string
+}
+
+interface LeaveType {
+  id: number
+  name: string
+  colour: string
+}
+
+const LEAVE_TYPE_COLORS: Record<string, string> = {
+  'Annual Leave': '#43a047',
+  'Sick Leave': '#e53935',
+  'Compassionate Leave': '#8d6e63',
+  'Parental Leave': '#ab47bc',
+  'Jury Duty': '#5c6bc0',
+  'Bereavement': '#78909c',
+  'Exam Leave': '#ff9800',
+  'Carers Leave': '#ec407a',
+  'Career Break': '#7b1fa2',
+  'Lieu Days': '#00897b',
+}
+
 export default function MyLeave() {
   const navigate = useNavigate()
-  const { t } = useLanguage()
+  const { t, tStatus } = useLanguage()
   const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
   const { showError } = useToast()
   const [balances, setBalances] = useState<LeaveBalance[]>([])
@@ -38,6 +70,11 @@ export default function MyLeave() {
   const [isZeroHours, setIsZeroHours] = useState(false)
   const [zhHolidayMethod, setZhHolidayMethod] = useState<'accrual' | 'rolled_up'>('rolled_up')
   const [zhAccrualRate, setZhAccrualRate] = useState(12.07)
+  const isDesktop = useMediaQuery('(min-width: 769px)')
+
+  const [historyRequests, setHistoryRequests] = useState<LeaveRequest[]>([])
+  const [historyTypeMap, setHistoryTypeMap] = useState<Map<number, LeaveType>>(new Map())
+  const [historyTab, setHistoryTab] = useState<'active' | 'dismissed'>('active')
 
   const loadData = useCallback(async () => {
     if (!EMPLOYEE_ID) return
@@ -122,6 +159,24 @@ export default function MyLeave() {
       setOtherTypes([])
     }
 
+    const { data: reqs } = await supabase
+      .from('leave_requests')
+      .select('id, leave_type_id, start_date, end_date, days_requested, status, reason, created_at')
+      .eq('employee_id', EMPLOYEE_ID)
+      .eq('company_id', companyUser?.company_id)
+      .order('created_at', { ascending: false })
+
+    if (reqs && reqs.length > 0) {
+      setHistoryRequests(reqs as LeaveRequest[])
+      const hTypeIds = [...new Set(reqs.map((r: any) => r.leave_type_id))]
+      const { data: hTypes } = await supabase.from('leave_types').select('id, name, colour').in('id', hTypeIds)
+      if (hTypes) {
+        setHistoryTypeMap(new Map(hTypes.map((lt: any) => [lt.id, lt as LeaveType])))
+      }
+    } else {
+      setHistoryRequests([])
+    }
+
     setLoading(false)
   }, [EMPLOYEE_ID])
 
@@ -141,9 +196,13 @@ export default function MyLeave() {
   const totalEntitlement = basAllowance + primaryLieu + primaryCarried
   const totalUsed = primary ? primary.used : 0
   const remaining = totalEntitlement - totalUsed
+  const notTaken = totalEntitlement - totalUsed - primaryPending
   const usedPct = totalEntitlement > 0 ? (totalUsed / totalEntitlement) * 100 : 0
   const pendingPct = totalEntitlement > 0 ? (primaryPending / totalEntitlement) * 100 : 0
   const circumference = 2 * Math.PI * 52
+
+  const totalSickDays = otherTypes.filter(lt => lt.name === 'Sick Leave').reduce((sum, lt) => sum + lt.approved, 0)
+  const totalSickPending = otherTypes.filter(lt => lt.name === 'Sick Leave').reduce((sum, lt) => sum + lt.pending, 0)
 
   function translateLeaveType(name: string): string {
     const keyMap: Record<string, string> = {
@@ -218,11 +277,62 @@ export default function MyLeave() {
 
   const fmt = (v: number) => isZeroHours ? v.toFixed(1) : String(v)
 
+  function statusColor(status: string): string {
+    if (status === 'approved') return '#43a047'
+    if (status === 'pending') return '#e65100'
+    if (status === 'rejected') return '#c62828'
+    if (status === 'cancelled') return '#757575'
+    return '#999'
+  }
+
+  const activeHistoryRequests = historyRequests.filter(r => r.status === 'approved' || r.status === 'pending')
+  const dismissedHistoryRequests = historyRequests.filter(r => r.status === 'cancelled' || r.status === 'rejected')
+  const todayStr = (() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+  const upcomingHistory = activeHistoryRequests.filter(r => r.end_date >= todayStr).sort((a, b) => a.start_date.localeCompare(b.start_date))
+  const previousHistory = activeHistoryRequests.filter(r => r.end_date < todayStr)
+
   if (loading) {
     return (
       <div className="feature-page">
         <p className="claims-empty">{t('common.loading')}</p>
       </div>
+    )
+  }
+
+  const renderHistoryRow = (req: LeaveRequest) => {
+    const lt = historyTypeMap.get(req.leave_type_id)
+    const typeName = lt ? lt.name : 'Leave'
+    const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
+    return (
+      <button
+        key={req.id}
+        className="leave-history-row"
+        style={{ '--leave-row-colour': colour } as React.CSSProperties}
+        onClick={() => navigate(`/leave/${req.id}`)}
+      >
+        <div className="leave-history-row-main">
+          <span className="leave-history-row-type">{translateLeaveType(typeName)}</span>
+          <div className="leave-history-row-dates">
+            <span className="leave-history-row-date-label">{t('leave_history.from')}</span>
+            <span className="leave-history-row-date">{formatDate(req.start_date)}</span>
+            <span className="leave-history-row-date-label">{t('leave_history.to')}</span>
+            <span className="leave-history-row-date">{formatDate(req.end_date)}</span>
+          </div>
+        </div>
+        <div className="leave-history-row-right">
+          <div className="leave-history-row-days">
+            <span className="leave-history-row-days-count" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
+            <span className="leave-history-row-days-label">{t('leave_history.days')}</span>
+          </div>
+          <span className="leave-history-row-status" style={{ color: statusColor(req.status) }}>
+            {tStatus(req.status)}
+          </span>
+        </div>
+        <Chevron color="#c8e600" />
+      </button>
     )
   }
 
@@ -264,235 +374,390 @@ export default function MyLeave() {
       )}
 
       <div className="ml-top-section">
-      <div className="ml-annual-card">
-        <div className="ml-annual-top">
-          <div className="ml-ring-wrap">
-            <svg viewBox="0 0 120 120" className="ml-ring">
-              <circle cx="60" cy="60" r="52" fill="none" stroke="var(--ml-ring-track)" strokeWidth="10" />
-              <circle
-                cx="60" cy="60" r="52"
-                fill="none"
-                stroke="#43a047"
-                strokeWidth="10"
-                strokeLinecap="round"
-                strokeDasharray={`${(usedPct / 100) * circumference} ${circumference}`}
-                transform="rotate(-90 60 60)"
-              />
-              {pendingPct > 0 && (
+        <div className="ml-annual-card">
+          <div className="ml-annual-top">
+            <div className="ml-ring-wrap">
+              <svg viewBox="0 0 120 120" className="ml-ring">
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--ml-ring-track)" strokeWidth="10" />
                 <circle
                   cx="60" cy="60" r="52"
                   fill="none"
-                  stroke="#ff9800"
+                  stroke="#43a047"
                   strokeWidth="10"
                   strokeLinecap="round"
-                  strokeDasharray={`${(pendingPct / 100) * circumference} ${circumference}`}
-                  strokeDashoffset={`${-(usedPct / 100) * circumference}`}
+                  strokeDasharray={`${(usedPct / 100) * circumference} ${circumference}`}
                   transform="rotate(-90 60 60)"
                 />
-              )}
-            </svg>
-            <div className="ml-ring-center">
-              <span className="ml-ring-value">{fmt(remaining)}</span>
-              <span className="ml-ring-label">{isZeroHours ? 'hrs left' : t('my_leave.remaining')}</span>
-            </div>
-          </div>
-
-          <div className="ml-annual-stats">
-            <div className="ml-annual-title-row">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                {pendingPct > 0 && (
+                  <circle
+                    cx="60" cy="60" r="52"
+                    fill="none"
+                    stroke="#ff9800"
+                    strokeWidth="10"
+                    strokeLinecap="round"
+                    strokeDasharray={`${(pendingPct / 100) * circumference} ${circumference}`}
+                    strokeDashoffset={`${-(usedPct / 100) * circumference}`}
+                    transform="rotate(-90 60 60)"
+                  />
+                )}
               </svg>
-              <span className="ml-annual-label">{isZeroHours ? 'Accrued Hours' : translateLeaveType('Annual Leave')}</span>
+              <div className="ml-ring-center">
+                <span className="ml-ring-value">{fmt(remaining)}</span>
+                <span className="ml-ring-label">{isZeroHours ? 'hrs left' : t('my_leave.remaining')}</span>
+              </div>
             </div>
-            <div className="ml-stat-grid">
-              <div className="ml-stat-item">
-                <span className="ml-stat-num">{fmt(totalEntitlement)}</span>
-                <span className="ml-stat-desc">{isZeroHours ? 'Accrued' : t('my_leave.entitlement')}</span>
+
+            <div className="ml-annual-stats">
+              <div className="ml-annual-title-row">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+                <span className="ml-annual-label">{isZeroHours ? 'Accrued Hours' : translateLeaveType('Annual Leave')}</span>
               </div>
-              <div className="ml-stat-item">
-                <span className="ml-stat-num ml-stat-used">{fmt(totalUsed)}</span>
-                <span className="ml-stat-desc">{isZeroHours ? 'Used (hrs)' : t('my_leave.used')}</span>
-              </div>
-              {primaryPending > 0 && (
+              <div className="ml-stat-grid">
                 <div className="ml-stat-item">
-                  <span className="ml-stat-num ml-stat-pending">{fmt(primaryPending)}</span>
-                  <span className="ml-stat-desc">{isZeroHours ? 'Pending (hrs)' : t('my_leave.pending_days')}</span>
+                  <span className="ml-stat-num">{fmt(totalEntitlement)}</span>
+                  <span className="ml-stat-desc">{isZeroHours ? 'Accrued' : t('my_leave.entitlement')}</span>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
+                <div className="ml-stat-item">
+                  <span className="ml-stat-num ml-stat-used">{fmt(totalUsed)}</span>
+                  <span className="ml-stat-desc">{isZeroHours ? 'Used (hrs)' : t('my_leave.used')}</span>
+                </div>
+                {primaryPending > 0 && (
+                  <div className="ml-stat-item">
+                    <span className="ml-stat-num ml-stat-pending">{fmt(primaryPending)}</span>
+                    <span className="ml-stat-desc">{isZeroHours ? 'Pending (hrs)' : t('my_leave.pending_days')}</span>
+                  </div>
+                )}
+                <div className="ml-stat-item">
+                  <span className="ml-stat-num ml-stat-nottaken">{fmt(notTaken > 0 ? notTaken : 0)}</span>
+                  <span className="ml-stat-desc">Not Taken</span>
+                </div>
+              </div>
 
-        {(primaryCarried > 0 || primaryLieu > 0) && (
-          <div className="ml-annual-breakdown">
-            <span className="ml-breakdown-item">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
-              {basAllowance} base
-            </span>
-            {primaryCarried > 0 && (
-              <span className="ml-breakdown-item">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5"><path d="M17 3L21 7L17 11" /><path d="M3 13V11a4 4 0 014-4h14" /></svg>
-                {primaryCarried} carried over
-              </span>
-            )}
-            {primaryLieu > 0 && (
-              <span className="ml-breakdown-item">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-                {primaryLieu} lieu
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {otherTypes.length > 0 && (
-        <div className="ml-other-types">
-          <h3 className="ml-section-title">Other Leave This Year</h3>
-          <div className="ml-other-grid">
-            {otherTypes.map(lt => (
-              <div key={lt.leave_type_id} className="ml-other-card" style={{ '--ml-type-color': lt.colour } as React.CSSProperties}>
-                <div className="ml-other-icon" style={{ background: lt.colour }}>
-                  {lt.name === 'Sick Leave' ? (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                    </svg>
-                  ) : (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
+              {(totalSickDays > 0 || totalSickPending > 0) && (
+                <div className="ml-sick-inline">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e53935" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                  </svg>
+                  <span className="ml-sick-label">{translateLeaveType('Sick Leave')}</span>
+                  <span className="ml-sick-count">{totalSickDays} day{totalSickDays !== 1 ? 's' : ''} taken</span>
+                  {totalSickPending > 0 && (
+                    <span className="ml-other-pending">{totalSickPending} pending</span>
                   )}
                 </div>
-                <div className="ml-other-info">
-                  <span className="ml-other-name">{translateLeaveType(lt.name)}</span>
-                  <div className="ml-other-counts">
-                    <span className="ml-other-approved">{lt.approved} day{lt.approved !== 1 ? 's' : ''} taken</span>
-                    {lt.pending > 0 && (
-                      <span className="ml-other-pending">{lt.pending} pending</span>
+              )}
+
+              {otherTypes.filter(lt => lt.name !== 'Sick Leave').map(lt => (
+                <div key={lt.leave_type_id} className="ml-sick-inline">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={lt.colour} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                  <span className="ml-sick-label">{translateLeaveType(lt.name)}</span>
+                  <span className="ml-sick-count">{lt.approved} day{lt.approved !== 1 ? 's' : ''} taken</span>
+                  {lt.pending > 0 && (
+                    <span className="ml-other-pending">{lt.pending} pending</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {(primaryCarried > 0 || primaryLieu > 0) && (
+            <div className="ml-annual-breakdown">
+              <span className="ml-breakdown-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+                {basAllowance} base
+              </span>
+              {primaryCarried > 0 && (
+                <span className="ml-breakdown-item">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5"><path d="M17 3L21 7L17 11" /><path d="M3 13V11a4 4 0 014-4h14" /></svg>
+                  {primaryCarried} carried over
+                </span>
+              )}
+              {primaryLieu > 0 && (
+                <span className="ml-breakdown-item">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                  {primaryLieu} lieu
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Mobile-only: separate other types cards */}
+        {!isDesktop && otherTypes.length > 0 && (
+          <div className="ml-other-types">
+            <h3 className="ml-section-title">Other Leave This Year</h3>
+            <div className="ml-other-grid">
+              {otherTypes.map(lt => (
+                <div key={lt.leave_type_id} className="ml-other-card" style={{ '--ml-type-color': lt.colour } as React.CSSProperties}>
+                  <div className="ml-other-icon" style={{ background: lt.colour }}>
+                    {lt.name === 'Sick Leave' ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                      </svg>
+                    ) : (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
                     )}
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {balances.filter(b => b.leave_type_name !== 'Annual Leave' && (b.used > 0 || b.pending > 0)).length > 0 && (
-        <div className="ml-other-types">
-          {!otherTypes.length && <h3 className="ml-section-title">Other Leave This Year</h3>}
-          <div className="ml-other-grid">
-            {balances.filter(b => b.leave_type_name !== 'Annual Leave' && (b.used > 0 || b.pending > 0)).map(b => {
-              const effectiveTotal = b.total_allowance + (b.carried_over || 0) + (b.lieu_days || 0)
-              return (
-                <div key={b.leave_type_id} className="ml-other-card" style={{ '--ml-type-color': b.colour } as React.CSSProperties}>
-                  <div className="ml-other-icon" style={{ background: b.colour }}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                  </div>
                   <div className="ml-other-info">
-                    <span className="ml-other-name">{translateLeaveType(b.leave_type_name)}</span>
+                    <span className="ml-other-name">{translateLeaveType(lt.name)}</span>
                     <div className="ml-other-counts">
-                      <span className="ml-other-approved">{b.used} of {effectiveTotal} used</span>
-                      {b.pending > 0 && (
-                        <span className="ml-other-pending">{b.pending} pending</span>
+                      <span className="ml-other-approved">{lt.approved} day{lt.approved !== 1 ? 's' : ''} taken</span>
+                      {lt.pending > 0 && (
+                        <span className="ml-other-pending">{lt.pending} pending</span>
                       )}
                     </div>
                   </div>
                 </div>
-              )
-            })}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      </div>{/* ml-top-section */}
+        {!isDesktop && balances.filter(b => b.leave_type_name !== 'Annual Leave' && (b.used > 0 || b.pending > 0)).length > 0 && (
+          <div className="ml-other-types">
+            {!otherTypes.length && <h3 className="ml-section-title">Other Leave This Year</h3>}
+            <div className="ml-other-grid">
+              {balances.filter(b => b.leave_type_name !== 'Annual Leave' && (b.used > 0 || b.pending > 0)).map(b => {
+                const effectiveTotal = b.total_allowance + (b.carried_over || 0) + (b.lieu_days || 0)
+                return (
+                  <div key={b.leave_type_id} className="ml-other-card" style={{ '--ml-type-color': b.colour } as React.CSSProperties}>
+                    <div className="ml-other-icon" style={{ background: b.colour }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                    </div>
+                    <div className="ml-other-info">
+                      <span className="ml-other-name">{translateLeaveType(b.leave_type_name)}</span>
+                      <div className="ml-other-counts">
+                        <span className="ml-other-approved">{b.used} of {effectiveTotal} used</span>
+                        {b.pending > 0 && (
+                          <span className="ml-other-pending">{b.pending} pending</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
-      <div className="my-leave-cards">
-        <button className="my-leave-card" onClick={() => navigate('/leave/new')}>
-          <div className="my-leave-card-icon my-leave-card-book">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-              <line x1="12" y1="14" x2="12" y2="18" />
-              <line x1="10" y1="16" x2="14" y2="16" />
-            </svg>
-          </div>
-          <div className="my-leave-card-text">
-            <span className="my-leave-card-title">{t('my_leave.book_leave')}</span>
-            <span className="my-leave-card-desc">{t('my_leave.book_leave_desc')}</span>
-          </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
+        {/* Desktop-only: right side action panel */}
+        {isDesktop && (
+          <div className="ml-actions-panel">
+            <button className="my-leave-card" onClick={() => navigate('/leave/new')}>
+              <div className="my-leave-card-icon my-leave-card-book">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                  <line x1="12" y1="14" x2="12" y2="18" />
+                  <line x1="10" y1="16" x2="14" y2="16" />
+                </svg>
+              </div>
+              <div className="my-leave-card-text">
+                <span className="my-leave-card-title">{t('my_leave.book_leave')}</span>
+                <span className="my-leave-card-desc">{t('my_leave.book_leave_desc')}</span>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
 
-        <button className="my-leave-card" onClick={() => navigate('/leave/history')}>
-          <div className="my-leave-card-icon my-leave-card-history">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-          </div>
-          <div className="my-leave-card-text">
-            <span className="my-leave-card-title">{t('my_leave.leave_history')}</span>
-            <span className="my-leave-card-desc">{t('my_leave.leave_history_desc')}</span>
-          </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
+            <button className="my-leave-card" onClick={() => navigate('/leave/calendar')}>
+              <div className="my-leave-card-icon my-leave-card-types">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                  <circle cx="8" cy="14" r="1" fill="#fff" />
+                  <circle cx="12" cy="14" r="1" fill="#fff" />
+                  <circle cx="16" cy="14" r="1" fill="#fff" />
+                </svg>
+              </div>
+              <div className="my-leave-card-text">
+                <span className="my-leave-card-title">{t('my_leave.leave_calendar')}</span>
+                <span className="my-leave-card-desc">{t('my_leave.leave_calendar_desc')}</span>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
 
-        <button className="my-leave-card" onClick={() => navigate('/leave/calendar')}>
-          <div className="my-leave-card-icon my-leave-card-types">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-              <circle cx="8" cy="14" r="1" fill="#fff" />
-              <circle cx="12" cy="14" r="1" fill="#fff" />
-              <circle cx="16" cy="14" r="1" fill="#fff" />
-            </svg>
+            <button
+              className={`my-leave-im-off-btn ${imOffState === 'sent' ? 'my-leave-im-off-sent' : ''}`}
+              onClick={handleImOff}
+              disabled={imOffState !== 'idle'}
+            >
+              {imOffState === 'idle' && (
+                <>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  </svg>
+                  <span>{t('my_leave.im_off')}</span>
+                </>
+              )}
+              {imOffState === 'sending' && <span>{t('my_leave.im_off_sending')}</span>}
+              {imOffState === 'sent' && (
+                <>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>{t('my_leave.im_off_sent')}</span>
+                </>
+              )}
+            </button>
+            <p className="my-leave-im-off-hint">{t('my_leave.im_off_desc')}</p>
           </div>
-          <div className="my-leave-card-text">
-            <span className="my-leave-card-title">{t('my_leave.leave_calendar')}</span>
-            <span className="my-leave-card-desc">{t('my_leave.leave_calendar_desc')}</span>
-          </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
+        )}
       </div>
 
-      <button
-        className={`my-leave-im-off-btn ${imOffState === 'sent' ? 'my-leave-im-off-sent' : ''}`}
-        onClick={handleImOff}
-        disabled={imOffState !== 'idle'}
-      >
-        {imOffState === 'idle' && (
-          <>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-            <span>{t('my_leave.im_off')}</span>
-          </>
-        )}
-        {imOffState === 'sending' && <span>{t('my_leave.im_off_sending')}</span>}
-        {imOffState === 'sent' && (
-          <>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            <span>{t('my_leave.im_off_sent')}</span>
-          </>
-        )}
-      </button>
+      {/* Mobile-only: action cards + I'm Off */}
+      {!isDesktop && (
+        <>
+          <div className="my-leave-cards">
+            <button className="my-leave-card" onClick={() => navigate('/leave/new')}>
+              <div className="my-leave-card-icon my-leave-card-book">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                  <line x1="12" y1="14" x2="12" y2="18" />
+                  <line x1="10" y1="16" x2="14" y2="16" />
+                </svg>
+              </div>
+              <div className="my-leave-card-text">
+                <span className="my-leave-card-title">{t('my_leave.book_leave')}</span>
+                <span className="my-leave-card-desc">{t('my_leave.book_leave_desc')}</span>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
 
-      <p className="my-leave-im-off-hint">{t('my_leave.im_off_desc')}</p>
+            <button className="my-leave-card" onClick={() => navigate('/leave/history')}>
+              <div className="my-leave-card-icon my-leave-card-history">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              </div>
+              <div className="my-leave-card-text">
+                <span className="my-leave-card-title">{t('my_leave.leave_history')}</span>
+                <span className="my-leave-card-desc">{t('my_leave.leave_history_desc')}</span>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+
+            <button className="my-leave-card" onClick={() => navigate('/leave/calendar')}>
+              <div className="my-leave-card-icon my-leave-card-types">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                  <circle cx="8" cy="14" r="1" fill="#fff" />
+                  <circle cx="12" cy="14" r="1" fill="#fff" />
+                  <circle cx="16" cy="14" r="1" fill="#fff" />
+                </svg>
+              </div>
+              <div className="my-leave-card-text">
+                <span className="my-leave-card-title">{t('my_leave.leave_calendar')}</span>
+                <span className="my-leave-card-desc">{t('my_leave.leave_calendar_desc')}</span>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+
+          <button
+            className={`my-leave-im-off-btn ${imOffState === 'sent' ? 'my-leave-im-off-sent' : ''}`}
+            onClick={handleImOff}
+            disabled={imOffState !== 'idle'}
+          >
+            {imOffState === 'idle' && (
+              <>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                <span>{t('my_leave.im_off')}</span>
+              </>
+            )}
+            {imOffState === 'sending' && <span>{t('my_leave.im_off_sending')}</span>}
+            {imOffState === 'sent' && (
+              <>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span>{t('my_leave.im_off_sent')}</span>
+              </>
+            )}
+          </button>
+
+          <p className="my-leave-im-off-hint">{t('my_leave.im_off_desc')}</p>
+        </>
+      )}
+
+      {/* Desktop-only: inline leave history */}
+      {isDesktop && (
+        <div className="ml-inline-history">
+          <div className="leave-history-tabs">
+            <button className={`leave-history-tab${historyTab === 'active' ? ' active' : ''}`} onClick={() => setHistoryTab('active')}>
+              Pending & Approved
+              {activeHistoryRequests.length > 0 && <span className="leave-history-tab-count">{activeHistoryRequests.length}</span>}
+            </button>
+            <button className={`leave-history-tab${historyTab === 'dismissed' ? ' active' : ''}`} onClick={() => setHistoryTab('dismissed')}>
+              Cancelled & Declined
+              {dismissedHistoryRequests.length > 0 && <span className="leave-history-tab-count leave-history-tab-count-muted">{dismissedHistoryRequests.length}</span>}
+            </button>
+          </div>
+
+          {historyTab === 'active' && activeHistoryRequests.length === 0 && (
+            <p className="claims-empty">{t('leave_history.no_leave')}</p>
+          )}
+
+          {historyTab === 'active' && upcomingHistory.length > 0 && (
+            <>
+              <h3 className="leave-history-section-title">{t('leave_history.upcoming')}</h3>
+              <div className="leave-history-list">
+                {upcomingHistory.map(renderHistoryRow)}
+              </div>
+            </>
+          )}
+
+          {historyTab === 'active' && previousHistory.length > 0 && (
+            <>
+              <h3 className="leave-history-section-title">{t('leave_history.previous')}</h3>
+              <div className="leave-history-list">
+                {previousHistory.map(renderHistoryRow)}
+              </div>
+            </>
+          )}
+
+          {historyTab === 'dismissed' && dismissedHistoryRequests.length === 0 && (
+            <p className="claims-empty">No cancelled or declined requests</p>
+          )}
+
+          {historyTab === 'dismissed' && dismissedHistoryRequests.length > 0 && (
+            <div className="leave-history-list" style={{ marginTop: 12 }}>
+              {dismissedHistoryRequests.map(renderHistoryRow)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
