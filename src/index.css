@@ -3101,6 +3101,25 @@ body {
 .lc-cube-weekend:not(.lc-cube-full):not(.lc-cube-half) {
   opacity: 0.5;
 }
+.lc-cube-bank-holiday {
+  border: 1.5px solid #ef6c00;
+  background: #fff3e0;
+}
+[data-theme="dark"] .lc-cube-bank-holiday {
+  border-color: #ff9800;
+  background: #3e2700;
+}
+.lc-cube-bank-holiday.lc-cube-empty {
+  background: #fff3e0;
+}
+[data-theme="dark"] .lc-cube-bank-holiday.lc-cube-empty {
+  background: #3e2700;
+}
+.lc-cube-bh-dot {
+  display: block; width: 6px; height: 6px; border-radius: 50%;
+  background: #ef6c00; margin: 2px auto 0;
+}
+[data-theme="dark"] .lc-cube-bh-dot { background: #ff9800; }
 .lc-cube-multi {
   background: linear-gradient(135deg, #a5d6a7 25%, #c8e6c9 25%, #c8e6c9 50%, #a5d6a7 50%, #a5d6a7 75%, #c8e6c9 75%);
   background-size: 8px 8px;
@@ -3164,6 +3183,8 @@ body {
 }
 .lc-legend-half { background: #bbdefb; }
 [data-theme="dark"] .lc-legend-half { background: #1a3a5c; }
+.lc-legend-bank-holiday { background: #fff3e0; border: 1.5px solid #ef6c00; }
+[data-theme="dark"] .lc-legend-bank-holiday { background: #4e2800; border-color: #ff9800; }
 .lc-legend-none { background: #f0f4f0; }
 [data-theme="dark"] .lc-legend-none { background: #2a2e2a; }
 
@@ -3192,6 +3213,15 @@ body {
 .lc-slide-close {
   background: none; border: none; cursor: pointer; color: var(--text-muted);
   padding: 4px; display: flex;
+}
+.lc-slide-holiday-badge {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; margin: 0;
+  font-size: 13px; font-weight: 700; color: #ef6c00;
+  background: #fff3e0; border-bottom: 1px solid var(--border);
+}
+[data-theme="dark"] .lc-slide-holiday-badge {
+  color: #ff9800; background: #3e2700;
 }
 .lc-slide-count {
   padding: 8px 16px; margin: 0;
