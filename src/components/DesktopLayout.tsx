@@ -31,6 +31,7 @@ export default function DesktopLayout() {
   const isShiftWorker = employmentCategory === 'shift_worker'
   const allNavItems: { to: string; icon: string; label: string; end?: boolean; badge?: number; feature?: keyof Features; pattern?: 'fixed' | 'variable' }[] = [
     { to: '/', icon: 'home', label: t('footer.dashboard'), end: true },
+    { to: '/my-profile', icon: 'profile', label: t('dashboard.my_profile'), feature: 'profile' },
     { to: '/expenses', icon: 'expenses', label: t('dashboard.expenses'), feature: 'expenses' },
     { to: '/leave', icon: 'leave', label: t('footer.time_off'), feature: 'leave' },
     { to: '/timesheets', icon: 'timesheets', label: t('dashboard.timesheets'), feature: 'timesheets', pattern: 'fixed' },
@@ -42,7 +43,6 @@ export default function DesktopLayout() {
     { to: '/legal-timesheets', icon: 'timesheets', label: t('dashboard.legal_timesheets'), feature: 'legal_timesheets', pattern: 'fixed' },
     { to: '/space-booking', icon: 'space_booking', label: t('dashboard.space_booking'), feature: 'space_booking' },
     { to: '/surveys', icon: 'surveys', label: 'Surveys', feature: 'surveys' },
-    { to: '/my-profile', icon: 'profile', label: t('dashboard.my_profile'), feature: 'profile' },
     { to: '/directory', icon: 'directory', label: `${t('directory.title')} ${t('directory.title_accent')}` },
     { to: '/one-to-ones', icon: 'one-to-ones', label: t('one_to_one.nav_label'), feature: 'performance' as keyof Features },
     { to: '/notifications', icon: 'notifications', label: t('footer.notifications'), badge: badgeCount },

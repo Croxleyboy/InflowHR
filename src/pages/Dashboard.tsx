@@ -346,6 +346,7 @@ export default function Dashboard() {
           .select('id', { count: 'exact', head: true })
           .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
           .gte('booking_date', today).lte('booking_date', weekAheadStr)
+          .in('status', ['confirmed', 'checked_in'])
         count += bookingCount || 0
 
         // 1:1 meetings in next 14 days — exclude past-time meetings for today
