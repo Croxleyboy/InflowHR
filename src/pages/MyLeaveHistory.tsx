@@ -57,7 +57,7 @@ export default function MyLeaveHistory() {
   const [typeMap, setTypeMap] = useState<Map<number, LeaveType>>(new Map())
   const [loading, setLoading] = useState(true)
   const [offThisWeek, setOffThisWeek] = useState(0)
-  const [showDismissed, setShowDismissed] = useState(false)
+  const [tab, setTab] = useState<'active' | 'dismissed'>('active')
 
   function translateLeaveType(name: string): string {
     return LEAVE_TYPE_KEY_MAP[name] ? t(LEAVE_TYPE_KEY_MAP[name]) : name
@@ -169,13 +169,24 @@ export default function MyLeaveHistory() {
         </button>
       </div>
 
+      <div className="leave-history-tabs">
+        <button className={`leave-history-tab${tab === 'active' ? ' active' : ''}`} onClick={() => setTab('active')}>
+          Pending & Approved
+          {activeRequests.length > 0 && <span className="leave-history-tab-count">{activeRequests.length}</span>}
+        </button>
+        <button className={`leave-history-tab${tab === 'dismissed' ? ' active' : ''}`} onClick={() => setTab('dismissed')}>
+          Cancelled & Declined
+          {dismissedRequests.length > 0 && <span className="leave-history-tab-count leave-history-tab-count-muted">{dismissedRequests.length}</span>}
+        </button>
+      </div>
+
       {loading && <p className="claims-empty">{t('common.loading')}</p>}
 
-      {!loading && activeRequests.length === 0 && dismissedRequests.length === 0 && (
+      {!loading && tab === 'active' && activeRequests.length === 0 && (
         <p className="claims-empty">{t('leave_history.no_leave')}</p>
       )}
 
-      {!loading && upcoming.length > 0 && (
+      {!loading && tab === 'active' && upcoming.length > 0 && (
         <>
           <h3 className="leave-history-section-title">{t('leave_history.upcoming')}</h3>
           <div className="leave-history-list">
@@ -216,7 +227,7 @@ export default function MyLeaveHistory() {
         </>
       )}
 
-      {!loading && previous.length > 0 && (
+      {!loading && tab === 'active' && previous.length > 0 && (
         <>
           <h3 className="leave-history-section-title">{t('leave_history.previous')}</h3>
           <div className="leave-history-list">
@@ -257,59 +268,46 @@ export default function MyLeaveHistory() {
         </>
       )}
 
-      {!loading && dismissedRequests.length > 0 && (
-        <>
-          <button className="leave-history-dismissed-toggle" onClick={() => setShowDismissed(v => !v)}>
-            <span className="leave-history-dismissed-label">
-              {t('leave_history.filter_cancelled') || 'Cancelled'} & {t('leave_history.filter_declined') || 'Declined'}
-            </span>
-            <span className="leave-history-dismissed-count">{dismissedRequests.length}</span>
-            <svg
-              width="20" height="20" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`leave-history-dismissed-arrow${showDismissed ? ' open' : ''}`}
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-          {showDismissed && (
-            <div className="leave-history-list leave-history-dismissed-list">
-              {dismissedRequests.map(req => {
-                const lt = typeMap.get(req.leave_type_id)
-                const typeName = lt ? lt.name : 'Leave'
-                const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
-                return (
-                  <button
-                    key={req.id}
-                    className="leave-history-row leave-history-row-dismissed"
-                    style={{ '--leave-row-colour': colour } as React.CSSProperties}
-                    onClick={() => navigate(`/leave/${req.id}`)}
-                  >
-                    <div className="leave-history-row-main">
-                      <span className="leave-history-row-type">{translateLeaveType(typeName)}</span>
-                      <div className="leave-history-row-dates">
-                        <span className="leave-history-row-date-label">{t('leave_history.from')}</span>
-                        <span className="leave-history-row-date">{formatDate(req.start_date)}</span>
-                        <span className="leave-history-row-date-label">{t('leave_history.to')}</span>
-                        <span className="leave-history-row-date">{formatDate(req.end_date)}</span>
-                      </div>
-                    </div>
-                    <div className="leave-history-row-right">
-                      <div className="leave-history-row-days">
-                        <span className="leave-history-row-days-count" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
-                        <span className="leave-history-row-days-label">{t('leave_history.days')}</span>
-                      </div>
-                      <span className="leave-history-row-status" style={{ color: statusColor(req.status) }}>
-                        {tStatus(req.status)}
-                      </span>
-                    </div>
-                    <Chevron color="#c8e600" />
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </>
+      {!loading && tab === 'dismissed' && dismissedRequests.length === 0 && (
+        <p className="claims-empty">No cancelled or declined requests</p>
+      )}
+
+      {!loading && tab === 'dismissed' && dismissedRequests.length > 0 && (
+        <div className="leave-history-list" style={{ marginTop: 12 }}>
+          {dismissedRequests.map(req => {
+            const lt = typeMap.get(req.leave_type_id)
+            const typeName = lt ? lt.name : 'Leave'
+            const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
+            return (
+              <button
+                key={req.id}
+                className="leave-history-row leave-history-row-dismissed"
+                style={{ '--leave-row-colour': colour } as React.CSSProperties}
+                onClick={() => navigate(`/leave/${req.id}`)}
+              >
+                <div className="leave-history-row-main">
+                  <span className="leave-history-row-type">{translateLeaveType(typeName)}</span>
+                  <div className="leave-history-row-dates">
+                    <span className="leave-history-row-date-label">{t('leave_history.from')}</span>
+                    <span className="leave-history-row-date">{formatDate(req.start_date)}</span>
+                    <span className="leave-history-row-date-label">{t('leave_history.to')}</span>
+                    <span className="leave-history-row-date">{formatDate(req.end_date)}</span>
+                  </div>
+                </div>
+                <div className="leave-history-row-right">
+                  <div className="leave-history-row-days">
+                    <span className="leave-history-row-days-count" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
+                    <span className="leave-history-row-days-label">{t('leave_history.days')}</span>
+                  </div>
+                  <span className="leave-history-row-status" style={{ color: statusColor(req.status) }}>
+                    {tStatus(req.status)}
+                  </span>
+                </div>
+                <Chevron color="#c8e600" />
+              </button>
+            )
+          })}
+        </div>
       )}
     </div>
   )

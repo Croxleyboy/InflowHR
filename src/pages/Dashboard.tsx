@@ -96,6 +96,7 @@ export default function Dashboard() {
   const [pendingExpense, setPendingExpense] = useState<number | null>(null)
   const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
   const [leavePending, setLeavePending] = useState<number | null>(null)
+  const [sickDaysTaken, setSickDaysTaken] = useState(0)
   const [reminderCount, setReminderCount] = useState(0)
   const [docCount, setDocCount] = useState(0)
   const [docMissing, setDocMissing] = useState(0)
@@ -606,6 +607,20 @@ export default function Dashboard() {
           const pendingDays = (pendingRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
           setLeaveRemaining(balRow.total_allowance + (Number(balRow.carried_over) || 0) + (Number(balRow.lieu_days) || 0) - approvedDays)
           setLeavePending(pendingDays)
+
+          const { data: sickType } = await supabase.from('leave_types')
+            .select('id').eq('company_id', companyUser.company_id).eq('name', 'Sick Leave').limit(1).single()
+          if (sickType) {
+            const { data: sickReqs } = await supabase.from('leave_requests')
+              .select('days_requested')
+              .eq('employee_id', employeeId)
+              .eq('company_id', companyUser.company_id)
+              .eq('leave_type_id', sickType.id)
+              .eq('status', 'approved')
+              .gte('start_date', fyStart)
+              .lte('start_date', fyEnd)
+            setSickDaysTaken((sickReqs || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0))
+          }
         })
 
       supabase.from('employee_documents')
@@ -1059,12 +1074,17 @@ export default function Dashboard() {
             </div>
             <div className="info-card-body">
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 28, fontWeight: 800, color: '#1565c0', lineHeight: 1 }}>{leaveRemaining !== null ? leaveRemaining : '--'}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#546e7a' }}>days remaining</span>
+                <span style={{ fontSize: 28, fontWeight: 800, color: '#43a047', lineHeight: 1 }}>{leaveRemaining !== null ? leaveRemaining : '--'}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#546e7a' }}>annual leave remaining</span>
               </div>
-              {leavePending !== null && leavePending > 0 && (
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#e65100', marginTop: 4, display: 'block' }}>{leavePending} pending request{leavePending !== 1 ? 's' : ''}</span>
-              )}
+              <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
+                {leavePending !== null && leavePending > 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#e65100' }}>{leavePending} pending</span>
+                )}
+                {sickDaysTaken > 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#e53935' }}>{sickDaysTaken} sick day{sickDaysTaken !== 1 ? 's' : ''} taken</span>
+                )}
+              </div>
             </div>
           </button>
         )

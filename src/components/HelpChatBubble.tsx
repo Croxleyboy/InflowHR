@@ -224,7 +224,7 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
     case 'get_leave_balance': {
       const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyId).single()
       const { fyYear, fyStart, fyEnd } = getFYRange(co?.fy_start_month || 4)
-      const [balRes, reqRes] = await Promise.all([
+      const [balRes, reqRes, pendRes] = await Promise.all([
         supabase.from('leave_balances')
           .select('leave_type_id, total_allowance, carried_over, lieu_days, leave_type:leave_type_id(name)')
           .eq('employee_id', employeeId)
@@ -236,30 +236,59 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
           .eq('company_id', companyId)
           .eq('status', 'approved')
           .gte('start_date', fyStart)
+          .lte('start_date', fyEnd),
+        supabase.from('leave_requests')
+          .select('leave_type_id, days_requested')
+          .eq('employee_id', employeeId)
+          .eq('company_id', companyId)
+          .eq('status', 'pending')
+          .gte('start_date', fyStart)
           .lte('start_date', fyEnd)
       ])
-      const data = balRes.data
-      if (!data || data.length === 0) return 'No leave balance data found.'
-      const usedByType = new Map<string, number>()
+      const usedByType = new Map<number, number>()
       for (const r of (reqRes.data || [])) {
         usedByType.set(r.leave_type_id, (usedByType.get(r.leave_type_id) || 0) + Number(r.days_requested))
       }
-      const lines = data.map((b: any) => {
+      const pendByType = new Map<number, number>()
+      for (const r of (pendRes.data || [])) {
+        pendByType.set(r.leave_type_id, (pendByType.get(r.leave_type_id) || 0) + Number(r.days_requested))
+      }
+      const data = balRes.data || []
+      const balTypeIds = new Set(data.map((b: any) => b.leave_type_id))
+      const lines: string[] = []
+      for (const b of data) {
         const total = (b.total_allowance || 0) + (b.carried_over || 0) + (b.lieu_days || 0)
         const used = usedByType.get(b.leave_type_id) || 0
+        const pend = pendByType.get(b.leave_type_id) || 0
         const remaining = total - used
-        const name = b.leave_type?.name || 'Leave'
+        const name = (b as any).leave_type?.name || 'Leave'
         const parts = [`${b.total_allowance || 0} allowance`]
         if (b.carried_over) parts.push(`${b.carried_over} carried over`)
         if (b.lieu_days) parts.push(`${b.lieu_days} in lieu`)
-        return `${name}: ${remaining} days remaining (${used} used of ${total} — ${parts.join(', ')})`
-      })
+        let line = `${name}: ${remaining} days remaining (${used} used of ${total} — ${parts.join(', ')})`
+        if (pend > 0) line += ` | ${pend} pending`
+        lines.push(line)
+      }
+      const otherTypeIds = new Set<number>()
+      for (const id of usedByType.keys()) { if (!balTypeIds.has(id)) otherTypeIds.add(id) }
+      for (const id of pendByType.keys()) { if (!balTypeIds.has(id)) otherTypeIds.add(id) }
+      if (otherTypeIds.size > 0) {
+        const { data: otherTypes } = await supabase.from('leave_types').select('id, name').in('id', [...otherTypeIds])
+        for (const lt of (otherTypes || [])) {
+          const used = usedByType.get(lt.id) || 0
+          const pend = pendByType.get(lt.id) || 0
+          let line = `${lt.name}: ${used} day${used !== 1 ? 's' : ''} taken this year`
+          if (pend > 0) line += ` | ${pend} pending`
+          lines.push(line)
+        }
+      }
+      if (lines.length === 0) return 'No leave balance data found.'
       const totalRemaining = data.reduce((sum: number, b: any) => {
         const total = (b.total_allowance || 0) + (b.carried_over || 0) + (b.lieu_days || 0)
         return sum + total - (usedByType.get(b.leave_type_id) || 0)
       }, 0)
       const totalUsed = Array.from(usedByType.values()).reduce((s, v) => s + v, 0)
-      lines.push(`\nTotal: ${totalRemaining} days remaining across all types (${totalUsed} used)`)
+      lines.push(`\nTotal: ${totalRemaining} days remaining across tracked types (${totalUsed} used across all types)`)
       return lines.join('\n')
     }
     case 'leave_requests':

@@ -11,10 +11,19 @@ interface LeaveBalance {
   leave_type_id: number
   total_allowance: number
   used: number
+  pending: number
   carried_over: number
   lieu_days: number
   leave_type_name: string
   colour: string
+}
+
+interface OtherLeaveType {
+  leave_type_id: number
+  name: string
+  colour: string
+  approved: number
+  pending: number
 }
 
 export default function MyLeave() {
@@ -23,7 +32,7 @@ export default function MyLeave() {
   const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
   const { showError } = useToast()
   const [balances, setBalances] = useState<LeaveBalance[]>([])
-  const [pendingCount, setPendingCount] = useState(0)
+  const [otherTypes, setOtherTypes] = useState<OtherLeaveType[]>([])
   const [loading, setLoading] = useState(true)
   const [imOffState, setImOffState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [isZeroHours, setIsZeroHours] = useState(false)
@@ -44,7 +53,8 @@ export default function MyLeave() {
       setZhHolidayMethod((wts?.holiday_pay_method as 'accrual' | 'rolled_up') || 'rolled_up')
       setZhAccrualRate(wts?.holiday_accrual_rate ?? 12.07)
     }
-    const [balRes, pendReqRes, approvedReqRes] = await Promise.all([
+
+    const [balRes, allReqRes] = await Promise.all([
       supabase
         .from('leave_balances')
         .select('leave_type_id, total_allowance, used, carried_over, lieu_days')
@@ -53,49 +63,65 @@ export default function MyLeave() {
         .eq('year', fyYear),
       supabase
         .from('leave_requests')
-        .select('leave_type_id, days_requested')
+        .select('leave_type_id, days_requested, status')
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser?.company_id)
-        .eq('status', 'pending')
-        .gte('start_date', fyStart)
-        .lte('start_date', fyEnd),
-      supabase
-        .from('leave_requests')
-        .select('leave_type_id, days_requested')
-        .eq('employee_id', EMPLOYEE_ID)
-        .eq('company_id', companyUser?.company_id)
-        .eq('status', 'approved')
+        .in('status', ['approved', 'pending'])
         .gte('start_date', fyStart)
         .lte('start_date', fyEnd),
     ])
 
     const approvedByType = new Map<number, number>()
-    for (const r of approvedReqRes.data || []) {
-      approvedByType.set(r.leave_type_id, (approvedByType.get(r.leave_type_id) || 0) + Number(r.days_requested))
-    }
     const pendingByType = new Map<number, number>()
-    for (const r of pendReqRes.data || []) {
-      pendingByType.set(r.leave_type_id, (pendingByType.get(r.leave_type_id) || 0) + Number(r.days_requested))
+    for (const r of allReqRes.data || []) {
+      const days = Number(r.days_requested)
+      if (r.status === 'approved') {
+        approvedByType.set(r.leave_type_id, (approvedByType.get(r.leave_type_id) || 0) + days)
+      } else {
+        pendingByType.set(r.leave_type_id, (pendingByType.get(r.leave_type_id) || 0) + days)
+      }
     }
-    const pendingDays = (pendReqRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
 
+    const balanceTypeIds = new Set<number>()
     if (balRes.data && balRes.data.length > 0) {
       const typeIds = balRes.data.map((b: any) => b.leave_type_id)
-      const { data: types } = await supabase
-        .from('leave_types')
-        .select('id, name, colour')
-        .in('id', typeIds)
-
+      typeIds.forEach((id: number) => balanceTypeIds.add(id))
+      const { data: types } = await supabase.from('leave_types').select('id, name, colour').in('id', typeIds)
       const typeMap = new Map((types || []).map((lt: any) => [lt.id, lt]))
       const merged: LeaveBalance[] = balRes.data.map((b: any) => {
         const lt = typeMap.get(b.leave_type_id) || { name: 'Leave', colour: '#999' }
-        const approved = approvedByType.get(b.leave_type_id) || 0
-        return { ...b, used: approved, lieu_days: Number(b.lieu_days) || 0, leave_type_name: lt.name, colour: lt.colour }
+        return {
+          ...b,
+          used: approvedByType.get(b.leave_type_id) || 0,
+          pending: pendingByType.get(b.leave_type_id) || 0,
+          lieu_days: Number(b.lieu_days) || 0,
+          leave_type_name: lt.name,
+          colour: lt.colour,
+        }
       })
       setBalances(merged)
+    } else {
+      setBalances([])
     }
 
-    setPendingCount(pendingDays)
+    const otherTypeIds = new Set<number>()
+    for (const id of approvedByType.keys()) { if (!balanceTypeIds.has(id)) otherTypeIds.add(id) }
+    for (const id of pendingByType.keys()) { if (!balanceTypeIds.has(id)) otherTypeIds.add(id) }
+
+    if (otherTypeIds.size > 0) {
+      const { data: otherTypesData } = await supabase.from('leave_types').select('id, name, colour').in('id', [...otherTypeIds])
+      const others: OtherLeaveType[] = (otherTypesData || []).map((lt: any) => ({
+        leave_type_id: lt.id,
+        name: lt.name,
+        colour: lt.colour,
+        approved: approvedByType.get(lt.id) || 0,
+        pending: pendingByType.get(lt.id) || 0,
+      }))
+      setOtherTypes(others)
+    } else {
+      setOtherTypes([])
+    }
+
     setLoading(false)
   }, [EMPLOYEE_ID])
 
@@ -111,12 +137,12 @@ export default function MyLeave() {
   const basAllowance = primary ? primary.total_allowance : 0
   const primaryLieu = primary ? (primary.lieu_days || 0) : 0
   const primaryCarried = primary ? (primary.carried_over || 0) : 0
+  const primaryPending = primary ? primary.pending : 0
   const totalEntitlement = basAllowance + primaryLieu + primaryCarried
   const totalUsed = primary ? primary.used : 0
   const remaining = totalEntitlement - totalUsed
   const usedPct = totalEntitlement > 0 ? (totalUsed / totalEntitlement) * 100 : 0
-  const pendingPct = totalEntitlement > 0 ? (pendingCount / totalEntitlement) * 100 : 0
-  const lieuPct = totalEntitlement > 0 ? (primaryLieu / totalEntitlement) * 100 : 0
+  const pendingPct = totalEntitlement > 0 ? (primaryPending / totalEntitlement) * 100 : 0
   const circumference = 2 * Math.PI * 52
 
   function translateLeaveType(name: string): string {
@@ -190,6 +216,8 @@ export default function MyLeave() {
     setTimeout(() => setImOffState('idle'), 3000)
   }
 
+  const fmt = (v: number) => isZeroHours ? v.toFixed(1) : String(v)
+
   if (loading) {
     return (
       <div className="feature-page">
@@ -235,99 +263,145 @@ export default function MyLeave() {
         </div>
       )}
 
-      <div className="my-leave-summary">
-        <div className="my-leave-ring-wrap">
-          <svg viewBox="0 0 120 120" className="my-leave-ring">
-            <circle cx="60" cy="60" r="52" fill="none" stroke="#e0e0e0" strokeWidth="10" />
-            <circle
-              cx="60" cy="60" r="52"
-              fill="none"
-              stroke="#43a047"
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeDasharray={`${(usedPct / 100) * circumference} ${circumference}`}
-              transform="rotate(-90 60 60)"
-            />
-            {pendingPct > 0 && (
+      <div className="ml-annual-card">
+        <div className="ml-annual-top">
+          <div className="ml-ring-wrap">
+            <svg viewBox="0 0 120 120" className="ml-ring">
+              <circle cx="60" cy="60" r="52" fill="none" stroke="var(--ml-ring-track)" strokeWidth="10" />
               <circle
                 cx="60" cy="60" r="52"
                 fill="none"
-                stroke="#ff9800"
+                stroke="#43a047"
                 strokeWidth="10"
                 strokeLinecap="round"
-                strokeDasharray={`${(pendingPct / 100) * circumference} ${circumference}`}
-                strokeDashoffset={`${-(usedPct / 100) * circumference}`}
+                strokeDasharray={`${(usedPct / 100) * circumference} ${circumference}`}
                 transform="rotate(-90 60 60)"
               />
-            )}
-            {lieuPct > 0 && (
-              <circle
-                cx="60" cy="60" r="52"
-                fill="none"
-                stroke="#7c3aed"
-                strokeWidth="10"
-                strokeLinecap="round"
-                strokeDasharray={`${(lieuPct / 100) * circumference} ${circumference}`}
-                strokeDashoffset={`${-((100 - lieuPct) / 100) * circumference}`}
-                transform="rotate(-90 60 60)"
-              />
-            )}
-          </svg>
-          <div className="my-leave-ring-center">
-            <span className="my-leave-ring-value">{isZeroHours ? remaining.toFixed(1) : remaining}</span>
-            <span className="my-leave-ring-label">{isZeroHours ? 'hrs remaining' : t('my_leave.remaining')}</span>
+              {pendingPct > 0 && (
+                <circle
+                  cx="60" cy="60" r="52"
+                  fill="none"
+                  stroke="#ff9800"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray={`${(pendingPct / 100) * circumference} ${circumference}`}
+                  strokeDashoffset={`${-(usedPct / 100) * circumference}`}
+                  transform="rotate(-90 60 60)"
+                />
+              )}
+            </svg>
+            <div className="ml-ring-center">
+              <span className="ml-ring-value">{fmt(remaining)}</span>
+              <span className="ml-ring-label">{isZeroHours ? 'hrs left' : t('my_leave.remaining')}</span>
+            </div>
+          </div>
+
+          <div className="ml-annual-stats">
+            <div className="ml-annual-title-row">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              <span className="ml-annual-label">{isZeroHours ? 'Accrued Hours' : translateLeaveType('Annual Leave')}</span>
+            </div>
+            <div className="ml-stat-grid">
+              <div className="ml-stat-item">
+                <span className="ml-stat-num">{fmt(totalEntitlement)}</span>
+                <span className="ml-stat-desc">{isZeroHours ? 'Accrued' : t('my_leave.entitlement')}</span>
+              </div>
+              <div className="ml-stat-item">
+                <span className="ml-stat-num ml-stat-used">{fmt(totalUsed)}</span>
+                <span className="ml-stat-desc">{isZeroHours ? 'Used (hrs)' : t('my_leave.used')}</span>
+              </div>
+              {primaryPending > 0 && (
+                <div className="ml-stat-item">
+                  <span className="ml-stat-num ml-stat-pending">{fmt(primaryPending)}</span>
+                  <span className="ml-stat-desc">{isZeroHours ? 'Pending (hrs)' : t('my_leave.pending_days')}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="my-leave-stats">
-          <div className="my-leave-stat">
-            <span className="my-leave-stat-value">{isZeroHours ? totalEntitlement.toFixed(1) : totalEntitlement}</span>
-            <span className="my-leave-stat-label">{isZeroHours ? 'Accrued (hrs)' : t('my_leave.entitlement')}</span>
+        {(primaryCarried > 0 || primaryLieu > 0) && (
+          <div className="ml-annual-breakdown">
+            <span className="ml-breakdown-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+              {basAllowance} base
+            </span>
+            {primaryCarried > 0 && (
+              <span className="ml-breakdown-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5"><path d="M17 3L21 7L17 11" /><path d="M3 13V11a4 4 0 014-4h14" /></svg>
+                {primaryCarried} carried over
+              </span>
+            )}
+            {primaryLieu > 0 && (
+              <span className="ml-breakdown-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                {primaryLieu} lieu
+              </span>
+            )}
           </div>
-          <div className="my-leave-stat">
-            <span className="my-leave-stat-value">{isZeroHours ? totalUsed.toFixed(1) : totalUsed}</span>
-            <span className="my-leave-stat-label">{isZeroHours ? 'Used (hrs)' : t('my_leave.used')}</span>
-          </div>
-          <div className="my-leave-stat">
-            <span className="my-leave-stat-value my-leave-stat-pending">{isZeroHours ? pendingCount.toFixed(1) : pendingCount}</span>
-            <span className="my-leave-stat-label">{isZeroHours ? 'Pending (hrs)' : t('my_leave.pending_days')}</span>
-          </div>
-          {primaryCarried > 0 && (
-            <div className="my-leave-stat">
-              <span className="my-leave-stat-value" style={{ color: '#0891b2' }}>{primaryCarried}</span>
-              <span className="my-leave-stat-label">Carried Over</span>
-            </div>
-          )}
-          {primaryLieu > 0 && (
-            <div className="my-leave-stat">
-              <span className="my-leave-stat-value" style={{ color: '#7c3aed' }}>{primaryLieu}</span>
-              <span className="my-leave-stat-label">{t('my_leave.lieu_days')}</span>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
-      {balances.filter(b => b.used > 0).length > 0 && (
-        <div className="my-leave-balances">
-          {balances.filter(b => b.used > 0).map(b => {
-            const effectiveTotal = b.total_allowance + (b.carried_over || 0) + (b.lieu_days || 0)
-            const rem = effectiveTotal - b.used
-            const pct = effectiveTotal > 0 ? (b.used / effectiveTotal) * 100 : 0
-            return (
-              <div key={b.leave_type_id} className="my-leave-balance-row">
-                <div className="my-leave-balance-info">
-                  <span className="my-leave-balance-dot" style={{ background: b.colour }} />
-                  <span className="my-leave-balance-name">{translateLeaveType(b.leave_type_name)}</span>
+      {otherTypes.length > 0 && (
+        <div className="ml-other-types">
+          <h3 className="ml-section-title">Other Leave This Year</h3>
+          <div className="ml-other-grid">
+            {otherTypes.map(lt => (
+              <div key={lt.leave_type_id} className="ml-other-card" style={{ '--ml-type-color': lt.colour } as React.CSSProperties}>
+                <div className="ml-other-icon" style={{ background: lt.colour }}>
+                  {lt.name === 'Sick Leave' ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                  )}
                 </div>
-                <div className="my-leave-balance-bar-wrap">
-                  <div className="my-leave-balance-bar">
-                    <div className="my-leave-balance-fill" style={{ width: `${pct}%`, background: b.colour }} />
+                <div className="ml-other-info">
+                  <span className="ml-other-name">{translateLeaveType(lt.name)}</span>
+                  <div className="ml-other-counts">
+                    <span className="ml-other-approved">{lt.approved} day{lt.approved !== 1 ? 's' : ''} taken</span>
+                    {lt.pending > 0 && (
+                      <span className="ml-other-pending">{lt.pending} pending</span>
+                    )}
                   </div>
-                  <span className="my-leave-balance-count">{rem} {t('my_leave.of')} {effectiveTotal}</span>
                 </div>
               </div>
-            )
-          })}
+            ))}
+          </div>
+        </div>
+      )}
+
+      {balances.filter(b => b.leave_type_name !== 'Annual Leave' && (b.used > 0 || b.pending > 0)).length > 0 && (
+        <div className="ml-other-types">
+          {!otherTypes.length && <h3 className="ml-section-title">Other Leave This Year</h3>}
+          <div className="ml-other-grid">
+            {balances.filter(b => b.leave_type_name !== 'Annual Leave' && (b.used > 0 || b.pending > 0)).map(b => {
+              const effectiveTotal = b.total_allowance + (b.carried_over || 0) + (b.lieu_days || 0)
+              return (
+                <div key={b.leave_type_id} className="ml-other-card" style={{ '--ml-type-color': b.colour } as React.CSSProperties}>
+                  <div className="ml-other-icon" style={{ background: b.colour }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                  </div>
+                  <div className="ml-other-info">
+                    <span className="ml-other-name">{translateLeaveType(b.leave_type_name)}</span>
+                    <div className="ml-other-counts">
+                      <span className="ml-other-approved">{b.used} of {effectiveTotal} used</span>
+                      {b.pending > 0 && (
+                        <span className="ml-other-pending">{b.pending} pending</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
