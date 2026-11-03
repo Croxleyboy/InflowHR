@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { formatDate, formatDateTime, getFYYear } from '../lib/formatters'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 
 interface LeaveRequest {
   id: number
@@ -48,6 +49,8 @@ export default function LeaveDetail() {
   const { t, tStatus } = useLanguage()
   const { employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
   const { showError, showSuccess } = useToast()
+  const isDesktop = useMediaQuery('(min-width: 769px)')
+  const backPath = isDesktop ? '/leave' : '/leave/history'
   const [request, setRequest] = useState<LeaveRequest | null>(null)
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [leaveType, setLeaveType] = useState<LeaveType | null>(null)
@@ -139,7 +142,7 @@ export default function LeaveDetail() {
     showSuccess('Leave request cancelled')
     window.dispatchEvent(new Event('notifications-updated'))
     setCancelling(false)
-    navigate('/leave/history')
+    navigate(backPath)
   }
 
   const canCancel = request && (request.status === 'pending' || (request.status === 'approved' && request.start_date > todayStr))
@@ -164,7 +167,7 @@ export default function LeaveDetail() {
           <h1 className="leave-detail-title">{t('leave_detail.title')} <span className="leave-detail-title-accent">{t('leave_detail.title_accent')}</span></h1>
           <p className="leave-detail-subtitle">{t('leave_detail.subtitle')}</p>
         </div>
-        <button className="leave-detail-back" onClick={() => navigate('/leave/history')}>
+        <button className="leave-detail-back" onClick={() => navigate(backPath)}>
           <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
             <circle cx="18" cy="18" r="17" stroke="#43a047" strokeWidth="2" />
             <path d="M21 12l-6 6 6 6" stroke="#43a047" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
