@@ -565,7 +565,6 @@ export default function HelpChatBubble() {
   const [userScrolled, setUserScrolled] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<Record<number, 'up' | 'down'>>({})
-  const [hasHandbook, setHasHandbook] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -597,15 +596,6 @@ export default function HelpChatBubble() {
     if (userScrolled) return
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80)
   }, [userScrolled])
-
-  useEffect(() => {
-    if (!companyId) return
-    supabase.from('handbook_sections')
-      .select('id', { count: 'exact', head: true })
-      .or(`company_id.is.null,company_id.eq.${companyId}`)
-      .eq('is_active', true)
-      .then(({ count }) => setHasHandbook((count || 0) > 0))
-  }, [companyId])
 
   useEffect(() => {
     if (!isOpen) return
