@@ -876,8 +876,15 @@ export default function HelpChatBubble() {
           scrollToBottom()
           return
         }
-      } catch {
-        // Edge function unavailable — fall through to FAQ search
+        // TEMP DIAG — remove after fix confirmed
+        if (!ok) {
+          setMessages(prev => [...prev, { role: 'bot', text: `[DIAG] Edge fn error: ${JSON.stringify(data).slice(0, 200)}` }])
+          setLoading(false); scrollToBottom(); return
+        }
+      } catch (err) {
+        // TEMP DIAG — remove after fix confirmed
+        setMessages(prev => [...prev, { role: 'bot', text: `[DIAG] Edge fn exception: ${err instanceof Error ? err.message : String(err)}` }])
+        setLoading(false); scrollToBottom(); return
       }
     }
 
