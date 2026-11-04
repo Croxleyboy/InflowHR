@@ -75,6 +75,20 @@ interface InflowOnboarderIntegration {
   passes_status_detail: string | null
 }
 
+interface SlackIntegration {
+  id: string
+  company_id: string
+  is_enabled: boolean
+  webhook_url: string | null
+  bot_token_encrypted: string | null
+  default_channel: string | null
+  notify_leave_requests: boolean
+  notify_expense_claims: boolean
+  notify_shift_changes: boolean
+  notify_onboarding: boolean
+  connected_at: string | null
+}
+
 interface EnterpriseAIIntegration {
   id: string
   company_id: string
@@ -160,6 +174,20 @@ function ModulrLogo() {
   )
 }
 
+function SlackLogo() {
+  return (
+    <svg width="36" height="36" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <rect width="512" height="512" rx="80" fill="#4A154B"/>
+      <g>
+        <path d="M170.7 330.7c0 16.6-13.4 30-30 30s-30-13.4-30-30 13.4-30 30-30h30v30zm15 0c0-16.6 13.4-30 30-30s30 13.4 30 30v75c0 16.6-13.4 30-30 30s-30-13.4-30-30v-75z" fill="#E01E5A"/>
+        <path d="M215.7 170.7c-16.6 0-30-13.4-30-30s13.4-30 30-30 30 13.4 30 30v30h-30zm0 15c16.6 0 30 13.4 30 30s-13.4 30-30 30h-75c-16.6 0-30-13.4-30-30s13.4-30 30-30h75z" fill="#36C5F0"/>
+        <path d="M375.7 215.7c0-16.6 13.4-30 30-30s30 13.4 30 30-13.4 30-30 30h-30v-30zm-15 0c0 16.6-13.4 30-30 30s-30-13.4-30-30v-75c0-16.6 13.4-30 30-30s30 13.4 30 30v75z" fill="#2EB67D"/>
+        <path d="M330.7 375.7c16.6 0 30 13.4 30 30s-13.4 30-30 30-30-13.4-30-30v-30h30zm0-15c-16.6 0-30-13.4-30-30s13.4-30 30-30h75c16.6 0 30 13.4 30 30s-13.4 30-30 30h-75z" fill="#ECB22E"/>
+      </g>
+    </svg>
+  )
+}
+
 function InflowOnboarderLogo() {
   return (
     <svg width="36" height="36" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
@@ -193,6 +221,15 @@ export default function AdminIntegrations() {
   const [savingCreds, setSavingCreds] = useState(false)
   const [botUserCount, setBotUserCount] = useState(0)
   const [showSetupGuide, setShowSetupGuide] = useState(false)
+
+  // Slack state
+  const [slackIntegration, setSlackIntegration] = useState<SlackIntegration | null>(null)
+  const [slackSubscribed, setSlackSubscribed] = useState(false)
+  const [slackExpanded, setSlackExpanded] = useState(false)
+  const [slackWebhookUrl, setSlackWebhookUrl] = useState('')
+  const [slackChannel, setSlackChannel] = useState('')
+  const [slackSaving, setSlackSaving] = useState(false)
+  const [slackTesting, setSlackTesting] = useState(false)
 
   // Xero state
   const [xeroIntegration, setXeroIntegration] = useState<XeroIntegration | null>(null)
@@ -286,7 +323,7 @@ export default function AdminIntegrations() {
     if (!companyId) return
     setLoading(true)
 
-    const [teamsRes, teamsBotRes, xeroRes, sageRes, modulrRes, featuresRes, ifoRes, companyRes] = await Promise.all([
+    const [teamsRes, teamsBotRes, xeroRes, sageRes, modulrRes, featuresRes, ifoRes, companyRes, slackRes] = await Promise.all([
       supabase.from('company_teams_config').select('*').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_teams_bot_conversations').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, sync_benefits_to_xero').eq('company_id', companyId).maybeSingle(),
@@ -295,12 +332,14 @@ export default function AdminIntegrations() {
       supabase.from('company_features').select('feature_key, is_enabled, is_visible, monthly_query_limit, monthly_queries_used, usage_period_start').eq('company_id', companyId),
       supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at, approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, settings_updated_at, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email, schedule_templates_cache, passes_enabled, passes_ready, passes_status_detail').eq('company_id', companyId).maybeSingle(),
       supabase.from('companies').select('identity_provider').eq('id', companyId).single(),
+      supabase.from('slack_integrations').select('*').eq('company_id', companyId).maybeSingle(),
     ])
     if (companyRes.data?.identity_provider) setIdentityProvider(companyRes.data.identity_provider as 'entra' | 'google_workspace')
 
     if (featuresRes.data) {
       const fm = new Map(featuresRes.data.map(f => [f.feature_key, f]))
       setTeamsSubscribed(fm.get('teams_integration')?.is_enabled === true)
+      setSlackSubscribed(fm.get('slack_integration')?.is_enabled === true)
       const aiRow = fm.get('ai_help_agent') as Record<string, unknown> | undefined
       const eaiRow = fm.get('enterprise_ai')
       setAiHelpEnabled(aiRow?.is_enabled === true && ((aiRow?.is_visible as boolean) ?? true))
@@ -314,6 +353,7 @@ export default function AdminIntegrations() {
       setAiMonthlyUsed(periodStart && periodStart < monthStart ? 0 : mUsed)
     } else {
       setTeamsSubscribed(false)
+      setSlackSubscribed(false)
       setAiHelpEnabled(false)
       setEaiEnabled(false)
     }
@@ -397,6 +437,16 @@ export default function AdminIntegrations() {
       setIfoSchedulingAvailable(hasScheduleTemplates)
     }
 
+    const slackData = slackRes.data as SlackIntegration | null
+    setSlackIntegration(slackData)
+    if (slackData) {
+      setSlackWebhookUrl(slackData.webhook_url ? '••••••••••••••••' : '')
+      setSlackChannel(slackData.default_channel || '')
+    } else {
+      setSlackWebhookUrl('')
+      setSlackChannel('')
+    }
+
     // Load Xero employee sync status
     if (xeroRes.data && (xeroRes.data as XeroIntegration).sync_status === 'connected') {
       const { data: emps } = await supabase
@@ -418,6 +468,7 @@ export default function AdminIntegrations() {
 
   useEffect(() => {
     setTeamsExpanded(false)
+    setSlackExpanded(false)
     setXeroExpanded(false)
     setSageExpanded(false)
     setModulrExpanded(false)
@@ -444,6 +495,82 @@ export default function AdminIntegrations() {
       setXeroExpanded(true)
     }
   }, [])
+
+  // ── Slack handlers ────────────────────────────────────────────────────────
+
+  const slackEnabled = slackIntegration?.is_enabled ?? false
+  const slackConnected = !!(slackIntegration?.webhook_url)
+
+  async function toggleSlack() {
+    if (!companyId || !slackSubscribed) return
+    setSaving(true)
+    const newEnabled = !slackIntegration?.is_enabled
+    if (slackIntegration) {
+      const { error } = await supabase.from('slack_integrations').update({ is_enabled: newEnabled, updated_at: new Date().toISOString() }).eq('company_id', companyId)
+      if (error) { showError('Failed to update: ' + error.message); setSaving(false); return }
+    } else {
+      const { error } = await supabase.from('slack_integrations').insert({ company_id: companyId, is_enabled: newEnabled })
+      if (error) { showError('Failed to save: ' + error.message); setSaving(false); return }
+    }
+    showSuccess(`Slack integration ${newEnabled ? 'enabled' : 'disabled'}`)
+    await loadAll()
+    setSaving(false)
+  }
+
+  async function saveSlackConfig() {
+    if (!companyId) return
+    if (!slackWebhookUrl.trim() || slackWebhookUrl.startsWith('••')) { showError('Please enter a valid Slack Webhook URL'); return }
+    setSlackSaving(true)
+    const updates: Record<string, unknown> = {
+      webhook_url: slackWebhookUrl.trim(),
+      default_channel: slackChannel.trim() || null,
+      is_enabled: true,
+      connected_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    if (slackIntegration) {
+      const { error } = await supabase.from('slack_integrations').update(updates).eq('company_id', companyId)
+      if (error) { showError('Failed to save: ' + error.message); setSlackSaving(false); return }
+    } else {
+      const { error } = await supabase.from('slack_integrations').insert({ company_id: companyId, ...updates })
+      if (error) { showError('Failed to save: ' + error.message); setSlackSaving(false); return }
+    }
+    showSuccess('Slack webhook saved')
+    await loadAll()
+    setSlackSaving(false)
+  }
+
+  async function testSlackWebhook() {
+    if (!slackIntegration?.webhook_url) { showError('Save a webhook URL first'); return }
+    setSlackTesting(true)
+    try {
+      const res = await fetch(slackIntegration.webhook_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: '✅ InflowHR test notification — Slack integration is working!' }),
+      })
+      if (res.ok) showSuccess('Test message sent to Slack')
+      else showError('Slack returned an error — check your webhook URL')
+    } catch {
+      showError('Failed to reach Slack — check your webhook URL')
+    }
+    setSlackTesting(false)
+  }
+
+  async function disconnectSlack() {
+    if (!companyId || !slackIntegration) return
+    if (!confirm('Disconnect Slack integration? Notifications will stop being sent to Slack.')) return
+    const { error } = await supabase.from('slack_integrations').delete().eq('company_id', companyId)
+    if (error) { showError('Failed to disconnect: ' + error.message); return }
+    showSuccess('Slack disconnected')
+    await loadAll()
+  }
+
+  async function updateSlackNotifySetting(key: string, value: boolean) {
+    if (!companyId || !slackIntegration) return
+    await supabase.from('slack_integrations').update({ [key]: value, updated_at: new Date().toISOString() }).eq('company_id', companyId)
+    await loadAll()
+  }
 
   // ── Daily Limit ─────────────────────────────────────────────
 
@@ -1044,6 +1171,131 @@ export default function AdminIntegrations() {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Slack Card ── */}
+        <div style={cardStyle(slackSubscribed)}>
+          {!slackSubscribed && (
+            <div style={{ position: 'absolute', top: 12, right: 16, background: '#6366f1', color: '#fff', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, pointerEvents: 'auto' }}>
+              Pack B subscription required
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: slackSubscribed ? 'pointer' : 'default' }}
+            onClick={() => slackSubscribed && setSlackExpanded(!slackExpanded)}>
+            <SlackLogo />
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Slack</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+                Post HR notifications to Slack channels
+              </p>
+            </div>
+            {slackSubscribed && statusBadge(slackEnabled ? (slackConnected ? 'connected' : 'not_connected') : 'not_connected')}
+            {slackSubscribed && (
+              <label className="admin-toggle-switch" onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={slackEnabled} onChange={toggleSlack} disabled={saving} />
+                <span className="admin-toggle-slider" />
+              </label>
+            )}
+            {slackSubscribed && (
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(slackExpanded)}>
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            )}
+          </div>
+
+          {slackExpanded && slackEnabled && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{
+                ...sectionStyle,
+                border: `1px solid ${slackConnected ? '#c8e6c9' : '#fff3e0'}`,
+                background: slackConnected ? 'rgba(232,245,233,.5)' : 'rgba(255,248,225,.5)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={slackConnected ? '#2e7d32' : '#e65100'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {slackConnected
+                      ? <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>
+                      : <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>
+                    }
+                  </svg>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: slackConnected ? '#2e7d32' : '#e65100' }}>
+                    {slackConnected ? 'Webhook configured' : 'Webhook setup required'}
+                  </span>
+                </div>
+                {slackConnected && slackIntegration?.default_channel && (
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #666)' }}>Channel: #{slackIntegration.default_channel}</p>
+                )}
+              </div>
+
+              <div style={sectionStyle}>
+                <p style={{ margin: '0 0 16px', fontWeight: 700, fontSize: 14, color: 'var(--text, #333)' }}>Webhook Configuration</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Incoming Webhook URL</label>
+                    <input type="text" value={slackWebhookUrl} onChange={e => setSlackWebhookUrl(e.target.value)}
+                      placeholder="https://hooks.slack.com/services/T.../B.../..." style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Default Channel (optional)</label>
+                    <input type="text" value={slackChannel} onChange={e => setSlackChannel(e.target.value)}
+                      placeholder="e.g. hr-notifications" style={{ ...inputStyle, fontFamily: 'inherit' }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+                  <button onClick={saveSlackConfig} disabled={slackSaving} style={{ background: '#4A154B', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: slackSaving ? 'not-allowed' : 'pointer', opacity: slackSaving ? 0.6 : 1 }}>
+                    {slackSaving ? 'Saving...' : 'Save Webhook'}
+                  </button>
+                  {slackConnected && (
+                    <button onClick={testSlackWebhook} disabled={slackTesting} style={{ background: 'var(--bg-card, #fff)', color: '#4A154B', border: '1px solid #4A154B', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: slackTesting ? 'not-allowed' : 'pointer' }}>
+                      {slackTesting ? 'Sending...' : 'Send Test Message'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {slackConnected && (
+                <div style={sectionStyle}>
+                  <p style={{ margin: '0 0 16px', fontWeight: 700, fontSize: 14, color: 'var(--text, #333)' }}>Notification Settings</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {[
+                      { key: 'notify_leave_requests', label: 'Leave requests & approvals' },
+                      { key: 'notify_expense_claims', label: 'Expense claims & approvals' },
+                      { key: 'notify_shift_changes', label: 'Shift changes & swaps' },
+                      { key: 'notify_onboarding', label: 'Onboarding & offboarding updates' },
+                    ].map(item => (
+                      <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                        <input type="checkbox"
+                          checked={(slackIntegration as any)?.[item.key] ?? true}
+                          onChange={e => updateSlackNotifySetting(item.key, e.target.checked)}
+                          style={{ width: 16, height: 16, accentColor: '#4A154B' }}
+                        />
+                        <span style={{ fontSize: 14, color: 'var(--text, #333)' }}>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {slackConnected && canDisconnect && (
+                <button onClick={disconnectSlack} style={{ background: 'none', border: 'none', color: '#d32f2f', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '8px 0' }}>
+                  Disconnect Slack
+                </button>
+              )}
+
+              {!slackConnected && (
+                <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', borderColor: '#d0d4f0' }}>
+                  <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                    <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: 15 }}>How to set up Slack notifications</p>
+                    <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 2 }}>
+                      <li>Create a <strong>Slack App</strong> at <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" style={{ color: '#4A154B' }}>api.slack.com/apps</a></li>
+                      <li>Enable <strong>Incoming Webhooks</strong> and add a new webhook to your workspace</li>
+                      <li>Select the channel where HR notifications should be posted</li>
+                      <li>Copy the <strong>Webhook URL</strong> and paste it above</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
