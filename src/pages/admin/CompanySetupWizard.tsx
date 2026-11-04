@@ -272,14 +272,14 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
     if (!existingTypes || existingTypes.length === 0) {
       const defaultLeaveTypes = [
-        { name: 'Annual Leave', company_id: companyId, deducts_from_allowance: true },
-        { name: 'Sick Leave', company_id: companyId, deducts_from_allowance: false },
-        { name: 'Jury Duty', company_id: companyId, deducts_from_allowance: false },
-        { name: 'Bereavement', company_id: companyId, deducts_from_allowance: true },
-        { name: 'Exam Leave', company_id: companyId, deducts_from_allowance: true },
-        { name: 'Carers Leave', company_id: companyId, deducts_from_allowance: true },
-        { name: 'Career Break', company_id: companyId, deducts_from_allowance: true },
-        { name: 'Lieu Days', company_id: companyId, deducts_from_allowance: false },
+        { name: 'Annual Leave', company_id: companyId, default_allowance: 25, deducts_from_allowance: true },
+        { name: 'Sick Leave', company_id: companyId, default_allowance: 10, deducts_from_allowance: false },
+        { name: 'Jury Duty', company_id: companyId, default_allowance: 10, deducts_from_allowance: false },
+        { name: 'Bereavement', company_id: companyId, default_allowance: 5, deducts_from_allowance: false },
+        { name: 'Exam Leave', company_id: companyId, default_allowance: 0, deducts_from_allowance: false },
+        { name: 'Carers Leave', company_id: companyId, default_allowance: 5, deducts_from_allowance: false },
+        { name: 'Career Break', company_id: companyId, default_allowance: 0, deducts_from_allowance: false },
+        { name: 'Lieu Days', company_id: companyId, default_allowance: 0, deducts_from_allowance: false },
       ]
       const { error: leaveTypesErr } = await supabase.from('leave_types').insert(defaultLeaveTypes)
       if (leaveTypesErr) { showError('Failed to create leave types: ' + leaveTypesErr.message); return }
@@ -301,7 +301,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         { company_id: companyId, feature_key: 'payroll', is_enabled: false },
         { company_id: companyId, feature_key: 'performance', is_enabled: false },
         { company_id: companyId, feature_key: 'shifts', is_enabled: false },
-        { company_id: companyId, feature_key: 'benefits', is_enabled: false },
+        { company_id: companyId, feature_key: 'benefits', is_enabled: true },
         { company_id: companyId, feature_key: 'legal_timesheets', is_enabled: false },
         { company_id: companyId, feature_key: 'space_booking', is_enabled: false },
         { company_id: companyId, feature_key: 'email_notifications', is_enabled: false },
