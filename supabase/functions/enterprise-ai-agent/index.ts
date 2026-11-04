@@ -326,6 +326,47 @@ function formatUKDate(dateStr: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+// ── Deterministic query → server_query type matcher ──
+function matchServerQuery(q: string): string | null {
+  const lower = q.toLowerCase()
+
+  // Employee-level
+  if (/\b(probation|probation end|probation review)\b/.test(lower) && /\b(my|when|how long)\b/.test(lower))
+    return 'my_probation_end'
+  if (/\b(document|documents)\b/.test(lower) && /\b(pending|expired|upload|missing|my)\b/.test(lower))
+    return 'my_documents_pending'
+  if (/\b(pending|waiting)\b/.test(lower) && /\b(approval|request|leave request|expense)\b/.test(lower) && /\b(my|i|am i|do i)\b/.test(lower))
+    return 'my_pending_approvals'
+  if (/\b(who is off|who.?s off|on leave today|off today|off sick today|who is on leave)\b/.test(lower) && /\b(team|my team|department)\b/.test(lower))
+    return 'team_on_leave_today'
+  if (/\b(who is off|who.?s off|on leave today|off today|who is on leave)\b/.test(lower) && !/\b(company|all|everyone|across)\b/.test(lower))
+    return 'team_on_leave_today'
+  if (/\b(birthday|birthdays)\b/.test(lower) && /\b(team|coming|upcoming|this month|next)\b/.test(lower))
+    return 'upcoming_team_birthdays'
+
+  // Manager-level
+  if (/\b(pending leave|leave request)\b/.test(lower) && /\b(team|my team|direct report)\b/.test(lower))
+    return 'my_team_pending_leave'
+  if (/\b(e.?learning|training|course)\b/.test(lower) && /\b(team|incomplete|not finished|progress)\b/.test(lower))
+    return 'my_team_elearning_incomplete'
+  if (/\b(absence|sick day|absent)\b/.test(lower) && /\b(team|my team)\b/.test(lower) && /\b(day|rate|total|how many)\b/.test(lower))
+    return 'my_team_absence_days'
+
+  // Admin/HR-level
+  if (/\b(headcount|how many employees|how many staff|how many people|employee count|total employees)\b/.test(lower))
+    return 'company_headcount'
+  if (/\b(absence rate|sick days? this|sickness rate|absence this month)\b/.test(lower) && !/\b(my team)\b/.test(lower))
+    return 'company_absence_rate'
+  if (/\b(who is off|who.?s off|on leave today|off today)\b/.test(lower) && /\b(company|all|everyone|across|whole)\b/.test(lower))
+    return 'company_on_leave_today'
+  if (/\b(new starter|new starters|who joined|recently joined|new hire|new employee)\b/.test(lower))
+    return 'company_new_starters'
+  if (/\b(probation)\b/.test(lower) && /\b(due|ending|review|coming up|soon)\b/.test(lower) && !/\b(my)\b/.test(lower))
+    return 'company_probation_due'
+
+  return null
+}
+
 // ── Build full-context system prompt from company config tables ──────────
 async function buildCompanyContext(
   sb: ReturnType<typeof createClient>,
@@ -517,6 +558,25 @@ Deno.serve(async (req) => {
     const companyContext = await buildCompanyContext(sb, company_id, employeeId, query)
 
     const userRole = superAdmin ? 'admin' : (cu?.role || 'employee')
+
+    // ── Deterministic server query matcher — bypass AI for clear data questions ──
+    const directQueryType = matchServerQuery(query)
+    if (directQueryType) {
+      const { data: result, error: rpcErr } = await sb.rpc('ai_data_query', {
+        p_query_type: directQueryType,
+        p_company_id: company_id,
+        p_employee_id: employeeId,
+        p_user_role: userRole,
+        p_params: {},
+      })
+      if (!rpcErr && result) {
+        const formatted = formatServerResult(directQueryType, result as Record<string, unknown>)
+        await sb.from('enterprise_ai_audit').insert({
+          company_id, employee_id: employeeId, success: true, tool_called: `server_query:${directQueryType}`,
+        }).select().maybeSingle()
+        return json({ server_answer: formatted })
+      }
+    }
 
     const systemPrompt = `You are an intelligent, context-aware HR assistant for this company. You have deep knowledge of the company's policies from their employee handbook, leave types, benefits, FAQ articles, and the employee's own profile.
 
