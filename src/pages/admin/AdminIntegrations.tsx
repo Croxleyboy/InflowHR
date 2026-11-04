@@ -550,7 +550,13 @@ export default function AdminIntegrations() {
           message: '✅ InflowHR test notification — Slack integration is working!',
         },
       })
-      if (error) { showError('Failed to send test: ' + error.message); setSlackTesting(false); return }
+      if (error) {
+        let msg = error.message
+        try { const body = await (error as unknown as { context: Response }).context.json(); msg = body?.error || msg } catch { /* use default */ }
+        showError('Failed to send test: ' + msg)
+        setSlackTesting(false)
+        return
+      }
       if (data?.success) showSuccess('Test message sent to Slack')
       else showError(data?.error || 'Slack returned an error — check your webhook URL')
     } catch {
