@@ -87,6 +87,7 @@ const STEP_TYPE_META: Record<string, { label: string; color: string; bg: string;
   it_provisioning:  { label: 'IT / Provisioning',  color: '#6366f1', bg: '#eef2ff', icon: '💻', desc: 'IT tasks — accounts, equipment, access' },
   checklist:        { label: 'Checklist / To-Do',  color: '#64748b', bg: '#f8fafc', icon: '📋', desc: 'Simple tick-off item, no automation' },
   survey:           { label: 'Survey',             color: '#0d9488', bg: '#f0fdfa', icon: '📊', desc: 'Assigns a survey to the starter or leaver' },
+  slack_message:    { label: 'Slack Message',      color: '#4A154B', bg: '#f5f0f6', icon: '💬', desc: 'Posts an HR message to a Slack channel' },
   action:           { label: 'HR Action',          color: '#7c3aed', bg: '#f5f3ff', icon: '☑️', desc: 'Manual task completed by ticking off' },
   notice:           { label: 'App Notification',   color: '#ea580c', bg: '#fff7ed', icon: '🔔', desc: 'Creates an in-app notification, auto-completes' },
 }
@@ -434,8 +435,9 @@ export default function AdminOnboarding() {
 
   // Custom workflow steps state
   interface StepConfig {
-    step_type?: 'hr_action' | 'email' | 'app_notification' | 'meeting' | 'elearning' | 'approval' | 'it_provisioning' | 'checklist' | 'survey' | 'action' | 'notice'
+    step_type?: 'hr_action' | 'email' | 'app_notification' | 'meeting' | 'elearning' | 'approval' | 'it_provisioning' | 'checklist' | 'survey' | 'slack_message' | 'action' | 'notice'
     survey_id?: string
+    slack_channel?: string
     assignee_role?: 'hr_admin' | 'line_manager' | 'it_contact' | 'starter_leaver' | 'finance' | 'custom'
     relative_due_days?: number
     relative_due_anchor?: 'start_date' | 'leave_date' | 'effective_date'
@@ -465,6 +467,8 @@ export default function AdminOnboarding() {
   const [stepNotifSending, setStepNotifSending] = useState<string | null>(null)
   const [companySurveys, setCompanySurveys] = useState<{ id: string; title: string }[]>([])
   const [surveyAssigning, setSurveyAssigning] = useState<string | null>(null)
+  const [slackConfig, setSlackConfig] = useState<{ is_enabled: boolean; default_channel: string | null } | null>(null)
+  const [slackSending, setSlackSending] = useState<string | null>(null)
 
   // Workflow detail panel state
   interface ChecklistItem { id: number; step_key: string; label: string; sort_order: number }
@@ -689,6 +693,7 @@ export default function AdminOnboarding() {
       loadCompanyContacts()
       loadSyncStatus()
       supabase.from('company_surveys').select('id, title').eq('company_id', selectedCompanyId).then(({ data }) => { if (data) setCompanySurveys(data) })
+      supabase.from('slack_integrations').select('is_enabled, default_channel').eq('company_id', selectedCompanyId).maybeSingle().then(({ data }) => { setSlackConfig(data || null) })
       // Load identity provider settings
       supabase.from('companies').select('identity_provider, skip_licence_assignment').eq('id', selectedCompanyId).maybeSingle().then(({ data }) => {
         if (data) {
@@ -941,6 +946,30 @@ export default function AdminOnboarding() {
         showError(`Failed to send notification email to ${email}`)
         return false
       }
+    }
+  }
+
+  async function sendSlackStepNotification(stepConfig: StepConfig, record: any, stepLabel: string) {
+    if (!selectedCompanyId || !stepConfig) return false
+    if (!slackConfig?.is_enabled) { showError('Slack is not enabled for this company — configure it in Integrations first'); return false }
+    const channel = stepConfig.slack_channel || slackConfig.default_channel || ''
+    const body = resolveStepPlaceholders(stepConfig.notify_body || `${stepLabel}: ${record.firstname} ${record.surname}`, record)
+    try {
+      const { data, error } = await supabase.functions.invoke('send-slack-notification', {
+        body: { company_id: selectedCompanyId, message: body, channel: channel || undefined },
+      })
+      if (error) {
+        let msg = error.message
+        try { const errBody = await (error as unknown as { context: Response }).context.json(); msg = errBody?.error || msg } catch { /* use default */ }
+        showError('Slack send failed: ' + msg)
+        return false
+      }
+      if (data?.success) { showSuccess(`Message sent to Slack${channel ? ` #${channel}` : ''}`); return true }
+      showError(data?.error || 'Slack returned an error')
+      return false
+    } catch {
+      showError('Failed to reach Slack — check your integration settings')
+      return false
     }
   }
 
@@ -4203,6 +4232,38 @@ export default function AdminOnboarding() {
                     </div>
                   )}
 
+                  {/* Slack message card */}
+                  {step.step_config?.step_type === 'slack_message' && selectedRecord && !done && (
+                    <div style={{ margin: '0 0 20px', padding: 10, border: '1px solid #d8b4fe', borderRadius: 8, background: '#f5f0f6' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, color: '#4A154B', fontWeight: 600 }}>
+                          💬 Slack Message → #{step.step_config.slack_channel || slackConfig?.default_channel || 'default channel'}
+                        </span>
+                        {step.step_config.requires_step && (() => {
+                          const reqDone = stepChecks[step.step_config.requires_step!]
+                          return !reqDone ? <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {activeSteps.find(s => s.step_key === step.step_config!.requires_step)?.label || step.step_config.requires_step}</span> : null
+                        })()}
+                        <button
+                          className="admin-btn-sm admin-btn-save"
+                          disabled={slackSending === step.step_key || !slackConfig?.is_enabled || (!!step.step_config.requires_step && !stepChecks[step.step_config.requires_step])}
+                          onClick={async () => {
+                            setSlackSending(step.step_key)
+                            await sendSlackStepNotification(step.step_config!, selectedRecord, step.label)
+                            setSlackSending(null)
+                          }}
+                          style={{ fontSize: 12, padding: '4px 12px', background: '#4A154B', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                        >
+                          {slackSending === step.step_key ? 'Sending...' : '💬 Send to Slack'}
+                        </button>
+                      </div>
+                      {step.step_config.notify_body && (
+                        <div style={{ marginTop: 6, fontSize: 11, color: '#6b21a8' }}>
+                          Preview: {resolveStepPlaceholders(step.step_config.notify_body, selectedRecord).substring(0, 120)}{(step.step_config.notify_body?.length || 0) > 120 ? '...' : ''}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Survey assignment card */}
                   {step.step_config?.step_type === 'survey' && step.step_config?.survey_id && selectedRecord && !done && (
                     <div style={{ margin: '0 0 20px', padding: 12, border: '1px solid #99f6e4', borderRadius: 8, background: '#f0fdfa' }}>
@@ -5457,6 +5518,40 @@ export default function AdminOnboarding() {
                         {offCfg.meeting && (
                           <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
                             Meeting: {resolveStepPlaceholders(offCfg.meeting.title || '', record)} · Attendees: {offCfg.meeting.attendees?.join(', ') || 'manager, leaver'}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Slack message card (offboarding) */}
+                  {(() => {
+                    const offSlackCfg = (offboardCustomSteps.find(cs => cs.step_key === stepKey)?.step_config) as StepConfig | undefined
+                    if (!offSlackCfg || offSlackCfg.step_type !== 'slack_message' || done || skipped) return null
+                    const offSlackReqDone = offSlackCfg.requires_step ? offboardChecks[offSlackCfg.requires_step] : true
+                    return (
+                      <div style={{ margin: '0 0 20px', padding: 10, border: '1px solid #d8b4fe', borderRadius: 8, background: '#f5f0f6' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, color: '#4A154B', fontWeight: 600 }}>
+                            💬 Slack Message → #{offSlackCfg.slack_channel || slackConfig?.default_channel || 'default channel'}
+                          </span>
+                          {offSlackCfg.requires_step && !offSlackReqDone && <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {OFFBOARD_STEPS.find(s => s.key === offSlackCfg.requires_step)?.label || offSlackCfg.requires_step}</span>}
+                          <button
+                            className="admin-btn-sm admin-btn-save"
+                            disabled={slackSending === stepKey || !slackConfig?.is_enabled || !offSlackReqDone}
+                            onClick={async () => {
+                              setSlackSending(stepKey)
+                              await sendSlackStepNotification(offSlackCfg, record, currentStep.label)
+                              setSlackSending(null)
+                            }}
+                            style={{ fontSize: 12, padding: '4px 12px', background: '#4A154B', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                          >
+                            {slackSending === stepKey ? 'Sending...' : '💬 Send to Slack'}
+                          </button>
+                        </div>
+                        {offSlackCfg.notify_body && (
+                          <div style={{ marginTop: 6, fontSize: 11, color: '#6b21a8' }}>
+                            Preview: {resolveStepPlaceholders(offSlackCfg.notify_body, record).substring(0, 120)}{(offSlackCfg.notify_body?.length || 0) > 120 ? '...' : ''}
                           </div>
                         )}
                       </div>
@@ -7866,6 +7961,19 @@ export default function AdminOnboarding() {
                                 {companySurveys.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
                               </select>
                               {companySurveys.length === 0 && <span style={{ fontSize: 11, color: '#dc2626' }}>No surveys created yet — create one in Surveys &amp; Feedback first</span>}
+                            </div>
+                          )}
+
+                          {/* Slack channel — shown when type is slack_message */}
+                          {cfg.step_type === 'slack_message' && (
+                            <div style={{ marginBottom: 8 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
+                                <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Slack Channel:</label>
+                                <input className="admin-input" value={cfg.slack_channel || ''} onChange={e => updateCfg({ slack_channel: e.target.value.replace(/^#/, '') })} placeholder={slackConfig?.default_channel || 'e.g. hr-notifications'} style={{ fontSize: 12, maxWidth: 220 }} />
+                                {slackConfig?.default_channel && !cfg.slack_channel && <span style={{ fontSize: 11, color: '#888' }}>Using default: #{slackConfig.default_channel}</span>}
+                              </div>
+                              {!slackConfig?.is_enabled && <span style={{ fontSize: 11, color: '#dc2626' }}>Slack is not enabled — configure it in Integrations first</span>}
+                              {features.slack_integration && slackConfig?.is_enabled && <span style={{ fontSize: 11, color: '#059669' }}>Slack connected</span>}
                             </div>
                           )}
 
