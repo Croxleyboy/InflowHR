@@ -134,7 +134,7 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   pay: ['pay', 'salary', 'wage', 'payslip', 'payroll', 'tax', 'pension', 'bonus', 'overtime', 'deduction', 'earnings', 'toil', 'national insurance', 'student loan', 'raise', 'increment'],
   shifts: ['shift', 'rota', 'schedule', 'roster', 'swap', 'working hours', 'overtime', 'night shift', 'weekend'],
   timesheets: ['timesheet', 'hours', 'clock', 'time tracking', 'time entry', 'check in'],
-  benefits: ['benefit', 'pension', 'health', 'dental', 'gym', 'cycle', 'childcare', 'voucher', 'perk', 'wellbeing', 'eye test', 'flu jab'],
+  benefits: ['benefit', 'scheme', 'pension', 'health', 'dental', 'gym', 'cycle', 'childcare', 'voucher', 'perk', 'wellbeing', 'eye test', 'flu jab'],
   rooms: ['room', 'booking', 'meeting room', 'desk', 'space', 'office'],
   elearning: ['training', 'elearning', 'course', 'learning', 'development', 'cpd', 'certification'],
   kudos: ['kudos', 'recognition', 'praise', 'thank', 'appreciation', 'reward', 'shout out'],
