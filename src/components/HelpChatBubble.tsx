@@ -863,6 +863,46 @@ export default function HelpChatBubble() {
 
     setMessages(prev => [...prev, { role: 'user', text: q }])
 
+    // ── Tier 0: Data-intent queries go straight to the edge function ──
+    // The edge function uses a deterministic matcher (no AI, no token cost)
+    // that maps common questions directly to database queries.
+    // This runs BEFORE FAQ search so data questions never get blocked by
+    // irrelevant FAQ text matches.
+    if (hasDataIntent(q) && features.ai_help_agent && session) {
+      try {
+        const { ok, data } = await callAiAgent(q, 'full')
+        if (ok && data.server_answer) {
+          logSearch(q, true, 0, null, true)
+          setMessages(prev => [...prev, { role: 'bot', text: data.server_answer as string }])
+          setLoading(false)
+          scrollToBottom()
+          return
+        }
+        if (ok && data.tool_call && employeeId && companyId) {
+          const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
+          if (result) {
+            logSearch(q, true, 0, null, true)
+            setMessages(prev => [...prev, { role: 'bot', text: result }])
+          } else {
+            logSearch(q, false, 0, null, true)
+            setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
+          }
+          setLoading(false)
+          scrollToBottom()
+          return
+        }
+        if (ok && data.answer) {
+          logSearch(q, true, 0, null, true)
+          setMessages(prev => [...prev, { role: 'bot', text: data.answer as string }])
+          setLoading(false)
+          scrollToBottom()
+          return
+        }
+      } catch {
+        // Fall through to FAQ search below
+      }
+    }
+
     // ── Tier 1: FAQ text search (zero AI cost) ──
     const articles = await searchArticles(q)
     if (articles.length > 0) {
@@ -878,41 +918,9 @@ export default function HelpChatBubble() {
       return
     }
 
-    // ── Tier 2+: AI-powered responses ──
+    // ── Tier 2+: AI-powered responses (non-data questions only) ──
     if (features.ai_help_agent && session) {
       try {
-        // Personal data queries go straight to AI with full context
-        if (hasDataIntent(q)) {
-          const { ok, data } = await callAiAgent(q, 'full')
-          if (ok && data.server_answer) {
-            logSearch(q, true, 0, null, true)
-            setMessages(prev => [...prev, { role: 'bot', text: data.server_answer as string }])
-            setLoading(false)
-            scrollToBottom()
-            return
-          }
-          if (ok && data.tool_call && employeeId && companyId) {
-            const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
-            if (result) {
-              logSearch(q, true, 0, null, true)
-              setMessages(prev => [...prev, { role: 'bot', text: result }])
-            } else {
-              logSearch(q, false, 0, null, true)
-              setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
-            }
-            setLoading(false)
-            scrollToBottom()
-            return
-          }
-          if (ok && data.answer) {
-            logSearch(q, true, 0, null, true)
-            setMessages(prev => [...prev, { role: 'bot', text: data.answer as string }])
-            setLoading(false)
-            scrollToBottom()
-            return
-          }
-        }
-
         // Tier 2: Handbook search (if company has handbook — smaller prompt, ~75% fewer tokens)
         if (hasHandbook) {
           const { ok, data } = await callAiAgent(q, 'handbook_only')
@@ -988,7 +996,7 @@ export default function HelpChatBubble() {
     logSearch(q, false, 0, null)
     setMessages(prev => [...prev, {
       role: 'bot',
-      text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
+      text: "Sorry, the HR AI couldn't find a better answer. Try rephrasing your question or contact your HR team directly for help.",
       askAiQuery: features.ai_help_agent && session ? q : undefined,
     }])
     setShowChips(true)
