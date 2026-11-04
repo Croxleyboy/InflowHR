@@ -215,9 +215,6 @@ export default function AdminIntegrations() {
   const [aiHelpStats, setAiHelpStats] = useState<{ total: number; aiTotal: number; today: number; aiToday: number } | null>(null)
   const [aiMonthlyLimit, setAiMonthlyLimit] = useState<number | null>(null)
   const [aiMonthlyUsed, setAiMonthlyUsed] = useState(0)
-  const [aiQueryLog, setAiQueryLog] = useState<{ first_name: string; last_initial: string; total: number; today: number }[]>([])
-  const [aiQueryLogPage, setAiQueryLogPage] = useState(0)
-  const [aiQueryLogLoading, setAiQueryLogLoading] = useState(false)
   const [aiDailyLimit, setAiDailyLimit] = useState(20)
   const [aiDailyLimitSaving, setAiDailyLimitSaving] = useState(false)
   // Enterprise AI state
@@ -330,8 +327,7 @@ export default function AdminIntegrations() {
     ])
     setAiHelpStats({ total: allTotalRes.count || 0, aiTotal: aiTotalRes.count || 0, today: allTodayRes.count || 0, aiToday: aiTodayRes.count || 0 })
 
-    // AI query log + daily limit
-    loadAiQueryLog()
+    // Daily limit config
     const { data: limitRow } = await supabase
       .from('company_settings')
       .select('value')
@@ -449,65 +445,7 @@ export default function AdminIntegrations() {
     }
   }, [])
 
-  // ── AI Query Log & Daily Limit ─────────────────────────────────────────────
-
-  async function loadAiQueryLog() {
-    if (!companyId) return
-    setAiQueryLogLoading(true)
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    const since = sevenDaysAgo.toISOString()
-    const todayStr = new Date().toISOString().slice(0, 10)
-
-    const { data } = await supabase
-      .from('help_search_logs')
-      .select('employee_id, created_at, ai_generated')
-      .eq('company_id', companyId)
-      .gte('created_at', since)
-      .not('employee_id', 'is', null)
-
-    if (data) {
-      const byEmp: Record<number, { total: number; today: number; aiTotal: number; aiToday: number }> = {}
-      for (const row of data) {
-        const eid = row.employee_id as number
-        if (!byEmp[eid]) byEmp[eid] = { total: 0, today: 0, aiTotal: 0, aiToday: 0 }
-        byEmp[eid].total += 1
-        if (row.ai_generated) byEmp[eid].aiTotal += 1
-        const rowDate = (row.created_at as string).slice(0, 10)
-        if (rowDate === todayStr) {
-          byEmp[eid].today += 1
-          if (row.ai_generated) byEmp[eid].aiToday += 1
-        }
-      }
-
-      const empIds = Object.keys(byEmp).map(Number)
-      if (empIds.length > 0) {
-        const { data: emps } = await supabase
-          .from('employees')
-          .select('id, first_name, last_name')
-          .in('id', empIds)
-          .eq('company_id', companyId)
-
-        const empMap: Record<number, { first_name: string; last_name: string }> = {}
-        for (const e of emps || []) empMap[e.id] = { first_name: e.first_name, last_name: e.last_name }
-
-        const log = empIds
-          .filter(id => empMap[id])
-          .map(id => ({
-            first_name: empMap[id].first_name,
-            last_initial: empMap[id].last_name?.charAt(0) || '',
-            total: byEmp[id].total,
-            today: byEmp[id].today,
-          }))
-          .sort((a, b) => b.total - a.total)
-
-        setAiQueryLog(log)
-      } else {
-        setAiQueryLog([])
-      }
-    }
-    setAiQueryLogLoading(false)
-  }
+  // ── Daily Limit ─────────────────────────────────────────────
 
   async function saveAiDailyLimit(newLimit: number) {
     if (!companyId || newLimit < 1 || newLimit > 999) return
@@ -1428,67 +1366,6 @@ export default function AdminIntegrations() {
                       {aiDailyLimitSaving ? 'Saving…' : 'Save'}
                     </button>
                   </div>
-                </div>
-              )}
-
-              {aiHelpEnabled && (
-                <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <strong style={{ fontSize: 13, color: 'var(--text, #333)' }}>Employee Query Log (last 7 days)</strong>
-                    <button
-                      onClick={() => { setAiQueryLogPage(0); loadAiQueryLog() }}
-                      disabled={aiQueryLogLoading}
-                      style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border, #d0d5dd)', background: 'transparent', fontSize: 12, cursor: 'pointer', color: 'var(--text-muted, #888)' }}
-                    >
-                      {aiQueryLogLoading ? 'Loading…' : 'Refresh'}
-                    </button>
-                  </div>
-                  {aiQueryLog.length === 0 && !aiQueryLogLoading && (
-                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted, #888)' }}>No help queries in the last 7 days.</p>
-                  )}
-                  {aiQueryLog.length > 0 && (
-                    <>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                        <thead>
-                          <tr style={{ borderBottom: '1px solid var(--border, #e0e0e0)' }}>
-                            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-muted, #888)', fontWeight: 600 }}>Employee</th>
-                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-muted, #888)', fontWeight: 600 }}>7-day total</th>
-                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-muted, #888)', fontWeight: 600 }}>Today</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {aiQueryLog.slice(aiQueryLogPage * 10, (aiQueryLogPage + 1) * 10).map((row, i) => (
-                            <tr key={i} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
-                              <td style={{ padding: '6px 8px', color: 'var(--text, #333)' }}>{row.first_name} {row.last_initial}.</td>
-                              <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text, #333)', fontWeight: 600 }}>{row.total}</td>
-                              <td style={{ textAlign: 'right', padding: '6px 8px', color: row.today >= aiDailyLimit ? '#dc2626' : 'var(--text, #333)' }}>{row.today}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {aiQueryLog.length > 10 && (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                          <button
-                            onClick={() => setAiQueryLogPage(p => Math.max(0, p - 1))}
-                            disabled={aiQueryLogPage === 0}
-                            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border, #d0d5dd)', background: 'transparent', fontSize: 12, cursor: aiQueryLogPage === 0 ? 'default' : 'pointer', opacity: aiQueryLogPage === 0 ? 0.4 : 1, color: 'var(--text, #333)' }}
-                          >
-                            ← Previous
-                          </button>
-                          <span style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>
-                            Page {aiQueryLogPage + 1} of {Math.ceil(aiQueryLog.length / 10)}
-                          </span>
-                          <button
-                            onClick={() => setAiQueryLogPage(p => Math.min(Math.ceil(aiQueryLog.length / 10) - 1, p + 1))}
-                            disabled={aiQueryLogPage >= Math.ceil(aiQueryLog.length / 10) - 1}
-                            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border, #d0d5dd)', background: 'transparent', fontSize: 12, cursor: aiQueryLogPage >= Math.ceil(aiQueryLog.length / 10) - 1 ? 'default' : 'pointer', opacity: aiQueryLogPage >= Math.ceil(aiQueryLog.length / 10) - 1 ? 0.4 : 1, color: 'var(--text, #333)' }}
-                          >
-                            Next →
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
                 </div>
               )}
 
