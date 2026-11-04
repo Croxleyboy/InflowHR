@@ -154,6 +154,15 @@ const DATA_INTENT_WORDS = new Set([
   'my benefits', 'enrolled', 'my courses', 'my training', 'progress',
   'bank holiday', 'company holiday', 'next holiday',
   'expenses', 'owed', 'expense claim', 'submitted',
+  'who is off', 'on leave today', 'off today', 'off sick',
+  'headcount', 'how many employees', 'how many staff', 'how many people',
+  'absence rate', 'sick days', 'absence days',
+  'new starters', 'who joined', 'new starter',
+  'probation end', 'probation due', 'probation review',
+  'pending leave', 'pending approval', 'pending request', 'waiting for approval',
+  'team leave', 'team absence', 'team training', 'team e-learning',
+  'my documents', 'expired document', 'pending document',
+  'birthday', 'birthdays',
 ])
 
 function hasDataIntent(text: string): boolean {
