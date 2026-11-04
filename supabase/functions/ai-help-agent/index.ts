@@ -439,7 +439,29 @@ Deno.serve(async (req) => {
       )
     }
 
-    // ── Increment company monthly counter ──
+    const userRole = superAdmin ? 'admin' : (cu?.role || 'employee')
+
+    // ── Deterministic server query matcher — runs FIRST, zero AI cost ──
+    // Matches common data questions via regex and calls the database
+    // directly. No OpenAI key, FAQ loading, or handbook search needed.
+    const directQueryType = matchServerQuery(query)
+    if (directQueryType) {
+      const employeeId = emp?.id ?? 0
+      const { data: result, error: rpcErr } = await sb.rpc('ai_data_query', {
+        p_query_type: directQueryType,
+        p_company_id: company_id,
+        p_employee_id: employeeId,
+        p_user_role: userRole,
+        p_params: {},
+      })
+      if (!rpcErr && result) {
+        await sb.rpc('increment_ai_usage', { p_company_id: company_id })
+        const formatted = formatServerResult(directQueryType, result as Record<string, unknown>)
+        return json({ server_answer: formatted })
+      }
+    }
+
+    // ── AI path: needs OpenAI key, FAQ and handbook context ──
     await sb.rpc('increment_ai_usage', { p_company_id: company_id })
 
     const { data: secretRow } = await sb.from('platform_secrets')
@@ -447,7 +469,6 @@ Deno.serve(async (req) => {
     const apiKey = secretRow?.key_value || Deno.env.get('OPENAI_API_KEY')
     if (!apiKey) return json({ error: 'OpenAI API key not configured. A super admin must add it in Admin > Integrations.' }, 503)
 
-    // ── Load FAQ articles (skip if handbook_only mode) ──
     let faqContext = ''
     if (contextMode !== 'handbook_only') {
       const { data: articles } = await sb.from('help_articles')
@@ -462,7 +483,6 @@ Deno.serve(async (req) => {
         .join('\n\n')
     }
 
-    // ── Search handbook sections (skip if faq_only mode) ──
     let handbookContext = ''
     if (contextMode !== 'faq_only') {
       const searchTerms = query
@@ -486,25 +506,6 @@ Deno.serve(async (req) => {
               `--- Section ${s.section_number}: ${s.title} ---\n${s.content}`
             ).join('\n\n')
         }
-      }
-    }
-
-    const userRole = superAdmin ? 'admin' : (cu?.role || 'employee')
-
-    // ── Deterministic server query matcher — bypass AI for clear data questions ──
-    const directQueryType = matchServerQuery(query)
-    if (directQueryType) {
-      const employeeId = emp?.id ?? 0
-      const { data: result, error: rpcErr } = await sb.rpc('ai_data_query', {
-        p_query_type: directQueryType,
-        p_company_id: company_id,
-        p_employee_id: employeeId,
-        p_user_role: userRole,
-        p_params: {},
-      })
-      if (!rpcErr && result) {
-        const formatted = formatServerResult(directQueryType, result as Record<string, unknown>)
-        return json({ server_answer: formatted })
       }
     }
 
