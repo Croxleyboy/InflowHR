@@ -241,8 +241,8 @@ export default function AdminDashboardModern() {
     setAssetsStats({ total: aNow, change: aPrev > 0 ? Math.round(((aNow - aPrev) / aPrev) * 100) : 0 })
     const hTotal = helpTotalRes.count || 0
     const hAi = helpAiRes.count || 0
-    const activeEmpCount = emp.count || 0
-    setHelpStats({ total: hTotal, ai: hAi, avgPerPerson: activeEmpCount > 0 ? Math.round((hTotal / activeEmpCount) * 10) / 10 : 0 })
+    const empCount = employeeList.length
+    setHelpStats({ total: hTotal, ai: hAi, avgPerPerson: empCount > 0 ? Math.round((hTotal / empCount) * 10) / 10 : 0 })
 
     // ── Card data: employee breakdown, attendance, top assets ──
     const empList = employeeList
@@ -1052,8 +1052,8 @@ const CSS = `
 .dm-loading { padding: 60px; text-align: center; color: #94a3b8; }
 
 /* KPI Strip */
-.dm-kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
-.dm-kpi { display: flex; align-items: center; gap: 14px; background: #fff; border-radius: 16px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); border: 1px solid #eef0f4; cursor: pointer; transition: box-shadow 0.2s, transform 0.15s; }
+.dm-kpi-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 16px; }
+.dm-kpi { display: flex; align-items: center; gap: 12px; background: #fff; border-radius: 16px; padding: 16px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); border: 1px solid #eef0f4; cursor: pointer; transition: box-shadow 0.2s, transform 0.15s; }
 .dm-kpi:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
 .dm-kpi-visual { flex-shrink: 0; }
 .dm-kpi-ring { width: 64px; height: 64px; }
@@ -1254,14 +1254,14 @@ const CSS = `
 .dm-support-revoke:hover:not(:disabled) { background: #b91c1c; }
 
 @media (max-width: 1024px) {
-  .dm-kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .dm-kpi-strip { grid-template-columns: repeat(3, 1fr); }
   .dm-insight-strip { grid-template-columns: 1fr; }
   .dm-grid { grid-template-columns: 1fr; }
   .dm-card-cal, .dm-card-leave, .dm-card-expense, .dm-card-tasks, .dm-card-emps { grid-column: 1; grid-row: auto; }
 }
 @media (max-width: 640px) {
   .dm { padding: 12px; }
-  .dm-kpi-strip { grid-template-columns: 1fr; }
+  .dm-kpi-strip { grid-template-columns: repeat(2, 1fr); }
   .dm-insight-strip { grid-template-columns: 1fr; }
   .dm-cal-cell { min-height: 60px; padding: 4px; }
   .dm-task-row { grid-template-columns: 4px 1fr auto; }
