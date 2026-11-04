@@ -80,7 +80,7 @@ interface EnterpriseAIIntegration {
   company_id: string
   ai_provider: string
   ai_endpoint: string | null
-  ai_api_key: string | null
+  ai_api_key?: string | null
   ai_model: string | null
   ai_api_version: string | null
   is_enabled: boolean
@@ -324,14 +324,14 @@ export default function AdminIntegrations() {
     setAiHelpStats({ total: aiTotalRes.count || 0, today: aiTodayRes.count || 0 })
 
     // Enterprise AI integration + usage
-    const eaiRes = await supabase.from('enterprise_ai_integrations').select('*').eq('company_id', companyId).maybeSingle()
+    const eaiRes = await supabase.from('enterprise_ai_integrations').select('company_id, ai_provider, ai_endpoint, ai_model, ai_api_version, status, status_detail, last_test_at, last_test_ok, is_active, created_at, updated_at').eq('company_id', companyId).maybeSingle()
     const eaiData = eaiRes.data as EnterpriseAIIntegration | null
     setEaiIntegration(eaiData)
     if (eaiData) {
       setEaiEndpoint(eaiData.ai_endpoint || '')
       setEaiModel(eaiData.ai_model || 'gpt-4o')
       setEaiApiVersion(eaiData.ai_api_version || '2024-06-01')
-      setEaiApiKey(eaiData.ai_api_key ? '••••••••••••••••' : '')
+      setEaiApiKey(eaiData.status && eaiData.status !== 'pending' ? '••••••••••••••••' : '')
     } else {
       setEaiEndpoint('')
       setEaiModel('gpt-4o')
@@ -660,7 +660,7 @@ export default function AdminIntegrations() {
     if (!companyId) return
     if (!eaiEndpoint.trim()) { showError('Azure OpenAI Endpoint is required'); return }
     if (!eaiApiKey.trim() || eaiApiKey === '••••••••••••••••') {
-      if (!eaiIntegration?.ai_api_key) { showError('API Key is required'); return }
+      if (!eaiIntegration) { showError('API Key is required'); return }
     }
     eaiSaving || setEaiSaving(true)
     const payload: Record<string, unknown> = {
@@ -685,48 +685,18 @@ export default function AdminIntegrations() {
   async function testEnterpriseAI() {
     if (!companyId) return
     setEaiTesting(true)
-    const endpoint = eaiEndpoint.trim()
-    const model = eaiModel.trim() || 'gpt-4o'
-    const apiVersion = eaiApiVersion.trim() || '2024-06-01'
-    const key = (eaiApiKey.trim() && eaiApiKey !== '••••••••••••••••') ? eaiApiKey.trim() : null
-    if (!endpoint) { showError('Enter your Azure OpenAI endpoint first'); setEaiTesting(false); return }
-    if (!key && !eaiIntegration?.ai_api_key) { showError('Enter your API key first'); setEaiTesting(false); return }
-
-    const testKey = key || eaiIntegration?.ai_api_key || ''
-    const url = `${endpoint.replace(/\/+$/, '')}/openai/deployments/${model}/chat/completions?api-version=${apiVersion}`
     try {
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'api-key': testKey },
-        body: JSON.stringify({ messages: [{ role: 'user', content: 'Say hello' }], max_tokens: 5 }),
+      const { data, error } = await supabase.functions.invoke('test-enterprise-ai', {
+        body: { company_id: companyId },
       })
-      if (resp.ok) {
+      if (error) { showError('Connection test failed: ' + error.message); setEaiTesting(false); loadAll(); return }
+      if (data?.ok) {
         showSuccess('Connection test passed — Azure OpenAI responded successfully')
-        await supabase.from('enterprise_ai_integrations').update({
-          last_test_at: new Date().toISOString(),
-          last_test_ok: true,
-          status: 'connected',
-          status_detail: null,
-        }).eq('company_id', companyId)
       } else {
-        const body = await resp.text().catch(() => '')
-        const detail = resp.status === 401 ? 'Invalid API key' : resp.status === 404 ? 'Model deployment not found — check the model name' : `HTTP ${resp.status}: ${body.slice(0, 120)}`
-        showError('Connection test failed: ' + detail)
-        await supabase.from('enterprise_ai_integrations').update({
-          last_test_at: new Date().toISOString(),
-          last_test_ok: false,
-          status: 'error',
-          status_detail: detail,
-        }).eq('company_id', companyId)
+        showError('Connection test failed: ' + (data?.detail || 'Unknown error'))
       }
     } catch {
-      showError('Connection test failed — could not reach the endpoint. Check the URL.')
-      await supabase.from('enterprise_ai_integrations').update({
-        last_test_at: new Date().toISOString(),
-        last_test_ok: false,
-        status: 'error',
-        status_detail: 'Network error',
-      }).eq('company_id', companyId)
+      showError('Connection test failed — could not reach the test endpoint.')
     }
     setEaiTesting(false)
     loadAll()
