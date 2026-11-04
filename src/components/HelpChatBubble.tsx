@@ -200,15 +200,16 @@ function scoreArticleRelevance(article: HelpArticle, queryWords: string[]): numb
   return score * matchRatio
 }
 
-async function executeDataQuery(queryKey: string, employeeId: string, companyId: string, currency: string, params: Record<string, unknown> = {}): Promise<string> {
+async function executeDataQuery(queryKey: string, employeeId: string, companyId: string, currency: string, params: Record<string, unknown> = {}, userRole: string = 'employee'): Promise<string> {
   switch (queryKey) {
     case 'leave_balance':
     case 'get_leave_balance': {
+      const isAdminOrHr = userRole === 'admin' || userRole === 'hr'
       const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyId).single()
       const { fyYear, fyStart, fyEnd } = getFYRange(co?.fy_start_month || 4)
       const [balRes, reqRes, pendRes] = await Promise.all([
         supabase.from('leave_balances')
-          .select('leave_type_id, total_allowance, carried_over, lieu_days, leave_type:leave_type_id(name)')
+          .select('leave_type_id, total_allowance, carried_over, lieu_days, leave_type:leave_type_id(name, default_allowance)')
           .eq('employee_id', employeeId)
           .eq('company_id', companyId)
           .eq('year', fyYear),
@@ -235,21 +236,33 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
       for (const r of (pendRes.data || [])) {
         pendByType.set(r.leave_type_id, (pendByType.get(r.leave_type_id) || 0) + Number(r.days_requested))
       }
+      const EVENT_TYPES = new Set(['bereavement', 'carers leave', 'jury duty', 'exam leave', 'career break', 'lieu days', 'work from home'])
       const data = balRes.data || []
       const balTypeIds = new Set(data.map((b: any) => b.leave_type_id))
-      const lines: string[] = []
+      const trackedLines: string[] = []
+      const eventLines: string[] = []
       for (const b of data) {
         const total = (b.total_allowance || 0) + (b.carried_over || 0) + (b.lieu_days || 0)
         const used = usedByType.get(b.leave_type_id) || 0
         const pend = pendByType.get(b.leave_type_id) || 0
         const remaining = total - used
         const name = (b as any).leave_type?.name || 'Leave'
-        const parts = [`${b.total_allowance || 0} allowance`]
-        if (b.carried_over) parts.push(`${b.carried_over} carried over`)
-        if (b.lieu_days) parts.push(`${b.lieu_days} in lieu`)
-        let line = `${name}: ${remaining} days remaining (${used} used of ${total} — ${parts.join(', ')})`
-        if (pend > 0) line += ` | ${pend} pending`
-        lines.push(line)
+        const isEvent = EVENT_TYPES.has(name.toLowerCase())
+        if (isEvent) {
+          if (used > 0 || pend > 0 || isAdminOrHr) {
+            let line = `${name}: ${used} day${used !== 1 ? 's' : ''} taken`
+            if (total > 0) line += ` (${remaining} of ${total} remaining)`
+            if (pend > 0) line += ` | ${pend} pending`
+            eventLines.push(line)
+          }
+        } else {
+          const parts = [`${b.total_allowance || 0} allowance`]
+          if (b.carried_over) parts.push(`${b.carried_over} carried over`)
+          if (b.lieu_days) parts.push(`${b.lieu_days} in lieu`)
+          let line = `${name}: ${remaining} days remaining (${used} used of ${total} — ${parts.join(', ')})`
+          if (pend > 0) line += ` | ${pend} pending`
+          trackedLines.push(line)
+        }
       }
       const otherTypeIds = new Set<number>()
       for (const id of usedByType.keys()) { if (!balTypeIds.has(id)) otherTypeIds.add(id) }
@@ -261,16 +274,27 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
           const pend = pendByType.get(lt.id) || 0
           let line = `${lt.name}: ${used} day${used !== 1 ? 's' : ''} taken this year`
           if (pend > 0) line += ` | ${pend} pending`
-          lines.push(line)
+          eventLines.push(line)
         }
       }
-      if (lines.length === 0) return 'No leave balance data found.'
+      const lines = [...trackedLines]
+      if (eventLines.length > 0) {
+        lines.push('')
+        lines.push(...eventLines)
+      }
+      if (lines.length === 0) return 'No leave balance data found for this financial year.'
       const totalRemaining = data.reduce((sum: number, b: any) => {
+        const name = (b as any).leave_type?.name || ''
+        if (EVENT_TYPES.has(name.toLowerCase())) return sum
         const total = (b.total_allowance || 0) + (b.carried_over || 0) + (b.lieu_days || 0)
         return sum + total - (usedByType.get(b.leave_type_id) || 0)
       }, 0)
-      const totalUsed = Array.from(usedByType.values()).reduce((s, v) => s + v, 0)
-      lines.push(`\nTotal: ${totalRemaining} days remaining across tracked types (${totalUsed} used across all types)`)
+      const totalUsed = data.reduce((sum: number, b: any) => {
+        const name = (b as any).leave_type?.name || ''
+        if (EVENT_TYPES.has(name.toLowerCase())) return sum
+        return sum + (usedByType.get(b.leave_type_id) || 0)
+      }, 0)
+      lines.push(`\nTotal: ${totalRemaining} days remaining across tracked types (${totalUsed} used)`)
       return lines.join('\n')
     }
     case 'leave_requests':
@@ -493,9 +517,9 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
   }
 }
 
-async function resolveAnswer(article: HelpArticle, employeeId: string, companyId: string, currency: string): Promise<string> {
+async function resolveAnswer(article: HelpArticle, employeeId: string, companyId: string, currency: string, userRole: string = 'employee'): Promise<string> {
   if (!article.data_query) return article.answer
-  const result = await executeDataQuery(article.data_query, employeeId, companyId, currency)
+  const result = await executeDataQuery(article.data_query, employeeId, companyId, currency, {}, userRole)
   const placeholders: Record<string, string> = {
     leave_balance: result,
     leave_requests: result,
@@ -823,7 +847,7 @@ export default function HelpChatBubble() {
       return true
     }
     if (ok && data.tool_call && employeeId && companyId) {
-      executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
+      executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>, companyUser?.role || 'employee')
         .then(result => {
           if (result) {
             logSearch(q, true, 0, null, true)
@@ -943,7 +967,7 @@ export default function HelpChatBubble() {
     }
     setExpandedArticle(article.id)
     if (!resolvedAnswers[article.id] && article.data_query && employeeId && companyId) {
-      const resolved = await resolveAnswer(article, employeeId, companyId, currency)
+      const resolved = await resolveAnswer(article, employeeId, companyId, currency, companyUser?.role || 'employee')
       setResolvedAnswers(prev => ({ ...prev, [article.id]: resolved }))
     }
     setTimeout(() => {
