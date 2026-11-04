@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
-import { formatCurrency, formatDate, getFYRange } from '../lib/formatters'
+import { formatCurrency, formatDateFriendly as formatDate, getFYRange } from '../lib/formatters'
 
 const ASSISTANT_NAME = 'AI Assistant'
 
