@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useTheme } from '../context/ThemeContext'
-import { formatCurrency, formatDate, getFYRange } from '../lib/formatters'
+import { formatCurrency, formatDateFriendly as formatDate, getFYRange } from '../lib/formatters'
 
 const ASSISTANT_NAME = 'Employee Help'
 
