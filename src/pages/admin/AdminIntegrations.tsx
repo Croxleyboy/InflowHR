@@ -212,7 +212,7 @@ export default function AdminIntegrations() {
   // AI Help Agent state
   const [aiHelpEnabled, setAiHelpEnabled] = useState(false)
   const [aiHelpExpanded, setAiHelpExpanded] = useState(false)
-  const [aiHelpStats, setAiHelpStats] = useState<{ total: number; today: number } | null>(null)
+  const [aiHelpStats, setAiHelpStats] = useState<{ total: number; aiTotal: number; today: number; aiToday: number } | null>(null)
   const [aiMonthlyLimit, setAiMonthlyLimit] = useState<number | null>(null)
   const [aiMonthlyUsed, setAiMonthlyUsed] = useState(0)
   const [aiQueryLog, setAiQueryLog] = useState<{ first_name: string; last_initial: string; total: number; today: number }[]>([])
@@ -322,11 +322,13 @@ export default function AdminIntegrations() {
     }
 
     const today = new Date().toISOString().slice(0, 10)
-    const [aiTotalRes, aiTodayRes] = await Promise.all([
+    const [allTotalRes, aiTotalRes, allTodayRes, aiTodayRes] = await Promise.all([
+      supabase.from('help_search_logs').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
       supabase.from('help_search_logs').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('ai_generated', true),
+      supabase.from('help_search_logs').select('id', { count: 'exact', head: true }).eq('company_id', companyId).gte('created_at', today),
       supabase.from('help_search_logs').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('ai_generated', true).gte('created_at', today),
     ])
-    setAiHelpStats({ total: aiTotalRes.count || 0, today: aiTodayRes.count || 0 })
+    setAiHelpStats({ total: allTotalRes.count || 0, aiTotal: aiTotalRes.count || 0, today: allTodayRes.count || 0, aiToday: aiTodayRes.count || 0 })
 
     // AI query log + daily limit
     loadAiQueryLog()
@@ -454,22 +456,28 @@ export default function AdminIntegrations() {
     setAiQueryLogLoading(true)
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    const since = sevenDaysAgo.toISOString().slice(0, 10)
-    const today = new Date().toISOString().slice(0, 10)
+    const since = sevenDaysAgo.toISOString()
+    const todayStr = new Date().toISOString().slice(0, 10)
 
     const { data } = await supabase
-      .from('ai_help_usage')
-      .select('employee_id, query_date, query_count')
+      .from('help_search_logs')
+      .select('employee_id, created_at, ai_generated')
       .eq('company_id', companyId)
-      .gte('query_date', since)
+      .gte('created_at', since)
+      .not('employee_id', 'is', null)
 
     if (data) {
-      // Group by employee
-      const byEmp: Record<number, { total: number; today: number }> = {}
+      const byEmp: Record<number, { total: number; today: number; aiTotal: number; aiToday: number }> = {}
       for (const row of data) {
-        if (!byEmp[row.employee_id]) byEmp[row.employee_id] = { total: 0, today: 0 }
-        byEmp[row.employee_id].total += row.query_count
-        if (row.query_date === today) byEmp[row.employee_id].today = row.query_count
+        const eid = row.employee_id as number
+        if (!byEmp[eid]) byEmp[eid] = { total: 0, today: 0, aiTotal: 0, aiToday: 0 }
+        byEmp[eid].total += 1
+        if (row.ai_generated) byEmp[eid].aiTotal += 1
+        const rowDate = (row.created_at as string).slice(0, 10)
+        if (rowDate === todayStr) {
+          byEmp[eid].today += 1
+          if (row.ai_generated) byEmp[eid].aiToday += 1
+        }
       }
 
       const empIds = Object.keys(byEmp).map(Number)
@@ -1334,14 +1342,22 @@ export default function AdminIntegrations() {
               {aiHelpEnabled && aiHelpStats && (
                 <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
                   <strong style={{ fontSize: 13, color: '#2e7d32' }}>Usage</strong>
-                  <div style={{ display: 'flex', gap: 24, marginTop: 8 }}>
+                  <div style={{ display: 'flex', gap: 24, marginTop: 8, flexWrap: 'wrap' }}>
                     <div>
                       <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{aiHelpStats.total}</p>
-                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Total AI queries</p>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Total queries</p>
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#7c3aed' }}>{aiHelpStats.aiTotal}</p>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>AI queries</p>
                     </div>
                     <div>
                       <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{aiHelpStats.today}</p>
-                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Today</p>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Today (all)</p>
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#7c3aed' }}>{aiHelpStats.aiToday}</p>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Today (AI)</p>
                     </div>
                   </div>
                 </div>
@@ -1428,7 +1444,7 @@ export default function AdminIntegrations() {
                     </button>
                   </div>
                   {aiQueryLog.length === 0 && !aiQueryLogLoading && (
-                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted, #888)' }}>No AI queries in the last 7 days.</p>
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted, #888)' }}>No help queries in the last 7 days.</p>
                   )}
                   {aiQueryLog.length > 0 && (
                     <>
