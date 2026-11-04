@@ -870,9 +870,23 @@ export default function HelpChatBubble() {
           if (!(ok && data.tool_call)) { setLoading(false); scrollToBottom() }
           return
         }
-      } catch {
-        // Edge function unavailable — fall through to offline FAQ search
+        // Edge function returned but didn't match any handler — show what we got
+        setMessages(prev => [...prev, { role: 'bot', text: `[DEBUG] Edge function responded (ok=${ok}): ${JSON.stringify(data).slice(0, 300)}` }])
+        setLoading(false)
+        scrollToBottom()
+        return
+      } catch (err) {
+        // Edge function call failed — show the error
+        setMessages(prev => [...prev, { role: 'bot', text: `[DEBUG] Edge function error: ${err instanceof Error ? err.message : String(err)}` }])
+        setLoading(false)
+        scrollToBottom()
+        return
       }
+    } else {
+      setMessages(prev => [...prev, { role: 'bot', text: `[DEBUG] Skipped edge function: ai_help_agent=${features.ai_help_agent}, session=${!!session}` }])
+      setLoading(false)
+      scrollToBottom()
+      return
     }
 
     // ── Step 2: Offline FAQ fallback (edge function unavailable or AI disabled) ──
@@ -895,8 +909,8 @@ export default function HelpChatBubble() {
     const inferredCat = inferCategory(queryWords)
 
     if (inferredCat) {
-      const catArticles = await searchCategoryArticles(inferredCat)
-      const catLabel = CATEGORIES.find(c => c.key === inferredCat)?.label || inferredCat
+      const catArticles = await searchCategoryArticles(inferredCat as string)
+      const catLabel = CATEGORIES.find(c => c.key === inferredCat)?.label || String(inferredCat)
 
       if (catArticles.length > 0) {
         logSearch(q, true, catArticles.length, catArticles[0]?.id || null)
