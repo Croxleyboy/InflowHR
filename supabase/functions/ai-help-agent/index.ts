@@ -423,27 +423,11 @@ Deno.serve(async (req) => {
       }, 429)
     }
 
-    // ── Per-employee daily limit (safety net) ──
-    if (emp) {
-      const today = new Date().toISOString().slice(0, 10)
-      const { data: usage } = await sb.from('ai_help_usage')
-        .select('query_count').eq('company_id', company_id).eq('employee_id', emp.id).eq('query_date', today).maybeSingle()
-
-      if (usage && usage.query_count >= DAILY_PER_EMPLOYEE_LIMIT) {
-        return json({ error: 'Daily AI query limit reached. Please try again tomorrow or browse the help topics.' }, 429)
-      }
-
-      await sb.from('ai_help_usage').upsert(
-        { company_id, employee_id: emp.id, query_date: today, query_count: (usage?.query_count || 0) + 1 },
-        { onConflict: 'company_id,employee_id,query_date' },
-      )
-    }
-
     const userRole = superAdmin ? 'admin' : (cu?.role || 'employee')
 
     // ── Deterministic server query matcher — runs FIRST, zero AI cost ──
-    // Matches common data questions via regex and calls the database
-    // directly. No OpenAI key, FAQ loading, or handbook search needed.
+    // No rate limit, no OpenAI key, no FAQ/handbook loading needed.
+    // These are pure database lookups and should always be available.
     const directQueryType = matchServerQuery(query)
     if (directQueryType) {
       const employeeId = emp?.id ?? 0
@@ -461,7 +445,22 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── AI path: needs OpenAI key, FAQ and handbook context ──
+    // ── AI path: rate-limited, needs OpenAI key, FAQ and handbook context ──
+    if (emp) {
+      const today = new Date().toISOString().slice(0, 10)
+      const { data: usage } = await sb.from('ai_help_usage')
+        .select('query_count').eq('company_id', company_id).eq('employee_id', emp.id).eq('query_date', today).maybeSingle()
+
+      if (usage && usage.query_count >= DAILY_PER_EMPLOYEE_LIMIT) {
+        return json({ error: 'Daily AI query limit reached. Please try again tomorrow or browse the help topics.' }, 429)
+      }
+
+      await sb.from('ai_help_usage').upsert(
+        { company_id, employee_id: emp.id, query_date: today, query_count: (usage?.query_count || 0) + 1 },
+        { onConflict: 'company_id,employee_id,query_date' },
+      )
+    }
+
     await sb.rpc('increment_ai_usage', { p_company_id: company_id })
 
     const { data: secretRow } = await sb.from('platform_secrets')
