@@ -64,6 +64,8 @@ interface CompanyStats {
   spacesAvailable: number
   totalAssets: number
   assetsChange: number
+  aiQueries: number
+  aiAvgPerPerson: number
 }
 
 interface TrendPoint { label: string; value: number }
@@ -224,7 +226,7 @@ export default function AdminDashboard() {
     const todayStr = new Date().toISOString().slice(0, 10)
     const monthAgoEnd = new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().slice(0, 10)
 
-    const [enrolAll, enrolDone, upShifts, totalSpaces, bookedSpaces, assetsNow, assetsPrev] = await Promise.all([
+    const [enrolAll, enrolDone, upShifts, totalSpaces, bookedSpaces, assetsNow, assetsPrev, aiUsageRes] = await Promise.all([
       eq(supabase.from('elearning_completions').select('course_id', { count: 'exact', head: true })),
       eq(supabase.from('elearning_completions').select('course_id', { count: 'exact', head: true }).not('completed_at', 'is', null)),
       eq(supabase.from('shift_assignments').select('id', { count: 'exact', head: true }).gte('shift_date', todayStr)),
@@ -232,6 +234,7 @@ export default function AdminDashboard() {
       eq(supabase.from('space_bookings').select('id', { count: 'exact', head: true }).eq('booking_date', todayStr)),
       eq(supabase.from('company_assets').select('id', { count: 'exact', head: true })),
       eq(supabase.from('company_assets').select('id', { count: 'exact', head: true }).lte('created_at', monthAgoEnd + 'T23:59:59')),
+      supabase.from('ai_help_usage').select('query_count').eq('company_id', cid),
     ])
 
     const enrolTotal = enrolAll.count ?? 0
@@ -240,6 +243,10 @@ export default function AdminDashboard() {
     const assetsNowCount = assetsNow.count ?? 0
     const assetsPrevCount = assetsPrev.count ?? 0
     const assetsChange = assetsPrevCount > 0 ? Math.round(((assetsNowCount - assetsPrevCount) / assetsPrevCount) * 100) : (assetsNowCount > 0 ? 100 : 0)
+
+    const aiQueries = (aiUsageRes.data || []).reduce((s: number, r: any) => s + (r.query_count || 0), 0)
+    const activeEmpCount = emp.count ?? 0
+    const aiAvgPerPerson = activeEmpCount > 0 ? Math.round((aiQueries / activeEmpCount) * 10) / 10 : 0
 
     setCompanyStats({
       totalEmployees: emp.count ?? 0,
@@ -259,6 +266,8 @@ export default function AdminDashboard() {
       spacesAvailable: Math.max(0, (totalSpaces.count ?? 0) - (bookedSpaces.count ?? 0)),
       totalAssets: assetsNowCount,
       assetsChange,
+      aiQueries,
+      aiAvgPerPerson,
     })
 
     const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -609,6 +618,7 @@ function CompanyDash({
     { label: 'Upcoming Shifts', value: stats.upcomingShifts, color: '#ef6c00', path: '/admin/shifts' },
     { label: 'Spaces Available', value: stats.spacesAvailable, color: '#5e35b1', path: '/admin/space-management', subtitle: 'today' },
     { label: 'Assets Registered', value: stats.totalAssets, color: '#0277bd', path: '/admin/asset-management', change: stats.assetsChange },
+    { label: 'AI Queries', value: stats.aiQueries, color: '#7c5cfc', path: '/admin/integrations', subtitle: `${stats.aiAvgPerPerson} avg/person` },
   ]
 
   return (
