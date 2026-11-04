@@ -145,33 +145,6 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   general: ['manager', 'hr', 'contact', 'help', 'who', 'emergency', 'first aid', 'fire', 'parking', 'wifi', 'it support', 'equipment', 'laptop', 'reference', 'notice', 'resign', 'leaving'],
 }
 
-const DATA_INTENT_WORDS = new Set([
-  'balance', 'remaining', 'left', 'used', 'taken', 'booked', 'allowance',
-  'payslip', 'last pay', 'net pay', 'gross pay', 'tax paid',
-  'next shift', 'working tomorrow', 'shifts this week', 'shifts next week',
-  'hours worked', 'hours logged', 'hours this week',
-  'my manager', 'who is my', 'what department', 'my profile', 'when did i start',
-  'my benefits', 'enrolled', 'my courses', 'my training', 'progress',
-  'bank holiday', 'company holiday', 'next holiday',
-  'expenses', 'owed', 'expense claim', 'submitted',
-  'who is off', 'on leave today', 'off today', 'off sick',
-  'headcount', 'how many employees', 'how many staff', 'how many people',
-  'absence rate', 'sick days', 'absence days',
-  'new starters', 'who joined', 'new starter',
-  'probation end', 'probation due', 'probation review',
-  'pending leave', 'pending approval', 'pending request', 'waiting for approval',
-  'team leave', 'team absence', 'team training', 'team e-learning',
-  'my documents', 'expired document', 'pending document',
-  'birthday', 'birthdays',
-])
-
-function hasDataIntent(text: string): boolean {
-  const lower = text.toLowerCase()
-  for (const phrase of DATA_INTENT_WORDS) {
-    if (lower.includes(phrase)) return true
-  }
-  return false
-}
 
 function expandWithSynonyms(words: string[]): string[] {
   const expanded = new Set(words)
@@ -853,6 +826,39 @@ export default function HelpChatBubble() {
     return { ok: res.ok, data }
   }
 
+  function handleAgentResponse(q: string, ok: boolean, data: Record<string, unknown>): boolean {
+    if (ok && data.server_answer) {
+      logSearch(q, true, 0, null, true)
+      setMessages(prev => [...prev, { role: 'bot', text: data.server_answer as string }])
+      return true
+    }
+    if (ok && data.tool_call && employeeId && companyId) {
+      executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
+        .then(result => {
+          if (result) {
+            logSearch(q, true, 0, null, true)
+            setMessages(prev => [...prev, { role: 'bot', text: result }])
+          } else {
+            logSearch(q, false, 0, null, true)
+            setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
+          }
+          setLoading(false)
+          scrollToBottom()
+        })
+      return true
+    }
+    if (ok && data.answer) {
+      logSearch(q, true, 0, null, true)
+      setMessages(prev => [...prev, {
+        role: 'bot',
+        text: data.answer as string,
+        sourcePolicy: data.source === 'handbook' ? 'handbook' : undefined,
+      }])
+      return true
+    }
+    return false
+  }
+
   async function handleSubmit(e?: React.FormEvent) {
     if (e) e.preventDefault()
     const q = query.trim()
@@ -863,47 +869,23 @@ export default function HelpChatBubble() {
 
     setMessages(prev => [...prev, { role: 'user', text: q }])
 
-    // ── Tier 0: Data-intent queries go straight to the edge function ──
-    // The edge function uses a deterministic matcher (no AI, no token cost)
-    // that maps common questions directly to database queries.
-    // This runs BEFORE FAQ search so data questions never get blocked by
-    // irrelevant FAQ text matches.
-    if (hasDataIntent(q) && features.ai_help_agent && session) {
+    // ── Step 1: Edge function handles ALL routing ──
+    // The edge function is the single brain: deterministic matcher (zero AI
+    // cost) for data queries, then AI with FAQ + handbook context for
+    // everything else. No client-side keyword gating needed.
+    if (features.ai_help_agent && session) {
       try {
         const { ok, data } = await callAiAgent(q, 'full')
-        if (ok && data.server_answer) {
-          logSearch(q, true, 0, null, true)
-          setMessages(prev => [...prev, { role: 'bot', text: data.server_answer as string }])
-          setLoading(false)
-          scrollToBottom()
-          return
-        }
-        if (ok && data.tool_call && employeeId && companyId) {
-          const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
-          if (result) {
-            logSearch(q, true, 0, null, true)
-            setMessages(prev => [...prev, { role: 'bot', text: result }])
-          } else {
-            logSearch(q, false, 0, null, true)
-            setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
-          }
-          setLoading(false)
-          scrollToBottom()
-          return
-        }
-        if (ok && data.answer) {
-          logSearch(q, true, 0, null, true)
-          setMessages(prev => [...prev, { role: 'bot', text: data.answer as string }])
-          setLoading(false)
-          scrollToBottom()
+        if (handleAgentResponse(q, ok, data)) {
+          if (!(ok && data.tool_call)) { setLoading(false); scrollToBottom() }
           return
         }
       } catch {
-        // Fall through to FAQ search below
+        // Edge function unavailable — fall through to offline FAQ search
       }
     }
 
-    // ── Tier 1: FAQ text search (zero AI cost) ──
+    // ── Step 2: Offline FAQ fallback (edge function unavailable or AI disabled) ──
     const articles = await searchArticles(q)
     if (articles.length > 0) {
       logSearch(q, true, articles.length, articles[0]?.id || null)
@@ -918,60 +900,7 @@ export default function HelpChatBubble() {
       return
     }
 
-    // ── Tier 2+: AI-powered responses (non-data questions only) ──
-    if (features.ai_help_agent && session) {
-      try {
-        // Tier 2: Handbook search (if company has handbook — smaller prompt, ~75% fewer tokens)
-        if (hasHandbook) {
-          const { ok, data } = await callAiAgent(q, 'handbook_only')
-          if (ok && data.answer && !(data.answer as string).includes("I'm not able to help")) {
-            logSearch(q, true, 0, null, true)
-            setMessages(prev => [...prev, {
-              role: 'bot',
-              text: data.answer as string,
-              sourcePolicy: 'handbook',
-            }])
-            setLoading(false)
-            scrollToBottom()
-            return
-          }
-        }
-
-        // Tier 3: AI with FAQ context (full fallback)
-        const { ok, data } = await callAiAgent(q, hasHandbook ? 'faq_only' : 'full')
-        if (ok && data.server_answer) {
-          logSearch(q, true, 0, null, true)
-          setMessages(prev => [...prev, { role: 'bot', text: data.server_answer as string }])
-          setLoading(false)
-          scrollToBottom()
-          return
-        }
-        if (ok && data.tool_call && employeeId && companyId) {
-          const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
-          if (result) {
-            logSearch(q, true, 0, null, true)
-            setMessages(prev => [...prev, { role: 'bot', text: result }])
-          } else {
-            logSearch(q, false, 0, null, true)
-            setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
-          }
-          setLoading(false)
-          scrollToBottom()
-          return
-        }
-        if (ok && data.answer) {
-          logSearch(q, true, 0, null, true)
-          setMessages(prev => [...prev, { role: 'bot', text: data.answer as string }])
-          setLoading(false)
-          scrollToBottom()
-          return
-        }
-      } catch {
-        // Fall through to category inference below
-      }
-    }
-
-    // ── Tier 4: Category inference fallback (no AI) ──
+    // ── Step 3: Category inference (last resort, no AI) ──
     const queryWords = getSignificantWords(q)
     const inferredCat = inferCategory(queryWords)
 
@@ -996,7 +925,7 @@ export default function HelpChatBubble() {
     logSearch(q, false, 0, null)
     setMessages(prev => [...prev, {
       role: 'bot',
-      text: "Sorry, the HR AI couldn't find a better answer. Try rephrasing your question or contact your HR team directly for help.",
+      text: "Sorry, I couldn't find an answer to that. Try rephrasing your question or contact your HR team directly for help.",
       askAiQuery: features.ai_help_agent && session ? q : undefined,
     }])
     setShowChips(true)
@@ -1027,30 +956,16 @@ export default function HelpChatBubble() {
 
     try {
       const { ok, data } = await callAiAgent(originalQuery, 'full')
-      if (ok && data.server_answer) {
-        logSearch(originalQuery, true, 0, null, true)
-        setMessages(prev => [...prev, { role: 'bot', text: data.server_answer as string }])
-      } else if (ok && data.tool_call && employeeId && companyId) {
-        const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
-        if (result) {
-          logSearch(originalQuery, true, 0, null, true)
-          setMessages(prev => [...prev, { role: 'bot', text: result }])
-        } else {
-          setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
-        }
-      } else if (ok && data.answer) {
-        logSearch(originalQuery, true, 0, null, true)
-        setMessages(prev => [...prev, { role: 'bot', text: data.answer as string }])
-      } else {
+      if (!handleAgentResponse(originalQuery, ok, data)) {
         setMessages(prev => [...prev, {
           role: 'bot',
-          text: "Sorry, the HR AI couldn't find a better answer. Try rephrasing your question or contact your HR team directly for help.",
+          text: "Sorry, I couldn't find a better answer. Try rephrasing your question or contact your HR team directly for help.",
         }])
       }
     } catch {
       setMessages(prev => [...prev, {
         role: 'bot',
-        text: "Sorry, the HR AI couldn't find a better answer. Try rephrasing your question or contact your HR team directly for help.",
+        text: "Sorry, I couldn't find a better answer. Try rephrasing your question or contact your HR team directly for help.",
       }])
     }
     setLoading(false)
