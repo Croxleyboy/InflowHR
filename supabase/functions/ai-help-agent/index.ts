@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGIN = 'https://app.inflowhr.com'
-const DAILY_PER_EMPLOYEE_LIMIT = 20
+const DEFAULT_DAILY_LIMIT = 20
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
@@ -451,7 +451,11 @@ Deno.serve(async (req) => {
       const { data: usage } = await sb.from('ai_help_usage')
         .select('query_count').eq('company_id', company_id).eq('employee_id', emp.id).eq('query_date', today).maybeSingle()
 
-      if (usage && usage.query_count >= DAILY_PER_EMPLOYEE_LIMIT) {
+      const { data: limitRow } = await sb.from('company_settings')
+        .select('value').eq('company_id', company_id).eq('key', 'ai_daily_employee_limit').maybeSingle()
+      const dailyLimit = limitRow ? parseInt(limitRow.value, 10) || DEFAULT_DAILY_LIMIT : DEFAULT_DAILY_LIMIT
+
+      if (usage && usage.query_count >= dailyLimit) {
         return json({ error: 'Daily AI query limit reached. Please try again tomorrow or browse the help topics.' }, 429)
       }
 

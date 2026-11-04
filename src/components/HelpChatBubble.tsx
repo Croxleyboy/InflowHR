@@ -870,23 +870,15 @@ export default function HelpChatBubble() {
           if (!(ok && data.tool_call)) { setLoading(false); scrollToBottom() }
           return
         }
-        // Edge function returned but didn't match any handler — show what we got
-        setMessages(prev => [...prev, { role: 'bot', text: `[DEBUG] Edge function responded (ok=${ok}): ${JSON.stringify(data).slice(0, 300)}` }])
-        setLoading(false)
-        scrollToBottom()
-        return
-      } catch (err) {
-        // Edge function call failed — show the error
-        setMessages(prev => [...prev, { role: 'bot', text: `[DEBUG] Edge function error: ${err instanceof Error ? err.message : String(err)}` }])
-        setLoading(false)
-        scrollToBottom()
-        return
+        if (!ok && typeof data.error === 'string' && data.error.toLowerCase().includes('daily')) {
+          setMessages(prev => [...prev, { role: 'bot', text: "You've reached your daily question limit. Your limit resets tomorrow — in the meantime, browse the help topics above." }])
+          setLoading(false)
+          scrollToBottom()
+          return
+        }
+      } catch {
+        // Edge function unavailable — fall through to FAQ search
       }
-    } else {
-      setMessages(prev => [...prev, { role: 'bot', text: `[DEBUG] Skipped edge function: ai_help_agent=${features.ai_help_agent}, session=${!!session}` }])
-      setLoading(false)
-      scrollToBottom()
-      return
     }
 
     // ── Step 2: Offline FAQ fallback (edge function unavailable or AI disabled) ──

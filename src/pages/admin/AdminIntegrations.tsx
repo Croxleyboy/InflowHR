@@ -215,6 +215,11 @@ export default function AdminIntegrations() {
   const [aiHelpStats, setAiHelpStats] = useState<{ total: number; today: number } | null>(null)
   const [aiMonthlyLimit, setAiMonthlyLimit] = useState<number | null>(null)
   const [aiMonthlyUsed, setAiMonthlyUsed] = useState(0)
+  const [aiQueryLog, setAiQueryLog] = useState<{ first_name: string; last_initial: string; total: number; today: number }[]>([])
+  const [aiQueryLogPage, setAiQueryLogPage] = useState(0)
+  const [aiQueryLogLoading, setAiQueryLogLoading] = useState(false)
+  const [aiDailyLimit, setAiDailyLimit] = useState(20)
+  const [aiDailyLimitSaving, setAiDailyLimitSaving] = useState(false)
   // Enterprise AI state
   const [eaiEnabled, setEaiEnabled] = useState(false)
   const [eaiIntegration, setEaiIntegration] = useState<EnterpriseAIIntegration | null>(null)
@@ -322,6 +327,16 @@ export default function AdminIntegrations() {
       supabase.from('help_search_logs').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('ai_generated', true).gte('created_at', today),
     ])
     setAiHelpStats({ total: aiTotalRes.count || 0, today: aiTodayRes.count || 0 })
+
+    // AI query log + daily limit
+    loadAiQueryLog()
+    const { data: limitRow } = await supabase
+      .from('company_settings')
+      .select('value')
+      .eq('company_id', companyId)
+      .eq('key', 'ai_daily_employee_limit')
+      .maybeSingle()
+    if (limitRow) setAiDailyLimit(parseInt(limitRow.value, 10) || 20)
 
     // Enterprise AI integration + usage
     const eaiRes = await supabase.from('enterprise_ai_integrations').select('company_id, ai_provider, ai_endpoint, ai_model, ai_api_version, status, status_detail, last_test_at, last_test_ok, is_active, created_at, updated_at').eq('company_id', companyId).maybeSingle()
@@ -431,6 +446,72 @@ export default function AdminIntegrations() {
       setXeroExpanded(true)
     }
   }, [])
+
+  // ── AI Query Log & Daily Limit ─────────────────────────────────────────────
+
+  async function loadAiQueryLog() {
+    if (!companyId) return
+    setAiQueryLogLoading(true)
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    const since = sevenDaysAgo.toISOString().slice(0, 10)
+    const today = new Date().toISOString().slice(0, 10)
+
+    const { data } = await supabase
+      .from('ai_help_usage')
+      .select('employee_id, query_date, query_count')
+      .eq('company_id', companyId)
+      .gte('query_date', since)
+
+    if (data) {
+      // Group by employee
+      const byEmp: Record<number, { total: number; today: number }> = {}
+      for (const row of data) {
+        if (!byEmp[row.employee_id]) byEmp[row.employee_id] = { total: 0, today: 0 }
+        byEmp[row.employee_id].total += row.query_count
+        if (row.query_date === today) byEmp[row.employee_id].today = row.query_count
+      }
+
+      const empIds = Object.keys(byEmp).map(Number)
+      if (empIds.length > 0) {
+        const { data: emps } = await supabase
+          .from('employees')
+          .select('id, first_name, last_name')
+          .in('id', empIds)
+          .eq('company_id', companyId)
+
+        const empMap: Record<number, { first_name: string; last_name: string }> = {}
+        for (const e of emps || []) empMap[e.id] = { first_name: e.first_name, last_name: e.last_name }
+
+        const log = empIds
+          .filter(id => empMap[id])
+          .map(id => ({
+            first_name: empMap[id].first_name,
+            last_initial: empMap[id].last_name?.charAt(0) || '',
+            total: byEmp[id].total,
+            today: byEmp[id].today,
+          }))
+          .sort((a, b) => b.total - a.total)
+
+        setAiQueryLog(log)
+      } else {
+        setAiQueryLog([])
+      }
+    }
+    setAiQueryLogLoading(false)
+  }
+
+  async function saveAiDailyLimit(newLimit: number) {
+    if (!companyId || newLimit < 1 || newLimit > 999) return
+    setAiDailyLimitSaving(true)
+    await supabase.from('company_settings').upsert(
+      { company_id: companyId, key: 'ai_daily_employee_limit', value: String(newLimit) },
+      { onConflict: 'company_id,key' }
+    )
+    setAiDailyLimit(newLimit)
+    setAiDailyLimitSaving(false)
+    showSuccess('Daily employee limit updated')
+  }
 
   // ── Teams handlers ────────────────────────────────────────────────────────
 
@@ -1303,6 +1384,94 @@ export default function AdminIntegrations() {
                     <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-muted, #888)' }}>
                       {isSuperAdmin ? 'Set the monthly query limit in Subscriptions → Company Features.' : 'Contact your super admin to set a monthly query limit.'}
                     </p>
+                  )}
+                </div>
+              )}
+
+              {aiHelpEnabled && (
+                <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
+                  <strong style={{ fontSize: 13, color: 'var(--text, #333)' }}>Daily Employee Limit</strong>
+                  <p style={{ margin: '4px 0 8px', fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                    Maximum AI queries each employee can make per day. Database lookups (e.g. "who is off today?") are free and don't count.
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={aiDailyLimit}
+                      onChange={e => setAiDailyLimit(Math.max(1, Math.min(999, parseInt(e.target.value, 10) || 1)))}
+                      style={{ width: 80, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border, #d0d5dd)', fontSize: 14, textAlign: 'center' }}
+                    />
+                    <span style={{ fontSize: 13, color: 'var(--text-muted, #888)' }}>queries per employee per day</span>
+                    <button
+                      onClick={() => saveAiDailyLimit(aiDailyLimit)}
+                      disabled={aiDailyLimitSaving}
+                      style={{ marginLeft: 'auto', padding: '6px 16px', borderRadius: 6, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: aiDailyLimitSaving ? 0.6 : 1 }}
+                    >
+                      {aiDailyLimitSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {aiHelpEnabled && (
+                <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <strong style={{ fontSize: 13, color: 'var(--text, #333)' }}>Employee Query Log (last 7 days)</strong>
+                    <button
+                      onClick={() => { setAiQueryLogPage(0); loadAiQueryLog() }}
+                      disabled={aiQueryLogLoading}
+                      style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border, #d0d5dd)', background: 'transparent', fontSize: 12, cursor: 'pointer', color: 'var(--text-muted, #888)' }}
+                    >
+                      {aiQueryLogLoading ? 'Loading…' : 'Refresh'}
+                    </button>
+                  </div>
+                  {aiQueryLog.length === 0 && !aiQueryLogLoading && (
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted, #888)' }}>No AI queries in the last 7 days.</p>
+                  )}
+                  {aiQueryLog.length > 0 && (
+                    <>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border, #e0e0e0)' }}>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-muted, #888)', fontWeight: 600 }}>Employee</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-muted, #888)', fontWeight: 600 }}>7-day total</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-muted, #888)', fontWeight: 600 }}>Today</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {aiQueryLog.slice(aiQueryLogPage * 10, (aiQueryLogPage + 1) * 10).map((row, i) => (
+                            <tr key={i} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
+                              <td style={{ padding: '6px 8px', color: 'var(--text, #333)' }}>{row.first_name} {row.last_initial}.</td>
+                              <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text, #333)', fontWeight: 600 }}>{row.total}</td>
+                              <td style={{ textAlign: 'right', padding: '6px 8px', color: row.today >= aiDailyLimit ? '#dc2626' : 'var(--text, #333)' }}>{row.today}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {aiQueryLog.length > 10 && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                          <button
+                            onClick={() => setAiQueryLogPage(p => Math.max(0, p - 1))}
+                            disabled={aiQueryLogPage === 0}
+                            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border, #d0d5dd)', background: 'transparent', fontSize: 12, cursor: aiQueryLogPage === 0 ? 'default' : 'pointer', opacity: aiQueryLogPage === 0 ? 0.4 : 1, color: 'var(--text, #333)' }}
+                          >
+                            ← Previous
+                          </button>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                            Page {aiQueryLogPage + 1} of {Math.ceil(aiQueryLog.length / 10)}
+                          </span>
+                          <button
+                            onClick={() => setAiQueryLogPage(p => Math.min(Math.ceil(aiQueryLog.length / 10) - 1, p + 1))}
+                            disabled={aiQueryLogPage >= Math.ceil(aiQueryLog.length / 10) - 1}
+                            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border, #d0d5dd)', background: 'transparent', fontSize: 12, cursor: aiQueryLogPage >= Math.ceil(aiQueryLog.length / 10) - 1 ? 'default' : 'pointer', opacity: aiQueryLogPage >= Math.ceil(aiQueryLog.length / 10) - 1 ? 0.4 : 1, color: 'var(--text, #333)' }}
+                          >
+                            Next →
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
