@@ -544,13 +544,15 @@ export default function AdminIntegrations() {
     if (!slackIntegration?.webhook_url) { showError('Save a webhook URL first'); return }
     setSlackTesting(true)
     try {
-      const res = await fetch(slackIntegration.webhook_url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: '✅ InflowHR test notification — Slack integration is working!' }),
+      const { data, error } = await supabase.functions.invoke('send-slack-notification', {
+        body: {
+          company_id: companyId,
+          message: '✅ InflowHR test notification — Slack integration is working!',
+        },
       })
-      if (res.ok) showSuccess('Test message sent to Slack')
-      else showError('Slack returned an error — check your webhook URL')
+      if (error) { showError('Failed to send test: ' + error.message); setSlackTesting(false); return }
+      if (data?.success) showSuccess('Test message sent to Slack')
+      else showError(data?.error || 'Slack returned an error — check your webhook URL')
     } catch {
       showError('Failed to reach Slack — check your webhook URL')
     }
