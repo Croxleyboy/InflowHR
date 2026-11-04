@@ -875,6 +875,13 @@ export default function HelpChatBubble() {
         // Personal data queries go straight to AI with full context
         if (hasDataIntent(q)) {
           const { ok, data } = await callAiAgent(q, 'full')
+          if (ok && data.server_answer) {
+            logSearch(q, true, 0, null, true)
+            setMessages(prev => [...prev, { role: 'bot', text: data.server_answer as string }])
+            setLoading(false)
+            scrollToBottom()
+            return
+          }
           if (ok && data.tool_call && employeeId && companyId) {
             const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
             if (result) {
@@ -915,6 +922,13 @@ export default function HelpChatBubble() {
 
         // Tier 3: AI with FAQ context (full fallback)
         const { ok, data } = await callAiAgent(q, hasHandbook ? 'faq_only' : 'full')
+        if (ok && data.server_answer) {
+          logSearch(q, true, 0, null, true)
+          setMessages(prev => [...prev, { role: 'bot', text: data.server_answer as string }])
+          setLoading(false)
+          scrollToBottom()
+          return
+        }
         if (ok && data.tool_call && employeeId && companyId) {
           const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
           if (result) {
@@ -996,7 +1010,10 @@ export default function HelpChatBubble() {
 
     try {
       const { ok, data } = await callAiAgent(originalQuery, 'full')
-      if (ok && data.tool_call && employeeId && companyId) {
+      if (ok && data.server_answer) {
+        logSearch(originalQuery, true, 0, null, true)
+        setMessages(prev => [...prev, { role: 'bot', text: data.server_answer as string }])
+      } else if (ok && data.tool_call && employeeId && companyId) {
         const result = await executeDataQuery(data.tool_call as string, employeeId, companyId, currency, (data.params || {}) as Record<string, unknown>)
         if (result) {
           logSearch(originalQuery, true, 0, null, true)

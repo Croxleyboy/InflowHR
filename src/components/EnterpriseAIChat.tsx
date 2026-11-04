@@ -455,7 +455,9 @@ export default function EnterpriseAIChat() {
       })
       const data = await res.json()
 
-      if (res.ok && data.tool_call && employeeId && companyId) {
+      if (res.ok && data.server_answer) {
+        setMessages(prev => [...prev, { role: 'bot', text: data.server_answer }])
+      } else if (res.ok && data.tool_call && employeeId && companyId) {
         const result = await executeDataQuery(data.tool_call, employeeId, companyId, currency, data.params || {})
         if (result) {
           const followUpRes = await fetch(`${supabaseUrl}/functions/v1/enterprise-ai-agent`, {
@@ -515,7 +517,9 @@ export default function EnterpriseAIChat() {
       })
       const data = await res.json()
 
-      if (res.ok && data.tool_call && employeeId && companyId) {
+      if (res.ok && data.server_answer) {
+        setMessages(prev => [...prev, { role: 'bot', text: data.server_answer }])
+      } else if (res.ok && data.tool_call && employeeId && companyId) {
         const result = await executeDataQuery(data.tool_call, employeeId, companyId, currency, data.params || {})
         if (result) {
           const followUpRes = await fetch(`${supabaseUrl}/functions/v1/enterprise-ai-agent`, {
