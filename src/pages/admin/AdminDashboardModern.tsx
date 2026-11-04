@@ -120,6 +120,7 @@ export default function AdminDashboardModern() {
   const [empBreakdown, setEmpBreakdown] = useState({ fulltime: 0, parttime: 0, freelance: 0, ftChange: 0, flChange: 0 })
   const [attendanceRate, setAttendanceRate] = useState({ rate: 0, change: 0 , sickDays: 0, daysOff: 0, onTime: 0 })
   const [topAssets, setTopAssets] = useState<{ type: string; count: number; color: string }[]>([])
+  const [helpStats, setHelpStats] = useState({ total: 0, ai: 0, avgPerPerson: 0 })
 
   const firstName = employeeName.split(' ')[0] || 'Admin'
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
@@ -216,7 +217,7 @@ export default function AdminDashboardModern() {
     monthAgo.setMonth(monthAgo.getMonth() - 1)
     const monthAgoEnd = fmtIso(monthAgo)
 
-    const [enrolAll, enrolDone, upShifts, totalSpaces, bookedSpaces, assetsNow, assetsPrev] = await Promise.all([
+    const [enrolAll, enrolDone, upShifts, totalSpaces, bookedSpaces, assetsNow, assetsPrev, helpTotalRes, helpAiRes] = await Promise.all([
       supabase.from('elearning_completions').select('course_id', { count: 'exact', head: true }).eq('company_id', cid),
       supabase.from('elearning_completions').select('course_id', { count: 'exact', head: true }).eq('company_id', cid).not('completed_at', 'is', null),
       supabase.from('shift_assignments').select('id', { count: 'exact', head: true }).eq('company_id', cid).gte('shift_date', todayStr),
@@ -224,6 +225,8 @@ export default function AdminDashboardModern() {
       supabase.from('space_bookings').select('id', { count: 'exact', head: true }).eq('company_id', cid).eq('booking_date', todayStr),
       supabase.from('company_assets').select('id', { count: 'exact', head: true }).eq('company_id', cid),
       supabase.from('company_assets').select('id', { count: 'exact', head: true }).eq('company_id', cid).lte('created_at', monthAgoEnd + 'T23:59:59'),
+      supabase.from('help_search_logs').select('id', { count: 'exact', head: true }).eq('company_id', cid),
+      supabase.from('help_search_logs').select('id', { count: 'exact', head: true }).eq('company_id', cid).eq('ai_generated', true),
     ])
 
     const eTotal = enrolAll.count || 0
@@ -236,6 +239,10 @@ export default function AdminDashboardModern() {
     const aNow = assetsNow.count || 0
     const aPrev = assetsPrev.count || 0
     setAssetsStats({ total: aNow, change: aPrev > 0 ? Math.round(((aNow - aPrev) / aPrev) * 100) : 0 })
+    const hTotal = helpTotalRes.count || 0
+    const hAi = helpAiRes.count || 0
+    const activeEmpCount = emp.count || 0
+    setHelpStats({ total: hTotal, ai: hAi, avgPerPerson: activeEmpCount > 0 ? Math.round((hTotal / activeEmpCount) * 10) / 10 : 0 })
 
     // ── Card data: employee breakdown, attendance, top assets ──
     const empList = employeeList
@@ -560,6 +567,22 @@ export default function AdminDashboardModern() {
                     {Math.abs(assetsStats.change)}% vs last month
                   </span>
                 )}
+              </div>
+            </section>
+
+            {/* Help Queries */}
+            <section className="dm-kpi" onClick={() => navigate('/admin/integrations')}>
+              <div className="dm-kpi-visual">
+                <div className="dm-kpi-icon" style={{ background: '#7c5cfc' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                </div>
+              </div>
+              <div className="dm-kpi-info">
+                <span className="dm-kpi-big">{helpStats.total}</span>
+                <span className="dm-kpi-label">Help Queries</span>
+                <span className="dm-kpi-detail">{helpStats.ai} AI · {helpStats.avgPerPerson} avg/person</span>
               </div>
             </section>
           </div>
