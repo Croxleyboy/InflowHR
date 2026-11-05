@@ -388,7 +388,7 @@ Rules:
 - Use a warm, helpful tone. Use day-month-year date format (e.g. 15 December 2025).
 - When a question references relative dates, calculate based on today: ${new Date().toISOString().slice(0, 10)}.
 - The user's role is: ${userRole}.
-- If the reference text does not cover the question, respond: "I'm not able to help with that specific question. I'd suggest contacting your HR team directly — they'll be able to assist you."
+- If the reference text does not cover the question, give a brief helpful general response and suggest they speak to their HR team for company-specific details.
 
 Reference text:
 ${contextText}`
@@ -767,13 +767,8 @@ Deno.serve(async (req) => {
 
     const contextText = await gatherContext(sb, company_id, query, contextMode)
 
-    if (!contextText.trim()) {
-      await trackUsage(sb, company_id, employeeId, 'ai_formatter', classPrompt, classCompletion)
-      return json({ server_answer: 'I\'m not able to help with that specific question. I\'d suggest contacting your HR team directly — they\'ll be able to assist you.' })
-    }
-
     const { answer, promptTokens: fmtPrompt, completionTokens: fmtCompletion } = await formatWithAI(
-      query, contextText, userRole, apiKey,
+      query, contextText.trim() || 'No specific FAQ articles or handbook sections are available. Provide a brief, helpful general response to the employee\'s HR question and recommend they speak to their HR team for company-specific details.', userRole, apiKey,
     )
 
     const totalPrompt = classPrompt + fmtPrompt
