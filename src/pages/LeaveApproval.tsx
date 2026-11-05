@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { sendFeatureEmail } from '../lib/emailNotifications'
+import { sendSlackNotification } from '../lib/slackNotifications'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, formatDateTime, getFYYear } from '../lib/formatters'
@@ -268,6 +269,13 @@ export default function LeaveApproval() {
         type: approved ? 'info' : 'alert',
         link: '/leave',
       })
+      sendSlackNotification({
+        companyId: companyUser.company_id,
+        notifyKey: 'notify_leave_requests',
+        message: approved
+          ? `✅ *Leave Approved*\n${typeName} for ${empName} (${formatDate(request.start_date)}–${formatDate(request.end_date)}) has been approved.`
+          : `❌ *Leave Declined*\n${typeName} for ${empName} (${formatDate(request.start_date)}–${formatDate(request.end_date)}) has been declined.`,
+      }).catch(() => {})
     }
 
     showSuccess(approved ? 'Leave request approved' : 'Leave request declined')

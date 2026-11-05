@@ -1269,7 +1269,6 @@ export default function AdminIntegrations() {
                     {[
                       { key: 'notify_leave_requests', label: 'Leave requests & approvals' },
                       { key: 'notify_expense_claims', label: 'Expense claims & approvals' },
-                      { key: 'notify_shift_changes', label: 'Shift changes & swaps' },
                       { key: 'notify_onboarding', label: 'Onboarding & offboarding updates' },
                     ].map(item => (
                       <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
@@ -1296,10 +1295,13 @@ export default function AdminIntegrations() {
                   <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
                     <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: 15 }}>How to set up Slack notifications</p>
                     <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 2 }}>
-                      <li>Create a <strong>Slack App</strong> at <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" style={{ color: '#4A154B' }}>api.slack.com/apps</a></li>
-                      <li>Enable <strong>Incoming Webhooks</strong> and add a new webhook to your workspace</li>
-                      <li>Select the channel where HR notifications should be posted</li>
-                      <li>Copy the <strong>Webhook URL</strong> and paste it above</li>
+                      <li>Go to <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" style={{ color: '#4A154B' }}>api.slack.com/apps</a> and click <strong>Create New App</strong></li>
+                      <li>Choose <strong>From scratch</strong>, give your app a name (e.g. "InflowHR Notifications"), and select your workspace</li>
+                      <li>In the left sidebar, click <strong>Incoming Webhooks</strong> and toggle it <strong>On</strong></li>
+                      <li>Scroll down and click <strong>Add New Webhook to Workspace</strong></li>
+                      <li>Select the Slack channel where HR notifications should be posted (e.g. #hr-notifications) and click <strong>Allow</strong></li>
+                      <li>Copy the <strong>Webhook URL</strong> (it starts with https://hooks.slack.com/services/…)</li>
+                      <li>Paste the Webhook URL into the field above and click <strong>Save &amp; Connect</strong></li>
                     </ol>
                   </div>
                 </div>

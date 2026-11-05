@@ -8,6 +8,7 @@ import { formatDateTime, formatCurrency } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
 import { getManagerEmail } from '../lib/workflow'
 import { sendTeamsNotification } from '../lib/teamsNotifications'
+import { sendSlackNotification } from '../lib/slackNotifications'
 
 interface Claim {
   id: number
@@ -134,6 +135,13 @@ export default function ExpenseDetail() {
           managerEmail,
           employeeName: HARDCODED_EMPLOYEE_NAME,
           message: `Expense claim needs your approval: ${claim.reference_number} - ${claim.title} - ${formatCurrency(totalAmount, currency)}`,
+        })
+      } catch { /* notification failure should not block the user */ }
+      try {
+        await sendSlackNotification({
+          companyId: companyUser.company_id,
+          notifyKey: 'notify_expense_claims',
+          message: `💰 *Expense Claim Submitted*\n${HARDCODED_EMPLOYEE_NAME} has submitted expense claim ${claim.reference_number} - ${claim.title} - ${formatCurrency(totalAmount, currency)}`,
         })
       } catch { /* notification failure should not block the user */ }
     }

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { sendFeatureEmail } from '../lib/emailNotifications'
+import { sendSlackNotification } from '../lib/slackNotifications'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDateTime, formatCurrency } from '../lib/formatters'
@@ -150,6 +151,15 @@ export default function ExpenseApproval() {
         type: approved ? 'info' : 'alert',
         link: '/expenses',
       })
+      try {
+        await sendSlackNotification({
+          companyId: companyUser.company_id,
+          notifyKey: 'notify_expense_claims',
+          message: approved
+            ? `✅ *Expense Claim Approved*\nExpense claim ${claim.reference_number} for ${formatCurrency(totalAmount, currency)} has been approved.`
+            : `❌ *Expense Claim Declined*\nExpense claim ${claim.reference_number} for ${formatCurrency(totalAmount, currency)} has been declined.`,
+        })
+      } catch { /* notification failure should not block the user */ }
     }
 
     showSuccess(approved ? 'Expense approved' : 'Expense declined')
