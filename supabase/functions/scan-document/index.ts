@@ -15,6 +15,11 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+async function sha256Hex(data: ArrayBuffer): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -115,65 +120,37 @@ Deno.serve(async (req) => {
       })
     }
 
-    const formData = new FormData()
-    formData.append('file', fileData, storagePath.split('/').pop() || 'file')
+    const fileBytes = await fileData.arrayBuffer()
+    const hash = await sha256Hex(fileBytes)
 
-    const uploadRes = await fetch('https://www.virustotal.com/api/v3/files', {
-      method: 'POST',
+    // Hash-only lookup — file content never leaves InflowHR infrastructure
+    const lookupRes = await fetch(`https://www.virustotal.com/api/v3/files/${hash}`, {
       headers: { 'x-apikey': VIRUSTOTAL_API_KEY },
-      body: formData,
     })
 
-    if (!uploadRes.ok) {
+    if (lookupRes.status === 404) {
+      // File hash not in VirusTotal's database — no known threats
+      await updateStatus('clean')
+      return new Response(JSON.stringify({
+        status: 'clean',
+        method: 'hash-lookup',
+        note: 'File hash not found in VirusTotal database — no known threats',
+        stats: { malicious: 0, suspicious: 0, harmless: 0, undetected: 0 },
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (!lookupRes.ok) {
       await updateStatus('error')
-      return new Response(JSON.stringify({ error: 'VirusTotal upload failed', detail: await uploadRes.text() }), {
+      return new Response(JSON.stringify({ error: 'VirusTotal lookup failed', detail: await lookupRes.text() }), {
         status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const uploadResult = await uploadRes.json()
-    const analysisId = uploadResult?.data?.id
-
-    if (!analysisId) {
-      await updateStatus('error')
-      return new Response(JSON.stringify({ error: 'No analysis ID returned' }), {
-        status: 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    let attempts = 0
-    const maxAttempts = 12
-    let scanResult = null
-
-    while (attempts < maxAttempts) {
-      await new Promise(r => setTimeout(r, 5000))
-      attempts++
-
-      const analysisRes = await fetch(`https://www.virustotal.com/api/v3/analyses/${analysisId}`, {
-        headers: { 'x-apikey': VIRUSTOTAL_API_KEY },
-      })
-
-      if (!analysisRes.ok) continue
-
-      const analysis = await analysisRes.json()
-      const status = analysis?.data?.attributes?.status
-
-      if (status === 'completed') {
-        scanResult = analysis.data.attributes
-        break
-      }
-    }
-
-    if (!scanResult) {
-      await updateStatus('timeout')
-      return new Response(JSON.stringify({ status: 'timeout', message: 'Scan did not complete in time' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const stats = scanResult.stats || {}
+    const report = await lookupRes.json()
+    const stats = report?.data?.attributes?.last_analysis_stats || {}
     const malicious = (stats.malicious || 0) + (stats.suspicious || 0)
     const isSafe = malicious === 0
 
@@ -186,6 +163,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       status: isSafe ? 'clean' : 'infected',
+      method: 'hash-lookup',
       stats: { malicious: stats.malicious || 0, suspicious: stats.suspicious || 0, harmless: stats.harmless || 0, undetected: stats.undetected || 0 },
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

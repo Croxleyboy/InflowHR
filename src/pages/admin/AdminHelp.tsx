@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/formatters'
@@ -25,6 +26,18 @@ interface SearchLog {
   result_count: number
   top_article_id: number | null
   ai_generated: boolean
+  created_at: string
+}
+
+interface FrontendError {
+  id: number
+  company_id: string | null
+  user_email: string | null
+  error_message: string
+  error_stack: string | null
+  component_stack: string | null
+  url: string
+  user_agent: string | null
   created_at: string
 }
 
@@ -55,8 +68,9 @@ const DATA_QUERY_OPTIONS = [
 
 export default function AdminHelp() {
   const { selectedCompanyId } = useAdminCompany()
+  const { isSuperAdmin } = useAuth()
   const { showToast } = useToast()
-  const [tab, setTab] = useState<'company' | 'global' | 'metrics' | 'handbook'>('company')
+  const [tab, setTab] = useState<'company' | 'global' | 'metrics' | 'handbook' | 'errors'>('company')
   const [articles, setArticles] = useState<HelpArticle[]>([])
   const [globalArticles, setGlobalArticles] = useState<HelpArticle[]>([])
   const [loading, setLoading] = useState(true)
@@ -84,6 +98,11 @@ export default function AdminHelp() {
   const [handbookSaving, setHandbookSaving] = useState(false)
   const [handbookOverlaps, setHandbookOverlaps] = useState<{ id: number; question: string; matchedSection: string }[]>([])
   const [aiUsage, setAiUsage] = useState<{ used: number; limit: number | null; periodStart: string } | null>(null)
+
+  const [frontendErrors, setFrontendErrors] = useState<FrontendError[]>([])
+  const [errorsLoading, setErrorsLoading] = useState(false)
+  const [errorsPeriod, setErrorsPeriod] = useState<'7' | '30' | '90'>('7')
+  const [expandedErrorId, setExpandedErrorId] = useState<number | null>(null)
 
   const loadAiUsage = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -146,6 +165,21 @@ export default function AdminHelp() {
     setHandbookSections(data || [])
     setHandbookLoading(false)
   }, [selectedCompanyId])
+
+  const loadErrors = useCallback(async () => {
+    if (!isSuperAdmin) return
+    setErrorsLoading(true)
+    const since = new Date()
+    since.setDate(since.getDate() - parseInt(errorsPeriod))
+    const { data } = await supabase
+      .from('frontend_errors')
+      .select('*')
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(500)
+    setFrontendErrors(data || [])
+    setErrorsLoading(false)
+  }, [isSuperAdmin, errorsPeriod])
 
   function parseMarkdownSections(md: string): { key: string; number: string; title: string; content: string }[] {
     const parts = md.split(/(?=^## )/m).filter(s => s.startsWith('## '))
@@ -279,6 +313,7 @@ export default function AdminHelp() {
   useEffect(() => { loadArticles() }, [loadArticles])
   useEffect(() => { if (tab === 'metrics') { loadMetrics(); loadAiUsage() } }, [tab, loadMetrics, loadAiUsage])
   useEffect(() => { if (tab === 'handbook') loadHandbook() }, [tab, loadHandbook])
+  useEffect(() => { if (tab === 'errors') loadErrors() }, [tab, loadErrors])
 
   function resetForm() {
     setForm({ category: 'general', question: '', answer: '', keywords: '', sort_order: 0, data_query: '', is_active: true })
@@ -424,6 +459,11 @@ export default function AdminHelp() {
         <button className={`admin-tab ${tab === 'handbook' ? 'active' : ''}`} onClick={() => setTab('handbook')}>
           Handbook {handbookSections.length > 0 ? `(${handbookSections.length})` : ''}
         </button>
+        {isSuperAdmin && (
+          <button className={`admin-tab ${tab === 'errors' ? 'active' : ''}`} onClick={() => setTab('errors')}>
+            Error Log
+          </button>
+        )}
       </div>
 
       {tab === 'company' && (
@@ -898,6 +938,110 @@ export default function AdminHelp() {
                 </button>
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'errors' && isSuperAdmin && (
+        <div className="admin-help-section">
+          <div className="admin-help-toolbar">
+            <select value={errorsPeriod} onChange={e => setErrorsPeriod(e.target.value as '7' | '30' | '90')} className="admin-help-filter">
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+            <button className="admin-btn admin-btn-sm" onClick={loadErrors}>Refresh</button>
+          </div>
+
+          {errorsLoading ? (
+            <p className="admin-help-loading">Loading errors...</p>
+          ) : frontendErrors.length === 0 ? (
+            <div className="admin-help-empty">
+              <p>No frontend errors recorded in this period.</p>
+            </div>
+          ) : (
+            <>
+              <div className="admin-help-metrics-cards">
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value">{frontendErrors.length}</div>
+                  <div className="admin-help-metric-label">Total Errors</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value">{new Set(frontendErrors.map(e => e.error_message)).size}</div>
+                  <div className="admin-help-metric-label">Unique Messages</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value">{new Set(frontendErrors.filter(e => e.company_id).map(e => e.company_id)).size}</div>
+                  <div className="admin-help-metric-label">Companies Affected</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value">{new Set(frontendErrors.filter(e => e.user_email).map(e => e.user_email)).size}</div>
+                  <div className="admin-help-metric-label">Users Affected</div>
+                </div>
+              </div>
+
+              <div className="admin-help-metrics-section">
+                <h3>Recent Errors</h3>
+                <table className="admin-help-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>User</th>
+                      <th>Error</th>
+                      <th>URL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {frontendErrors.map(err => (
+                      <>
+                        <tr key={err.id} onClick={() => setExpandedErrorId(expandedErrorId === err.id ? null : err.id)} style={{ cursor: 'pointer' }}>
+                          <td>{formatDate(err.created_at)}</td>
+                          <td>{err.user_email || 'Anonymous'}</td>
+                          <td style={{ maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {err.error_message}
+                          </td>
+                          <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.75rem' }}>
+                            {err.url.replace(/^https?:\/\/[^/]+/, '')}
+                          </td>
+                        </tr>
+                        {expandedErrorId === err.id && (
+                          <tr key={`${err.id}-detail`}>
+                            <td colSpan={4} style={{ padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)' }}>
+                              <div style={{ display: 'grid', gap: '0.5rem', fontSize: '0.8125rem' }}>
+                                <div><strong>Full message:</strong> {err.error_message}</div>
+                                {err.company_id && <div><strong>Company ID:</strong> {err.company_id}</div>}
+                                <div><strong>URL:</strong> {err.url}</div>
+                                {err.user_agent && (
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #6b7280)' }}>
+                                    <strong>User Agent:</strong> {err.user_agent}
+                                  </div>
+                                )}
+                                {err.error_stack && (
+                                  <div>
+                                    <strong>Stack trace:</strong>
+                                    <pre style={{ marginTop: '0.25rem', padding: '0.5rem', background: 'var(--bg-tertiary, #f1f5f9)', borderRadius: '4px', overflow: 'auto', maxHeight: '200px', fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                      {err.error_stack}
+                                    </pre>
+                                  </div>
+                                )}
+                                {err.component_stack && (
+                                  <div>
+                                    <strong>Component stack:</strong>
+                                    <pre style={{ marginTop: '0.25rem', padding: '0.5rem', background: 'var(--bg-tertiary, #f1f5f9)', borderRadius: '4px', overflow: 'auto', maxHeight: '200px', fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                      {err.component_stack}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}
