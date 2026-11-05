@@ -156,8 +156,8 @@ export default function ExpenseApproval() {
           companyId: companyUser.company_id,
           notifyKey: 'notify_expense_claims',
           message: approved
-            ? `✅ *Expense Claim Approved*\nExpense claim ${claim.reference_number} for ${formatCurrency(totalAmount, currency)} has been approved.`
-            : `❌ *Expense Claim Declined*\nExpense claim ${claim.reference_number} for ${formatCurrency(totalAmount, currency)} has been declined.`,
+            ? `✅ *Expense Claim Approved*\n${APPROVER_NAME} has approved expense claim ${claim.reference_number}.`
+            : `❌ *Expense Claim Declined*\n${APPROVER_NAME} has declined expense claim ${claim.reference_number}.`,
         })
       } catch { /* notification failure should not block the user */ }
     }

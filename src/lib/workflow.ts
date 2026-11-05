@@ -91,3 +91,11 @@ export async function getManagerEmail(employeeId: string | null, fallbackEmail: 
 
   return managerEmail
 }
+
+export async function getNameByEmail(email: string, companyId?: string): Promise<string> {
+  const query = supabase.from('employees').select('first_name, last_name').eq('email', email).eq('is_active', true)
+  if (companyId) query.eq('company_id', companyId)
+  const { data } = await query.limit(1).maybeSingle()
+  if (data?.first_name) return `${data.first_name} ${data.last_name || ''}`.trim()
+  return email.split('@')[0]
+}
