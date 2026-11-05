@@ -453,7 +453,7 @@ async function gatherContext(
         articles.map(a => `Q: ${a.question}\nA: ${a.answer}`).join('\n\n')
     }
 
-    // Fallback: if text search found nothing, try keyword ILIKE match
+    // Fallback 1: if text search found nothing, try keyword ILIKE match
     if (!faqText) {
       const keywordFilter = searchTerms.slice(0, 3).map(t => `keywords.ilike.%${t}%`).join(',')
       const { data: fallbackArticles } = await sb.from('help_articles')
@@ -468,20 +468,52 @@ async function gatherContext(
           fallbackArticles.map(a => `Q: ${a.question}\nA: ${a.answer}`).join('\n\n')
       }
     }
+
+    // Fallback 2: if keyword match also found nothing, load broad FAQ set by category
+    if (!faqText) {
+      const { data: broadArticles } = await sb.from('help_articles')
+        .select('question, answer, category')
+        .or(`company_id.is.null,company_id.eq.${companyId}`)
+        .eq('is_active', true)
+        .order('category', { ascending: true })
+        .limit(8)
+
+      if (broadArticles && broadArticles.length > 0) {
+        faqText = 'FAQ ARTICLES:\n' +
+          broadArticles.map(a => `Q: ${a.question}\nA: ${a.answer}`).join('\n\n')
+      }
+    }
   }
 
-  if (contextMode !== 'faq_only' && searchTerms.length > 0) {
-    const searchPattern = searchTerms.join(' | ')
-    const { data: hbSections } = await sb.from('handbook_sections')
-      .select('section_number, title, content')
-      .or(`company_id.is.null,company_id.eq.${companyId}`)
-      .eq('is_active', true)
-      .textSearch('search_vector', searchPattern)
-      .limit(3)
+  if (contextMode !== 'faq_only') {
+    if (searchTerms.length > 0) {
+      const searchPattern = searchTerms.join(' | ')
+      const { data: hbSections } = await sb.from('handbook_sections')
+        .select('section_number, title, content')
+        .or(`company_id.is.null,company_id.eq.${companyId}`)
+        .eq('is_active', true)
+        .textSearch('search_vector', searchPattern)
+        .limit(3)
 
-    if (hbSections && hbSections.length > 0) {
-      handbookText = '\n\nEMPLOYEE HANDBOOK SECTIONS:\n' +
-        hbSections.map(s => `--- Section ${s.section_number}: ${s.title} ---\n${s.content}`).join('\n\n')
+      if (hbSections && hbSections.length > 0) {
+        handbookText = '\n\nEMPLOYEE HANDBOOK SECTIONS:\n' +
+          hbSections.map(s => `--- Section ${s.section_number}: ${s.title} ---\n${s.content}`).join('\n\n')
+      }
+    }
+
+    // Fallback: if textSearch found nothing or terms were empty, load first handbook sections
+    if (!handbookText) {
+      const { data: broadSections } = await sb.from('handbook_sections')
+        .select('section_number, title, content')
+        .or(`company_id.is.null,company_id.eq.${companyId}`)
+        .eq('is_active', true)
+        .order('section_number', { ascending: true })
+        .limit(5)
+
+      if (broadSections && broadSections.length > 0) {
+        handbookText = '\n\nEMPLOYEE HANDBOOK SECTIONS:\n' +
+          broadSections.map(s => `--- Section ${s.section_number}: ${s.title} ---\n${s.content}`).join('\n\n')
+      }
     }
   }
 
