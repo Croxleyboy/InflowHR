@@ -11078,6 +11078,23 @@ body {
 }
 :root[data-theme="dark"] .hc-article-a { border-color: #3a3a55; color: #aaa; }
 
+/* -- Show more button (article pagination) -- */
+.hc-show-more {
+  width: 100%; padding: 10px; border-radius: 10px;
+  border: 1px dashed #d1d5db; background: transparent;
+  color: var(--accent, #6366f1); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s; text-align: center;
+}
+.hc-show-more:hover {
+  background: rgba(99, 102, 241, 0.06); border-color: var(--accent, #6366f1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hc-show-more { border-color: #3a3a55; color: #a5b4fc; }
+  :root:not([data-theme="light"]) .hc-show-more:hover { background: rgba(99, 102, 241, 0.12); border-color: #6366f1; }
+}
+:root[data-theme="dark"] .hc-show-more { border-color: #3a3a55; color: #a5b4fc; }
+:root[data-theme="dark"] .hc-show-more:hover { background: rgba(99, 102, 241, 0.12); border-color: #6366f1; }
+
 /* -- Message actions (copy, feedback) -- */
 .hc-msg-actions {
   display: flex; gap: 2px; margin-top: 6px;
@@ -11130,13 +11147,17 @@ body {
   border-color: var(--accent, #6366f1);
 }
 .hc-chip:focus-visible { outline: 2px solid var(--accent, #6366f1); outline-offset: 2px; }
+.hc-chip-active {
+  background: var(--accent, #6366f1); color: #fff;
+  border-color: var(--accent, #6366f1);
+}
 .hc-chip-icon { font-size: 14px; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .hc-chip { background: #252540; border-color: #3a3a55; color: #ccc; }
-  :root:not([data-theme="light"]) .hc-chip:hover { background: var(--accent, #6366f1); color: #fff; border-color: var(--accent, #6366f1); }
+  :root:not([data-theme="light"]) .hc-chip:hover, :root:not([data-theme="light"]) .hc-chip-active { background: var(--accent, #6366f1); color: #fff; border-color: var(--accent, #6366f1); }
 }
 :root[data-theme="dark"] .hc-chip { background: #252540; border-color: #3a3a55; color: #ccc; }
-:root[data-theme="dark"] .hc-chip:hover { background: var(--accent, #6366f1); color: #fff; border-color: var(--accent, #6366f1); }
+:root[data-theme="dark"] .hc-chip:hover, :root[data-theme="dark"] .hc-chip-active { background: var(--accent, #6366f1); color: #fff; border-color: var(--accent, #6366f1); }
 
 /* -- Topic dropdown (mobile/tablet) -- */
 .hc-topic-dropdown-wrap { padding: 4px 0; }
