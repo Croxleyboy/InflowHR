@@ -1,6 +1,6 @@
 # InflowHR — List of Subprocessors
 
-**Last updated:** 25-09-2026
+**Last updated:** 05-11-2026
 
 Under GDPR Article 28, InflowHR maintains this list of subprocessors that process personal data on behalf of our customers. We will notify customers of any changes to this list at least 30 days before a new subprocessor begins processing data.
 
@@ -27,14 +27,32 @@ These subprocessors are only engaged when a customer explicitly enables the inte
 | **Sage Group plc** | Payroll integration and payslip upload | Employee names, payroll data, payslip PDFs | UK | Yes — Sage DPA |
 | **Microsoft (Azure AD)** | Single sign-on authentication | Email addresses, authentication tokens | EU/Global | Yes — Microsoft DPA |
 | **Microsoft (Teams)** | Teams presence and leave notifications (where enabled) | Employee names, email addresses, leave status | EU/Global | Yes — Microsoft DPA |
+| **Slack Technologies (Salesforce)** | HR notifications to a company Slack channel (where enabled) | Manager names, request reference numbers only (no employee PII) | US/Global | Yes — Slack DPA (via Salesforce) |
+| **Modulr Finance Ltd** | Employee payouts and payment processing (where enabled) | Employee names, bank details, payment amounts | UK | Yes — Modulr DPA |
+
+## Hosting & CDN
+
+| Subprocessor | Purpose | Data processed | Location | DPA in place |
+|-------------|---------|---------------|----------|-------------|
+| **Cloudflare Inc.** | CDN, DDoS protection, DNS and web application firewall for the InflowHR web application | IP addresses, HTTP headers (no employee PII stored) | Global (edge network) | Yes — Cloudflare DPA |
 
 ## Security Scanning
 
 | Subprocessor | Purpose | Data processed | Location | DPA in place |
 |-------------|---------|---------------|----------|-------------|
-| **VirusTotal (Google/Chronicle)** | Malware scanning of uploaded employee documents | File content (uploaded for analysis, not retained beyond scan on free tier) | Global (US-based) | Yes — Google Cloud DPA (VirusTotal is a Chronicle/Google subsidiary) |
+| **VirusTotal (Google/Chronicle)** | Malware hash-lookup for uploaded employee documents | File SHA-256 hash only (file content never leaves InflowHR infrastructure) | Global (US-based) | Yes — Google Cloud DPA (VirusTotal is a Chronicle/Google subsidiary) |
 
-> **Note:** VirusTotal scanning is optional. If no API key is configured, documents are uploaded without scanning (scan status: `skipped`). File content is sent to VirusTotal solely for malware analysis. See `docs/go-to-market/EMPLOYEE_DOCUMENT_MANAGEMENT.md` for full details.
+> **Note:** VirusTotal scanning is optional. If no API key is configured, documents are uploaded without scanning (scan status: `skipped`). Only the SHA-256 hash of the file is sent to VirusTotal for lookup — file content is never transmitted. See `docs/go-to-market/EMPLOYEE_DOCUMENT_MANAGEMENT.md` for full details.
+
+## AI Services (customer-activated only)
+
+These subprocessors are only engaged when a customer explicitly enables the AI feature.
+
+| Subprocessor | Purpose | Data processed | Location | DPA in place |
+|-------------|---------|---------------|----------|-------------|
+| **OpenAI Inc.** | AI-powered employee help agent and enterprise AI assistant (where enabled) | Anonymised queries only — no employee names, IDs or PII are sent to OpenAI; the edge function formulates a database query from the user's question and executes it server-side | US | Yes — OpenAI DPA (Business terms) |
+
+> **Note:** InflowHR's AI features use OpenAI solely to interpret natural-language questions and generate safe SQL queries. No employee data, names, ages, salaries or personal information is ever passed to OpenAI. The AI model receives only the question text and a schema description. All data retrieval happens server-side via Supabase after the query is generated. See the `ai-help-agent` and `enterprise-ai-agent` edge functions for implementation details.
 
 ## Embedded Services
 
@@ -47,8 +65,7 @@ These subprocessors are only engaged when a customer explicitly enables the inte
 InflowHR does **not** use:
 - Third-party analytics or tracking (no Google Analytics, Mixpanel, etc.)
 - Advertising networks
-- Third-party error tracking (no Sentry, Bugsnag, etc.)
-- CDN providers that inspect content
+- CDN providers that inspect or store content (Cloudflare operates as a pass-through proxy)
 
 ## Changes to this list
 

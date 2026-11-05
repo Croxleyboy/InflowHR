@@ -75,7 +75,7 @@ Every uploaded document is scanned for malware using the **VirusTotal API** befo
 |------|-------------|
 | 1. Upload | File uploaded to Supabase Storage, metadata record created with `scan_status: 'pending'` |
 | 2. Trigger | Frontend calls the `scan-document` Edge Function asynchronously |
-| 3. Scan | Edge Function downloads the file, submits to VirusTotal, polls for results (up to 60 seconds) |
+| 3. Scan | Edge Function downloads the file, computes its SHA-256 hash, and looks up the hash in VirusTotal's database (file content never leaves InflowHR infrastructure) |
 | 4. Result | `scan_status` updated to `clean`, `infected`, `error`, `timeout`, or `skipped` |
 | 5. Infected | If malware detected, file is **automatically deleted** from storage |
 
@@ -97,7 +97,7 @@ Every uploaded document is scanned for malware using the **VirusTotal API** befo
 - **Premium**: higher rate limits available at [virustotal.com](https://www.virustotal.com)
 - **Configuration**: set `VIRUSTOTAL_API_KEY` as a Supabase Edge Function secret
 - **If not configured**: documents are uploaded but scanning is skipped (status: `skipped`)
-- **Data processing**: file content is sent to VirusTotal for analysis. VirusTotal's privacy policy applies. Files are not retained by VirusTotal on the free tier beyond analysis.
+- **Data processing**: only the SHA-256 hash of the file is sent to VirusTotal for lookup. File content never leaves InflowHR infrastructure. VirusTotal's privacy policy applies to hash lookups.
 
 ### Setting up virus scanning
 
