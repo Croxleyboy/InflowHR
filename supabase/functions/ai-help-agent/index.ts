@@ -24,41 +24,41 @@ function formatUKDate(dateStr: string): string {
 
 // ── Feature key mapping: which tool/query requires which subscription ──
 // null = always available (core HR)
+// null = always available (core feature or fundamental HR)
+// Core features included for all companies: leave, expenses, payroll, elearning,
+// performance, onboarding, kudos, announcements, profile, holidays
+// Add-on features that need gating: shifts, timesheets, benefits, room booking
 const TOOL_FEATURE_MAP: Record<string, string | null> = {
-  get_leave_balance: 'leave_management',
-  get_leave_requests: 'leave_management',
-  get_expense_claims: 'expenses',
+  get_leave_balance: null,
+  get_leave_requests: null,
+  get_expense_claims: null,
   get_next_shifts: 'shifts',
   get_hours_worked: 'timesheets',
-  get_payslip_summary: 'payroll',
+  get_payslip_summary: null,
   get_my_profile: null,
   get_benefits: 'benefits',
-  get_elearning_progress: 'elearning',
+  get_elearning_progress: null,
   get_upcoming_holidays: null,
   my_probation_end: null,
   my_documents_pending: null,
   my_pending_approvals: null,
-  team_on_leave_today: 'leave_management',
+  team_on_leave_today: null,
   upcoming_team_birthdays: null,
-  my_team_pending_leave: 'leave_management',
-  my_team_elearning_incomplete: 'elearning',
-  my_team_absence_days: 'leave_management',
+  my_team_pending_leave: null,
+  my_team_elearning_incomplete: null,
+  my_team_absence_days: null,
   company_headcount: null,
-  company_absence_rate: 'leave_management',
-  company_on_leave_today: 'leave_management',
+  company_absence_rate: null,
+  company_on_leave_today: null,
   company_new_starters: null,
   company_probation_due: null,
 }
 
 // Human-readable names for disabled features
 const FEATURE_LABELS: Record<string, string> = {
-  leave_management: 'Leave Management',
-  expenses: 'Expenses',
   shifts: 'Shifts & Rotas',
   timesheets: 'Timesheets',
-  payroll: 'Payroll',
   benefits: 'Benefits',
-  elearning: 'E-Learning',
   space_booking: 'Room Booking',
 }
 
