@@ -589,6 +589,8 @@ export default function HelpChatBubble() {
   const [userScrolled, setUserScrolled] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<Record<number, 'up' | 'down'>>({})
+  const [articlePageSize] = useState(5)
+  const [articleVisibleCount, setArticleVisibleCount] = useState<Record<number, number>>({})
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -678,6 +680,7 @@ export default function HelpChatBubble() {
     setSelectedCategory(null)
     setQuery('')
     setFeedback({})
+    setArticleVisibleCount({})
     setTimeout(() => inputRef.current?.focus(), 100)
   }
 
@@ -778,7 +781,7 @@ export default function HelpChatBubble() {
       .eq('is_active', true)
       .eq('category', category)
       .order('sort_order')
-      .limit(8)
+      .limit(50)
     return data || []
   }
 
@@ -797,7 +800,7 @@ export default function HelpChatBubble() {
       .eq('is_active', true)
       .eq('category', category)
       .order('sort_order')
-      .limit(8)
+      .limit(50)
 
     const articles = data || []
     if (articles.length > 0) {
@@ -1131,35 +1134,49 @@ export default function HelpChatBubble() {
                         dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
                       />
 
-                      {msg.articles && msg.articles.length > 0 && (
-                        <div className="hc-articles">
-                          {msg.articles.map(article => (
-                            <button
-                              key={article.id}
-                              data-article-id={article.id}
-                              className={`hc-article ${expandedArticle === article.id ? 'hc-article-expanded' : ''}`}
-                              onClick={() => handleArticleClick(article)}
-                            >
-                              <div className="hc-article-q">
-                                <span>{article.question}</span>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: expandedArticle === article.id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-                                  <polyline points="6 9 12 15 18 9"/>
-                                </svg>
-                              </div>
-                              {expandedArticle === article.id && (
-                                <div className="hc-article-a">
-                                  {(resolvedAnswers[article.id] || article.answer).split('\n').map((line, li) => (
-                                    <p key={li}>{line}</p>
-                                  ))}
-                                  {article.data_query && !resolvedAnswers[article.id] && (
-                                    <p style={{ fontStyle: 'italic', opacity: 0.7 }}>Loading your data...</p>
-                                  )}
+                      {msg.articles && msg.articles.length > 0 && (() => {
+                        const visibleCount = articleVisibleCount[i] || articlePageSize
+                        const visibleArticles = msg.articles.slice(0, visibleCount)
+                        const hasMore = msg.articles.length > visibleCount
+                        const remaining = msg.articles.length - visibleCount
+                        return (
+                          <div className="hc-articles">
+                            {visibleArticles.map(article => (
+                              <button
+                                key={article.id}
+                                data-article-id={article.id}
+                                className={`hc-article ${expandedArticle === article.id ? 'hc-article-expanded' : ''}`}
+                                onClick={() => handleArticleClick(article)}
+                              >
+                                <div className="hc-article-q">
+                                  <span>{article.question}</span>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: expandedArticle === article.id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                                    <polyline points="6 9 12 15 18 9"/>
+                                  </svg>
                                 </div>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                                {expandedArticle === article.id && (
+                                  <div className="hc-article-a">
+                                    {(resolvedAnswers[article.id] || article.answer).split('\n').map((line, li) => (
+                                      <p key={li}>{line}</p>
+                                    ))}
+                                    {article.data_query && !resolvedAnswers[article.id] && (
+                                      <p style={{ fontStyle: 'italic', opacity: 0.7 }}>Loading your data...</p>
+                                    )}
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                            {hasMore && (
+                              <button
+                                className="hc-show-more"
+                                onClick={() => setArticleVisibleCount(prev => ({ ...prev, [i]: visibleCount + articlePageSize }))}
+                              >
+                                Show more ({remaining} remaining)
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })()}
 
                       {msg.role === 'bot' && !msg.articles && i > 0 && (
                         <div className="hc-msg-actions">
@@ -1234,7 +1251,7 @@ export default function HelpChatBubble() {
                 {showChips && isDesktop && !isDocked && (
                   <div className="hc-welcome-chips">
                     {CATEGORIES.map(cat => (
-                      <button key={cat.key} className="hc-chip" onClick={() => handleCategoryClick(cat.key)}>
+                      <button key={cat.key} className={`hc-chip ${selectedCategory === cat.key ? 'hc-chip-active' : ''}`} onClick={() => handleCategoryClick(cat.key)}>
                         <span className="hc-chip-icon">{cat.icon}</span>
                         {cat.label}
                       </button>

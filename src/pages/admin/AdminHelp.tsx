@@ -97,7 +97,11 @@ export default function AdminHelp() {
   const [handbookVersion, setHandbookVersion] = useState('1.0')
   const [handbookSaving, setHandbookSaving] = useState(false)
   const [handbookOverlaps, setHandbookOverlaps] = useState<{ id: number; question: string; matchedSection: string }[]>([])
-  const [aiUsage, setAiUsage] = useState<{ used: number; limit: number | null; periodStart: string } | null>(null)
+  const [aiUsage, setAiUsage] = useState<{
+    used: number; limit: number | null; periodStart: string;
+    deterministic: number; aiClassifier: number; aiFormatter: number;
+    promptTokens: number; completionTokens: number; totalTokens: number;
+  } | null>(null)
 
   const [frontendErrors, setFrontendErrors] = useState<FrontendError[]>([])
   const [errorsLoading, setErrorsLoading] = useState(false)
@@ -107,12 +111,22 @@ export default function AdminHelp() {
   const loadAiUsage = useCallback(async () => {
     if (!selectedCompanyId) return
     const { data } = await supabase.from('company_features')
-      .select('monthly_queries_used, monthly_query_limit, usage_period_start')
+      .select('monthly_queries_used, monthly_query_limit, usage_period_start, monthly_deterministic_queries, monthly_ai_classifier_queries, monthly_ai_formatter_queries, monthly_tokens_used, monthly_prompt_tokens, monthly_completion_tokens')
       .eq('company_id', selectedCompanyId).eq('feature_key', 'ai_help_agent').maybeSingle()
     if (data) {
       const monthStart = new Date().toISOString().slice(0, 8) + '01'
-      const used = data.usage_period_start && data.usage_period_start < monthStart ? 0 : (data.monthly_queries_used || 0)
-      setAiUsage({ used, limit: data.monthly_query_limit, periodStart: data.usage_period_start || monthStart })
+      const isNewMonth = data.usage_period_start && data.usage_period_start < monthStart
+      setAiUsage({
+        used: isNewMonth ? 0 : (data.monthly_queries_used || 0),
+        limit: data.monthly_query_limit,
+        periodStart: data.usage_period_start || monthStart,
+        deterministic: isNewMonth ? 0 : (data.monthly_deterministic_queries || 0),
+        aiClassifier: isNewMonth ? 0 : (data.monthly_ai_classifier_queries || 0),
+        aiFormatter: isNewMonth ? 0 : (data.monthly_ai_formatter_queries || 0),
+        promptTokens: isNewMonth ? 0 : (data.monthly_prompt_tokens || 0),
+        completionTokens: isNewMonth ? 0 : (data.monthly_completion_tokens || 0),
+        totalTokens: isNewMonth ? 0 : (data.monthly_tokens_used || 0),
+      })
     }
   }, [selectedCompanyId])
 
@@ -643,7 +657,7 @@ export default function AdminHelp() {
                 <div className="admin-help-metrics-section" style={{ marginTop: '1.5rem' }}>
                   <h3>AI Usage This Month</h3>
                   <p className="admin-page-subtitle">
-                    Monthly AI query usage for {new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}. Limits are set in Integrations by a super admin.
+                    Monthly query usage for {new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}. Limits are set in Integrations by a super admin.
                   </p>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 8 }}>
                     <span style={{ fontSize: 28, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{aiUsage.used}</span>
@@ -671,6 +685,54 @@ export default function AdminHelp() {
                       </p>
                     </>
                   )}
+
+                  <div style={{ marginTop: 16 }}>
+                    <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Query Breakdown</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                      <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary, #f1f5f9)' }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success, #22c55e)' }}>{aiUsage.deterministic}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>Deterministic</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted, #888)', marginTop: 2 }}>No AI — zero cost</div>
+                      </div>
+                      <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary, #f1f5f9)' }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: '#7c3aed' }}>{aiUsage.aiClassifier}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>AI Classified</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted, #888)', marginTop: 2 }}>Question text only</div>
+                      </div>
+                      <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary, #f1f5f9)' }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: '#f59e0b' }}>{aiUsage.aiFormatter}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>AI Formatted</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted, #888)', marginTop: 2 }}>FAQ/handbook text only</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 16 }}>
+                    <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Estimated Cost</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                      <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary, #f1f5f9)' }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>
+                          ${((aiUsage.promptTokens * 0.15 / 1_000_000) + (aiUsage.completionTokens * 0.60 / 1_000_000)).toFixed(4)}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>Cost this month (USD)</div>
+                      </div>
+                      <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary, #f1f5f9)' }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>
+                          {(aiUsage.promptTokens + aiUsage.completionTokens).toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>Total tokens</div>
+                      </div>
+                      <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary, #f1f5f9)' }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>
+                          {aiUsage.used > 0 ? ((aiUsage.promptTokens + aiUsage.completionTokens) / aiUsage.used).toFixed(0) : '0'}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>Avg tokens/query</div>
+                      </div>
+                    </div>
+                    <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                      Based on gpt-4o-mini pricing: $0.15/1M input tokens, $0.60/1M output tokens. Deterministic queries have zero AI cost.
+                    </p>
+                  </div>
                 </div>
               )}
 
