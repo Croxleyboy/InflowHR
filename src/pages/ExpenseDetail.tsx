@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import NewExpenseItem from './NewExpenseItem'
 import { formatDateTime, formatCurrency } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
-import { getManagerEmail } from '../lib/workflow'
+import { getManagerEmail, getNameByEmail } from '../lib/workflow'
 import { sendTeamsNotification } from '../lib/teamsNotifications'
 import { sendSlackNotification } from '../lib/slackNotifications'
 
@@ -138,10 +138,11 @@ export default function ExpenseDetail() {
         })
       } catch { /* notification failure should not block the user */ }
       try {
+        const mgrName = await getNameByEmail(managerEmail, companyUser.company_id)
         await sendSlackNotification({
           companyId: companyUser.company_id,
           notifyKey: 'notify_expense_claims',
-          message: `💰 *Expense Claim Submitted*\n${HARDCODED_EMPLOYEE_NAME} has submitted expense claim ${claim.reference_number} - ${claim.title} - ${formatCurrency(totalAmount, currency)}`,
+          message: `💰 *Expense Claim Submitted*\nA new expense claim (${claim.reference_number}) has been submitted for ${mgrName}'s approval.`,
         })
       } catch { /* notification failure should not block the user */ }
     }

@@ -273,8 +273,8 @@ export default function LeaveApproval() {
         companyId: companyUser.company_id,
         notifyKey: 'notify_leave_requests',
         message: approved
-          ? `✅ *Leave Approved*\n${typeName} for ${empName} (${formatDate(request.start_date)}–${formatDate(request.end_date)}) has been approved.`
-          : `❌ *Leave Declined*\n${typeName} for ${empName} (${formatDate(request.start_date)}–${formatDate(request.end_date)}) has been declined.`,
+          ? `✅ *Leave Request Approved*\n${APPROVER_NAME} has approved leave request LR-${request.id}.`
+          : `❌ *Leave Request Declined*\n${APPROVER_NAME} has declined leave request LR-${request.id}.`,
       }).catch(() => {})
     }
 

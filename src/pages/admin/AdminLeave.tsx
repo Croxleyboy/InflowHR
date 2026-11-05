@@ -736,8 +736,8 @@ export default function AdminLeave() {
           companyId: selectedCompanyId,
           notifyKey: 'notify_leave_requests',
           message: approved
-            ? `✅ *Leave ${approved ? 'Approved' : 'Declined'}*\n${typeName} for ${empName} (${dateRange}) has been approved by admin.`
-            : `❌ *Leave Declined*\n${typeName} for ${empName} (${dateRange}) has been declined by admin.`,
+            ? `✅ *Leave Request Approved*\nLeave request LR-${id} has been approved.`
+            : `❌ *Leave Request Declined*\nLeave request LR-${id} has been declined.`,
         }).catch(() => {})
       }
 

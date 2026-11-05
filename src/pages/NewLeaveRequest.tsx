@@ -7,7 +7,7 @@ import { LEAVE_TYPE_KEYS } from '../lib/translations'
 import { countWorkingDays } from '../lib/workingDays'
 import { formatDate, formatDateDisplay, getFYRange } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
-import { getManagerEmail } from '../lib/workflow'
+import { getManagerEmail, getNameByEmail } from '../lib/workflow'
 import { sendTeamsNotification } from '../lib/teamsNotifications'
 import { sendSlackNotification } from '../lib/slackNotifications'
 
@@ -497,10 +497,11 @@ export default function NewLeaveRequest() {
         })
       } catch { /* notification failure should not block the user */ }
       try {
+        const mgrName = await getNameByEmail(managerEmail, companyUser.company_id)
         await sendSlackNotification({
           companyId: companyUser.company_id,
           notifyKey: 'notify_leave_requests',
-          message: `📋 *Leave Request Submitted*\n${EMPLOYEE_NAME} has submitted a leave request: ${taskDesc}`,
+          message: `📋 *Leave Request Submitted*\nA new leave request (LR-${data.id}) has been submitted for ${mgrName}'s approval.`,
         })
       } catch { /* notification failure should not block the user */ }
     }
