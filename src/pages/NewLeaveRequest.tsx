@@ -9,6 +9,7 @@ import { formatDate, formatDateDisplay, getFYRange } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
 import { getManagerEmail } from '../lib/workflow'
 import { sendTeamsNotification } from '../lib/teamsNotifications'
+import { sendSlackNotification } from '../lib/slackNotifications'
 
 const VACATION_OPTION_LEAVE_TYPES: Record<string, { name: string; translationKey: string }> = {
   buy_leave: { name: 'Buy Additional Leave', translationKey: 'buy_leave' },
@@ -493,6 +494,13 @@ export default function NewLeaveRequest() {
           managerEmail,
           employeeName: EMPLOYEE_NAME,
           message: `Leave request needs your approval: ${taskDesc}`,
+        })
+      } catch { /* notification failure should not block the user */ }
+      try {
+        await sendSlackNotification({
+          companyId: companyUser.company_id,
+          notifyKey: 'notify_leave_requests',
+          message: `📋 *Leave Request Submitted*\n${EMPLOYEE_NAME} has submitted a leave request: ${taskDesc}`,
         })
       } catch { /* notification failure should not block the user */ }
     }

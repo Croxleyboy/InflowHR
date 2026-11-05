@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
 import { sendFeatureEmail } from '../../lib/emailNotifications'
+import { sendSlackNotification } from '../../lib/slackNotifications'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
@@ -731,6 +732,13 @@ export default function AdminLeave() {
           type: approved ? 'info' : 'alert',
           link: '/leave',
         })
+        sendSlackNotification({
+          companyId: selectedCompanyId,
+          notifyKey: 'notify_leave_requests',
+          message: approved
+            ? `✅ *Leave ${approved ? 'Approved' : 'Declined'}*\n${typeName} for ${empName} (${dateRange}) has been approved by admin.`
+            : `❌ *Leave Declined*\n${typeName} for ${empName} (${dateRange}) has been declined by admin.`,
+        }).catch(() => {})
       }
 
       window.dispatchEvent(new Event('notifications-updated'))

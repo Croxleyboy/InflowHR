@@ -33,7 +33,7 @@ interface Announcement {
   author: { first_name: string; last_name: string } | null
 }
 
-type Tab = 'workflow' | 'company' | 'email'
+type Tab = 'workflow' | 'company' | 'email' | 'slack'
 
 interface EmailSettings {
   leave_enabled: boolean
@@ -94,6 +94,13 @@ export default function AdminNotifications() {
   const [loadingEmail, setLoadingEmail] = useState(true)
   const [savingEmail, setSavingEmail] = useState<string | null>(null)
 
+  // Slack notification settings state
+  interface SlackNotifySettings { notify_leave_requests: boolean; notify_expense_claims: boolean; notify_onboarding: boolean }
+  const [slackSettings, setSlackSettings] = useState<SlackNotifySettings>({ notify_leave_requests: true, notify_expense_claims: true, notify_onboarding: true })
+  const [loadingSlack, setLoadingSlack] = useState(true)
+  const [savingSlack, setSavingSlack] = useState<string | null>(null)
+  const [slackConnected, setSlackConnected] = useState(false)
+
   // Workflow state
   const [rows, setRows] = useState<WorkflowRow[]>([])
   const [loadingWorkflow, setLoadingWorkflow] = useState(true)
@@ -118,6 +125,7 @@ export default function AdminNotifications() {
       loadWorkflow()
       loadAnnouncements()
       loadEmailSettings()
+      loadSlackSettings()
     }
   }, [selectedCompanyId])
 
@@ -177,6 +185,51 @@ export default function AdminNotifications() {
       }
     }
     setSavingEmail(null)
+  }
+
+  async function loadSlackSettings() {
+    setLoadingSlack(true)
+    const { data } = await supabase
+      .from('slack_integrations')
+      .select('is_enabled, webhook_url, notify_leave_requests, notify_expense_claims, notify_onboarding')
+      .eq('company_id', selectedCompanyId)
+      .maybeSingle()
+    if (data) {
+      setSlackConnected(!!(data.is_enabled && data.webhook_url))
+      setSlackSettings({
+        notify_leave_requests: data.notify_leave_requests ?? true,
+        notify_expense_claims: data.notify_expense_claims ?? true,
+        notify_onboarding: data.notify_onboarding ?? true,
+      })
+    } else {
+      setSlackConnected(false)
+      setSlackSettings({ notify_leave_requests: true, notify_expense_claims: true, notify_onboarding: true })
+    }
+    setLoadingSlack(false)
+  }
+
+  async function toggleSlackSetting(key: keyof SlackNotifySettings) {
+    const newVal = !slackSettings[key]
+    setSavingSlack(key)
+    setSlackSettings(prev => ({ ...prev, [key]: newVal }))
+
+    const { error } = await supabase
+      .from('slack_integrations')
+      .update({ [key]: newVal, updated_at: new Date().toISOString() })
+      .eq('company_id', selectedCompanyId)
+
+    if (error) {
+      showError('Failed to update Slack setting: ' + error.message)
+      setSlackSettings(prev => ({ ...prev, [key]: !newVal }))
+    } else {
+      const labels: Record<string, string> = {
+        notify_leave_requests: 'Leave Requests & Approvals',
+        notify_expense_claims: 'Expense Claims & Approvals',
+        notify_onboarding: 'Onboarding & Offboarding Updates',
+      }
+      showSuccess(`${newVal ? 'Enabled' : 'Disabled'} Slack: ${labels[key] || key}`)
+    }
+    setSavingSlack(null)
   }
 
   async function loadWorkflow() {
@@ -337,6 +390,19 @@ export default function AdminNotifications() {
             }}
           >
             Email Notifications
+          </button>
+        )}
+        {companyFeatures.slack_integration && (
+          <button
+            onClick={() => setTab('slack')}
+            style={{
+              padding: '10px 20px', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+              background: 'none', border: 'none',
+              borderBottom: tab === 'slack' ? '3px solid #4A154B' : '3px solid transparent',
+              color: tab === 'slack' ? '#4A154B' : 'var(--text-muted, #888)',
+            }}
+          >
+            Slack Notifications
           </button>
         )}
       </div>
@@ -556,6 +622,93 @@ export default function AdminNotifications() {
                       color: featureLocked ? '#e65100' : emailSettings[toggle.key] ? '#2e7d32' : '#999',
                     }}>
                       {featureLocked ? 'Locked' : savingEmail === toggle.key ? 'Saving...' : emailSettings[toggle.key] ? 'On' : 'Off'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'slack' && companyFeatures.slack_integration && (
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-muted, #888)', margin: 0 }}>
+              Configure which HR events send Slack notifications to your workspace. Slack must be connected and enabled in Admin &gt; Integrations first.
+            </p>
+          </div>
+
+          {!slackConnected && (
+            <div style={{
+              padding: '16px 20px',
+              background: 'rgba(255,248,225,.5)',
+              border: '1px solid #fff3e0',
+              borderRadius: 8,
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span style={{ fontSize: 13, color: '#e65100', fontWeight: 600 }}>
+                Slack is not connected. Go to Admin &gt; Integrations to set up your Slack webhook first.
+              </span>
+            </div>
+          )}
+
+          {loadingSlack ? <div className="admin-loading">Loading...</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {([
+                { key: 'notify_leave_requests' as const, label: 'Leave Requests & Approvals', description: 'Post to Slack when an employee submits a leave request (sent to their manager) and when leave is approved or declined (sent to the employee)', icon: '#e91e63' },
+                { key: 'notify_expense_claims' as const, label: 'Expense Claims & Approvals', description: 'Post to Slack when an employee submits an expense claim (sent to their manager) and when an expense is approved or declined (sent to the employee)', icon: '#1565c0' },
+                { key: 'notify_onboarding' as const, label: 'Onboarding & Offboarding Updates', description: 'Post to Slack when onboarding or offboarding workflow steps are completed', icon: '#43a047' },
+              ]).map(toggle => {
+                const disabled = !slackConnected
+                return (
+                  <div
+                    key={toggle.key}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 16,
+                      padding: '14px 18px',
+                      background: disabled ? '#fafafa' : slackSettings[toggle.key] ? 'var(--card-bg-active, #f3e5f5)' : 'var(--card-bg, #fff)',
+                      border: `1px solid ${disabled ? '#e0e0e0' : slackSettings[toggle.key] ? '#4A154B' : 'var(--border-color, #e0e0e0)'}`,
+                      borderRadius: 8,
+                      transition: 'all 0.2s',
+                      opacity: disabled ? 0.6 : 1,
+                    }}
+                  >
+                    <label className="admin-toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={!disabled && slackSettings[toggle.key]}
+                        onChange={() => toggleSlackSetting(toggle.key)}
+                        disabled={disabled || savingSlack === toggle.key}
+                      />
+                      <span className="admin-toggle-slider" />
+                    </label>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary, #333)' }}>{toggle.label}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 2 }}>{toggle.description}</div>
+                      {disabled && (
+                        <div style={{ fontSize: 11, color: '#e65100', fontWeight: 600, marginTop: 4 }}>
+                          Connect Slack in Admin &gt; Integrations to enable
+                        </div>
+                      )}
+                    </div>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      padding: '3px 10px',
+                      borderRadius: 12,
+                      background: disabled ? '#fff3e0' : slackSettings[toggle.key] ? '#f3e5f5' : '#f5f5f5',
+                      color: disabled ? '#e65100' : slackSettings[toggle.key] ? '#4A154B' : '#999',
+                    }}>
+                      {disabled ? 'Not Connected' : savingSlack === toggle.key ? 'Saving...' : slackSettings[toggle.key] ? 'On' : 'Off'}
                     </span>
                   </div>
                 )
