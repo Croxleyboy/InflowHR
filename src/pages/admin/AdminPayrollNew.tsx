@@ -2970,7 +2970,14 @@ export default function AdminPayrollNew() {
                 </div>
 
                 {/* Info cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 12, padding: 16 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      Status
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{statusBadge(wt.status)}</div>
+                  </div>
                   <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 12, padding: 16 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -3143,6 +3150,53 @@ export default function AdminPayrollNew() {
                     </div>
                   </div>
                 </div>
+
+                {/* Processing Pay Runs */}
+                {processingRuns.length > 0 && (
+                  <>
+                    <h3 className="pn-section-title" style={{ marginTop: 4 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      Pay Runs In Progress
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                      {processingRuns.map(run => {
+                        const wtLabels = (run.worker_types || []).map((wt: string) => wt === 'employed' ? 'Employed' : wt === 'shift_worker' ? 'Shift Workers' : 'Zero Hours').join(', ')
+                        const statusColor = run.status === 'processing' ? '#ff9800' : '#1565c0'
+                        const statusLabel = run.status === 'processing' ? 'Processing' : 'Exported'
+                        return (
+                          <div key={run.id} style={{
+                            background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: '12px 16px',
+                            border: '1px solid var(--border, #e5e7eb)', borderLeft: `4px solid ${statusColor}`,
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10,
+                          }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <strong style={{ fontSize: 14 }}>{wtLabels}</strong>
+                                <span style={{ fontSize: 11, background: statusColor + '18', color: statusColor, padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>{statusLabel}</span>
+                              </div>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginTop: 2 }}>
+                                {run.period_start && run.period_end
+                                  ? `${formatDate(run.period_start)} – ${formatDate(run.period_end)}`
+                                  : `Started ${formatDate(run.created_at.split('T')[0])}`}
+                              </div>
+                            </div>
+                            <button className="admin-btn admin-btn-primary" style={{ fontSize: 12, background: statusColor }} onClick={() => {
+                              const types = new Set<'employed' | 'shift' | 'zero_hours'>()
+                              if (run.worker_types?.includes('employed')) types.add('employed')
+                              if (run.worker_types?.includes('shift_worker')) types.add('shift')
+                              if (run.worker_types?.includes('zero_hours')) types.add('zero_hours')
+                              const firstType = [...types][0]
+                              if (firstType) startPayrollForType(firstType)
+                              else startRunPayroll()
+                            }}>
+                              Resume →
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
 
                 {/* Quick Actions */}
                 <h3 className="pn-section-title">
