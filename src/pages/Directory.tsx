@@ -489,7 +489,7 @@ export default function Directory() {
                 <tr>
                   <th>Name</th>
                   <th className="directory-table-hide-mobile">Status</th>
-                  <th>Role</th>
+                  <th><span className="directory-table-role-header-full">Role</span><span className="directory-table-role-header-mobile">Role / Location</span></th>
                   <th className="directory-table-hide-mobile">Reports to</th>
                   <th className="directory-table-hide-mobile">Office</th>
                   <th className="directory-table-hide-mobile">Tenure</th>
@@ -513,8 +513,12 @@ export default function Directory() {
                           <span className="directory-table-email">{entry.user_email}</span>
                           <span className="directory-table-status-dots">
                             <span className="directory-table-status-dot" style={{ background: isOnLeave(entry) ? '#e65100' : '#16a34a' }} title={isOnLeave(entry) ? 'On Leave' : 'Active'} />
+                            <span className="directory-table-status-label">{isOnLeave(entry) ? 'On Leave' : 'Active'}</span>
                             {teamsEnabled && presenceMap[entry.user_email] && presenceMap[entry.user_email] !== 'PresenceUnknown' && (
-                              <span className="directory-table-status-dot" style={{ background: getPresenceColor(presenceMap[entry.user_email]) }} title={`Teams: ${presenceMap[entry.user_email]}`} />
+                              <>
+                                <span className="directory-table-status-dot" style={{ background: getPresenceColor(presenceMap[entry.user_email]) }} title={`Teams: ${presenceMap[entry.user_email]}`} />
+                                <span className="directory-table-status-label">{presenceMap[entry.user_email]}</span>
+                              </>
                             )}
                           </span>
                         </div>
@@ -527,7 +531,10 @@ export default function Directory() {
                         <span className="directory-table-badge directory-table-badge-active">Active</span>
                       )}
                     </td>
-                    <td><span className="directory-table-role">{entry.job_title || '—'}</span></td>
+                    <td>
+                      <span className="directory-table-role">{entry.job_title || '—'}</span>
+                      {entry.location && <span className="directory-table-location-mobile">{entry.location}</span>}
+                    </td>
                     <td className="directory-table-hide-mobile"><span className="directory-table-secondary">{entry.manager_name || '—'}</span></td>
                     <td className="directory-table-hide-mobile"><span className="directory-table-secondary">{entry.location || '—'}</span></td>
                     <td className="directory-table-hide-mobile"><span className="directory-table-secondary">{getTenure(entry.start_date)}</span></td>
