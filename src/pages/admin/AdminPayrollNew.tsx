@@ -208,6 +208,7 @@ export default function AdminPayrollNew() {
   const currency = company?.currency || 'GBP'
 
   const [view, setView] = useState<View>('dashboard')
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'employed' | 'shift' | 'zero_hours'>('overview')
   const [loading, setLoading] = useState(true)
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -291,6 +292,7 @@ export default function AdminPayrollNew() {
   const [wizSickLeave, setWizSickLeave] = useState<{ employee_id: string; employee_name: string; days: number; sick_pay_status: string; daily_rate: number; deduction: number; ssp_added: number }[]>([])
   const [, setWizSickPaySettings] = useState<{ enabled: boolean; csp_full_pay_days: number; csp_half_pay_days: number; ssp_weekly_rate: number; ssp_max_weeks: number } | null>(null)
   const [lastPayRuns, setLastPayRuns] = useState<Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number }>>({})
+  const [payRunHistory, setPayRunHistory] = useState<Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number; total_net: number }[]>>({})
   const [processingRuns, setProcessingRuns] = useState<{ id: string; worker_types: string[]; status: string; period_start: string; period_end: string; created_at: string }[]>([])
   const [wizPeriodByType, setWizPeriodByType] = useState<Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }>>({})
   const [wizGeneratingReviews, setWizGeneratingReviews] = useState(false)
@@ -566,6 +568,33 @@ export default function AdminPayrollNew() {
       }
     }
     setLastPayRuns(runMap)
+
+    const historyMap: Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number; total_net: number }[]> = {}
+    for (const wt of ['employed', 'shift_worker', 'zero_hours']) {
+      const { data: histRuns } = await supabase.from('pay_runs')
+        .select('id, period_start, period_end, status, completed_at')
+        .eq('company_id', selectedCompanyId!)
+        .contains('worker_types', [wt])
+        .in('status', ['completed', 'released', 'synced', 'exported'])
+        .order('completed_at', { ascending: false })
+        .limit(5)
+      if (histRuns && histRuns.length > 0) {
+        const key = wt === 'shift_worker' ? 'shift' : wt
+        const histEntries = []
+        for (const run of histRuns) {
+          const { data: rps } = await supabase.from('payslips')
+            .select('gross_pay, net_pay')
+            .eq('company_id', selectedCompanyId!)
+            .gte('pay_period_start', run.period_start)
+            .lte('pay_period_end', run.period_end)
+          const totalGross = (rps || []).reduce((s, p) => s + Number(p.gross_pay), 0)
+          const totalNet = (rps || []).reduce((s, p) => s + Number(p.net_pay), 0)
+          histEntries.push({ ...run, total_gross: totalGross, total_net: totalNet })
+        }
+        historyMap[key] = histEntries
+      }
+    }
+    setPayRunHistory(historyMap)
 
     const { data: procRuns } = await supabase.from('pay_runs')
       .select('id, worker_types, status, period_start, period_end, created_at')
@@ -2843,318 +2872,391 @@ export default function AdminPayrollNew() {
       )}
 
       {/* ── DASHBOARD VIEW ─────────────────────────────────────── */}
-      {view === 'dashboard' && (
-        <>
-          {/* Summary stats */}
-          <div className="admin-stat-grid" style={{ marginBottom: 24 }}>
-            <div className="admin-stat-card">
-              <div className="admin-stat-icon" style={{ background: '#5c6bc0' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
-              </div>
-              <div className="admin-stat-info">
-                <span className="admin-stat-value">{stats.activeEmployees}</span>
-                <span className="admin-stat-label">Active Employees</span>
-              </div>
-            </div>
-            <div className="admin-stat-card" style={{ minWidth: 200 }}>
-              <div className="admin-stat-icon" style={{ background: '#43a047' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
-              </div>
-              <div className="admin-stat-info">
-                <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalGross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                <span className="admin-stat-label">Total Gross ({fyLabel})</span>
-                <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
-                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+      {view === 'dashboard' && (() => {
+        const dashTabs: { key: 'overview' | 'employed' | 'shift' | 'zero_hours'; label: string; colour: string; employees: Employee[] }[] = [
+          { key: 'overview', label: 'Dashboard', colour: '#5c6bc0', employees: [] },
+        ]
+        if (employedEmployees.length > 0) dashTabs.push({ key: 'employed', label: 'Employed Staff', colour: '#5c6bc0', employees: employedEmployees })
+        if (shiftEmployees.length > 0) dashTabs.push({ key: 'shift', label: 'Shift Workers', colour: '#7e57c2', employees: shiftEmployees })
+        if (zeroHoursEmployees.length > 0) dashTabs.push({ key: 'zero_hours', label: 'Zero Hours', colour: '#ef6c00', employees: zeroHoursEmployees })
+
+        const activeTab = dashTabs.find(t => t.key === dashboardTab) ? dashboardTab : 'overview'
+
+        const renderWorkerTypeTab = (wtKey: 'employed' | 'shift' | 'zero_hours') => {
+          const wt = workerTypeStats.find(w => w.key === wtKey)
+          if (!wt) return <div className="admin-settings-group" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted, #888)' }}>No employees of this type found.</div>
+          const tabColour = wtKey === 'employed' ? '#5c6bc0' : wtKey === 'shift' ? '#7e57c2' : '#ef6c00'
+          const freqLabel = wt.payFreq === 'weekly' ? 'Weekly' : wt.payFreq === 'bi_weekly' ? 'Fortnightly' : 'Monthly'
+          const lastRun = lastPayRuns[wtKey]
+          const history = payRunHistory[wtKey] || []
+          const wizardSteps = providerConnected
+            ? ['Import data', 'Review adjustments', 'Push to provider', 'Processing', 'Sync back', 'Release payslips']
+            : ['Import data', 'Review adjustments', 'Generate estimates', 'Export', 'Sync & release']
+          const stepDescriptions = providerConnected
+            ? ['Sync from ' + (connectedProvider === 'xero' ? 'Xero' : 'Sage'), 'New starters, leavers, changes', 'Send adjustments to provider', 'Provider calculates pay', 'Fetch final payslips', 'Publish to employees']
+            : ['Gather employee data', 'New starters, leavers, changes', 'Gross → net calculations', 'BACS or CSV file', 'Finalise & publish']
+
+          let currentStep = 0
+          if (wt.status === 'not_started') currentStep = 0
+          else if (wt.status === 'in_progress') currentStep = 2
+          else if (wt.status === 'submitted') currentStep = wizardSteps.length - 1
+          else if (wt.status === 'paid') currentStep = wizardSteps.length
+          const progressPct = wt.status === 'paid' ? 100 : Math.round((currentStep / wizardSteps.length) * 100)
+
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)', gap: 20 }}>
+              {/* Left stepper */}
+              <div style={{
+                background: 'var(--bg-subtle, #f8f9fa)', borderRadius: '0 12px 12px 0',
+                padding: 16, borderLeft: `3px solid ${tabColour}`,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14, color: tabColour, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  Pay run steps
                 </div>
-              </div>
-            </div>
-            <div className="admin-stat-card" style={{ minWidth: 200 }}>
-              <div className="admin-stat-icon" style={{ background: '#1e88e5' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
-              </div>
-              <div className="admin-stat-info">
-                <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                <span className="admin-stat-label">Total Net ({fyLabel})</span>
-                <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
-                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                </div>
-              </div>
-            </div>
-            <div className="admin-stat-card" style={{ minWidth: 200 }}>
-              <div className="admin-stat-icon" style={{ background: '#ef5350' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 3v18"/><path d="M6 6l6 3 6-3"/></svg>
-              </div>
-              <div className="admin-stat-info">
-                <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                <span className="admin-stat-label">Total Tax ({fyLabel})</span>
-                <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
-                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Per-Worker-Type Payroll Cards */}
-          <h3 className="pn-section-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            Payroll Dashboard
-          </h3>
-
-          {workerTypeStats.length === 0 ? (
-            <div className="admin-settings-group" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted, #888)' }}>
-              No active employees found. Add employees in the People section to get started with payroll.
-            </div>
-          ) : (
-            <div className="pn-worker-cards">
-              {workerTypeStats.map(wt => {
-                const freqLabel = wt.payFreq === 'weekly' ? 'Weekly' : wt.payFreq === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'
-                const lastRun = lastPayRuns[wt.key]
-                const bonusCount = wt.employees.filter(e => e.bonus_amount && e.bonus_amount > 0).length
-
-                return (
-                  <div key={wt.key} className="pn-worker-card" style={{ borderTop: `4px solid ${wt.colour}` }}>
-                    <div className="pn-worker-card-header">
-                      <div>
-                        <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{wt.label}</h4>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
-                          <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{wt.employees.length} employee{wt.employees.length !== 1 ? 's' : ''}</span>
-                          <span className="pn-badge" style={{ background: wt.colour + '18', color: wt.colour, fontSize: 10, padding: '1px 6px' }}>{freqLabel}</span>
-                        </div>
-                      </div>
-                      {statusBadge(wt.status)}
-                    </div>
-                    <div className="pn-worker-card-body">
-                      {lastRun ? (
-                        <>
-                          <div className="pn-worker-metric">
-                            <span className="pn-worker-metric-value">{currencySymbol(currency)}{lastRun.total_gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                            <span className="pn-worker-metric-label">Last run total</span>
-                          </div>
-                          <div className="pn-worker-metric">
-                            <span className="pn-worker-metric-value">{formatDate(lastRun.completed_at?.split('T')[0] || lastRun.period_end)}</span>
-                            <span className="pn-worker-metric-label">Last run date</span>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="pn-worker-metric">
-                          <span className="pn-worker-metric-value" style={{ color: 'var(--text-muted, #888)', fontSize: 13 }}>No previous run</span>
-                          <span className="pn-worker-metric-label">Last run</span>
-                        </div>
-                      )}
-                      {wt.isShiftType && wt.payFreq !== 'monthly' && wt.currentPeriodStart ? (
-                        <>
-                          <div className="pn-worker-metric">
-                            <span className="pn-worker-metric-value">{formatDate(wt.currentPeriodStart)} – {formatDate(wt.currentPeriodEnd)}</span>
-                            <span className="pn-worker-metric-label">Current period (collecting)</span>
-                          </div>
-                          <div className="pn-worker-metric">
-                            <span className="pn-worker-metric-value">{formatDate(wt.processingWindowStart)} – {formatDate(wt.processingWindowEnd)}</span>
-                            <span className="pn-worker-metric-label">Process & pay window</span>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="pn-worker-metric">
-                            <span className="pn-worker-metric-value">{formatDate(wt.nextPayDate.toISOString().split('T')[0])}</span>
-                            <span className="pn-worker-metric-label">Next pay date</span>
-                          </div>
-                          <div className="pn-worker-metric">
-                            <span className="pn-worker-metric-value">{formatDate((() => { const d = new Date(wt.nextPayDate); d.setDate(d.getDate() - 5); return d })().toISOString().split('T')[0])}</span>
-                            <span className="pn-worker-metric-label">Expected run by</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    {(bonusCount > 0 || wt.payslips.length > 0) && (
-                      <div style={{ padding: '0 16px 8px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {wt.payslips.length > 0 && (
-                          <span style={{ fontSize: 11, color: 'var(--text-muted, #6b7280)' }}>{wt.payslips.length} payslip{wt.payslips.length !== 1 ? 's' : ''} this period</span>
-                        )}
-                        {bonusCount > 0 && (
-                          <span style={{ fontSize: 11, color: '#ef6c00' }}>{bonusCount} with recurring bonus</span>
-                        )}
-                      </div>
-                    )}
-                    <div className="pn-worker-card-footer">
-                      {wt.status === 'not_started' && (
-                        <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => startPayrollForType(wt.key)}>
-                          Run Pre-Payroll
-                        </button>
-                      )}
-                      {wt.status === 'in_progress' && (
-                        <>
-                          <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => startPayrollForType(wt.key)}>
-                            Continue Pay Run
-                          </button>
-                          <button className="admin-btn" style={{ fontSize: 13, marginLeft: 6 }} onClick={() => { setPayslipSubTab(wt.key); setView('payslips') }}>
-                            Review Payslips
-                          </button>
-                        </>
-                      )}
-                      {(wt.status === 'submitted' || wt.status === 'paid') && (
-                        <>
-                          <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => startPayrollForType(wt.key)}>
-                            Run Next Payrun
-                          </button>
-                          <button className="admin-btn" style={{ fontSize: 13, marginLeft: 6 }} onClick={() => { setPayslipSubTab(wt.key); setView('payslips') }}>
-                            View Payslips
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Processing Pay Runs */}
-          {processingRuns.length > 0 && (
-            <>
-              <h3 className="pn-section-title" style={{ marginTop: 28 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Pay Runs In Progress
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-                {processingRuns.map(run => {
-                  const wtLabels = (run.worker_types || []).map((wt: string) => wt === 'employed' ? 'Employed' : wt === 'shift_worker' ? 'Shift Workers' : 'Zero Hours').join(', ')
-                  const statusColor = run.status === 'processing' ? '#ff9800' : '#1565c0'
-                  const statusLabel = run.status === 'processing' ? 'Processing' : 'Exported'
+                {wizardSteps.map((stepLabel, i) => {
+                  const isComplete = i < currentStep
+                  const isActive = i === currentStep && wt.status !== 'paid' && wt.status !== 'not_started'
+                  const isDisabled = !isComplete && !isActive
                   return (
-                    <div key={run.id} style={{
-                      background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: '12px 16px',
-                      border: `1px solid var(--border, #e5e7eb)`, borderLeft: `4px solid ${statusColor}`,
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10,
-                    }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <strong style={{ fontSize: 14 }}>{wtLabels}</strong>
-                          <span style={{ fontSize: 11, background: statusColor + '18', color: statusColor, padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>{statusLabel}</span>
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginTop: 2 }}>
-                          {run.period_start && run.period_end
-                            ? `${formatDate(run.period_start)} – ${formatDate(run.period_end)}`
-                            : `Started ${formatDate(run.created_at.split('T')[0])}`}
-                        </div>
-                      </div>
-                      <button className="admin-btn admin-btn-primary" style={{ fontSize: 12, background: statusColor }} onClick={() => {
-                        const types = new Set<'employed' | 'shift' | 'zero_hours'>()
-                        if (run.worker_types?.includes('employed')) types.add('employed')
-                        if (run.worker_types?.includes('shift_worker')) types.add('shift')
-                        if (run.worker_types?.includes('zero_hours')) types.add('zero_hours')
-                        const firstType = [...types][0]
-                        if (firstType) startPayrollForType(firstType)
-                        else startRunPayroll()
+                    <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '7px 0', position: 'relative' }}>
+                      {i < wizardSteps.length - 1 && (
+                        <div style={{
+                          position: 'absolute', left: 13, top: 32, width: 2,
+                          height: 'calc(100% - 22px)',
+                          background: isComplete ? '#43a047' : isActive ? tabColour : 'var(--border, #e5e7eb)',
+                        }} />
+                      )}
+                      <div style={{
+                        width: 28, height: 28, minWidth: 28, borderRadius: '50%',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 12, fontWeight: 600,
+                        border: `2px solid ${isComplete ? '#43a047' : isActive ? tabColour : 'var(--border, #ddd)'}`,
+                        background: isComplete ? '#e8f5e9' : isActive ? tabColour : 'transparent',
+                        color: isComplete ? '#2e7d32' : isActive ? '#fff' : 'var(--text-muted, #999)',
                       }}>
-                        Resume →
-                      </button>
+                        {isComplete ? '✓' : i + 1}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: isDisabled ? 'var(--text-muted, #999)' : isActive ? tabColour : 'var(--text, #1a1a2e)' }}>{stepLabel}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted, #999)', marginTop: 1 }}>{stepDescriptions[i]}</div>
+                      </div>
                     </div>
                   )
                 })}
               </div>
-            </>
-          )}
 
-          {/* Quick Actions */}
-          <h3 className="pn-section-title" style={{ marginTop: 28 }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            Quick Actions
-          </h3>
-          <div className="pn-action-grid">
-            <button className="pn-action-card pn-action-primary" onClick={startRunPayroll}>
-              <div className="pn-action-icon" style={{ background: '#5c6bc0' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
-              </div>
-              <div><strong>New Payroll Run</strong><br /><span>Step-by-step guided workflow</span></div>
-            </button>
-            <button className="pn-action-card" onClick={() => setView('payslips')}>
-              <div className="pn-action-icon" style={{ background: '#26a69a' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
-              </div>
-              <div><strong>View All Payslips</strong><br /><span>Browse and filter payslip records</span></div>
-            </button>
-            <button className="pn-action-card" onClick={() => setView('employee_pay')}>
-              <div className="pn-action-icon" style={{ background: '#7e57c2' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
-              </div>
-              <div><strong>Employee Pay</strong><br /><span>Salaries, rates, and deductions</span></div>
-            </button>
-            <button className="pn-action-card" onClick={() => setView('schedule')}>
-              <div className="pn-action-icon" style={{ background: '#ef6c00' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              </div>
-              <div><strong>Payroll Schedule</strong><br /><span>Pay dates and calendar</span></div>
-            </button>
-            <button className="pn-action-card" onClick={() => setView('logs')}>
-              <div className="pn-action-icon" style={{ background: '#78909c' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              </div>
-              <div><strong>Audit Logs</strong><br /><span>Payroll action history</span></div>
-            </button>
-            <button className="pn-action-card" onClick={() => setView('settings')}>
-              <div className="pn-action-icon" style={{ background: '#546e7a' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              </div>
-              <div><strong>Payroll Settings</strong><br /><span>Pay patterns, overtime &amp; worker types</span></div>
-            </button>
-          </div>
+              {/* Right content */}
+              <div>
+                {/* Progress bar */}
+                <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: '14px 16px', marginBottom: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+                    <span style={{ fontWeight: 600 }}>
+                      {MONTH_NAMES[now.getMonth()]} {now.getFullYear()} pay run
+                    </span>
+                    <span style={{ color: tabColour, fontWeight: 600 }}>
+                      {wt.status === 'paid' ? (
+                        <>Complete ✓</>
+                      ) : wt.status === 'not_started' ? (
+                        'Not started'
+                      ) : (
+                        `Step ${currentStep} of ${wizardSteps.length}`
+                      )}
+                    </span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 3, background: 'var(--border, #e5e7eb)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', borderRadius: 3, width: `${progressPct}%`, background: wt.status === 'paid' ? '#43a047' : tabColour, transition: 'width 0.3s' }} />
+                  </div>
+                </div>
 
-          {/* Recent Activity */}
-          {recentLogs.length > 0 && (
-            <>
-              <h3 className="pn-section-title" style={{ marginTop: 28 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Recent Activity
-              </h3>
-              <div className="admin-settings-group">
-                {recentLogs.map(log => (
-                  <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
-                    <div>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>{log.action}</span>
-                      {log.detail && <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginLeft: 8 }}>{log.detail.length > 80 ? log.detail.slice(0, 80) + '…' : log.detail}</span>}
+                {/* Info cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 12, padding: 16 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      Next pay date
                     </div>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted, #888)', whiteSpace: 'nowrap' }}>{formatDate(log.created_at)}</span>
+                    <div style={{ fontSize: 18, fontWeight: 600 }}>
+                      {formatDate(wt.nextPayDate.toISOString().split('T')[0])}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted, #999)', marginTop: 2 }}>{freqLabel}</div>
                   </div>
-                ))}
-                <button className="admin-btn" style={{ marginTop: 10, fontSize: 12 }} onClick={() => setView('logs')}>View All Logs →</button>
-              </div>
-            </>
-          )}
+                  <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 12, padding: 16 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
+                      Employees
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 600 }}>{wt.employees.length}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted, #999)', marginTop: 2 }}>Active this period</div>
+                  </div>
+                </div>
 
-          {/* Integrations status */}
-          {(xeroConnected || sageConnected || modulrConnected) && (
-            <>
-              <h3 className="pn-section-title" style={{ marginTop: 28 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                Connected Integrations
-              </h3>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                {xeroConnected && (
-                  <div className="pn-integration-chip" style={{ borderLeft: '3px solid #13b5ea' }}>
-                    <strong>Xero</strong> <span className="pn-badge pn-badge-green">Connected</span>
+                {/* Last run details */}
+                {lastRun ? (
+                  <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 12, padding: 16, marginBottom: 14 }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Last run details</h4>
+                    {[
+                      ['Period', `${formatDate(lastRun.period_start)} – ${formatDate(lastRun.period_end)}`],
+                      ['Gross pay', `${currencySymbol(currency)}${lastRun.total_gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}`],
+                      ['Completed', formatDate(lastRun.completed_at?.split('T')[0] || lastRun.period_end)],
+                    ].map(([label, val]) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 0' }}>
+                        <span style={{ color: 'var(--text-muted, #6b7280)' }}>{label}</span>
+                        <span style={{ fontWeight: 600 }}>{val}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 12, padding: 16, marginBottom: 14, textAlign: 'center', color: 'var(--text-muted, #888)', fontSize: 13 }}>
+                    No previous pay run for this worker type
                   </div>
                 )}
-                {sageConnected && (
-                  <div className="pn-integration-chip" style={{ borderLeft: '3px solid #00d639' }}>
-                    <strong>Sage</strong> <span className="pn-badge pn-badge-green">Connected</span>
-                  </div>
-                )}
-                {modulrConnected && (
-                  <div className="pn-integration-chip" style={{ borderLeft: '3px solid #1a1a2e' }}>
-                    <strong>Modulr</strong> <span className="pn-badge pn-badge-green">Active</span>
-                  </div>
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                  <button className="admin-btn admin-btn-primary" style={{ background: tabColour, fontSize: 13 }} onClick={() => startPayrollForType(wtKey)}>
+                    {wt.status === 'in_progress' ? 'Continue Pay Run' : wt.status === 'paid' || wt.status === 'submitted' ? 'Run Next Payrun' : 'Run Pre-Payroll'}
+                  </button>
+                  <button className="admin-btn" style={{ fontSize: 13 }} onClick={() => { setPayslipSubTab(wtKey); setView('payslips') }}>
+                    View Payslips
+                  </button>
+                </div>
+
+                {/* Previous pay runs history */}
+                {history.length > 0 && (
+                  <>
+                    <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Previous pay runs</h4>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left', fontWeight: 600, color: 'var(--text-muted, #6b7280)', padding: '6px 8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>Period</th>
+                            <th style={{ textAlign: 'left', fontWeight: 600, color: 'var(--text-muted, #6b7280)', padding: '6px 8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>Gross</th>
+                            <th style={{ textAlign: 'left', fontWeight: 600, color: 'var(--text-muted, #6b7280)', padding: '6px 8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>Net</th>
+                            <th style={{ textAlign: 'left', fontWeight: 600, color: 'var(--text-muted, #6b7280)', padding: '6px 8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>Status</th>
+                            <th style={{ textAlign: 'left', fontWeight: 600, color: 'var(--text-muted, #6b7280)', padding: '6px 8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>Date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {history.map(run => (
+                            <tr key={run.id}>
+                              <td style={{ padding: '8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>{formatDate(run.period_start)} – {formatDate(run.period_end)}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>{currencySymbol(currency)}{run.total_gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>{currencySymbol(currency)}{run.total_net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                                <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600, background: '#e8f5e9', color: '#2e7d32' }}>Complete</span>
+                              </td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>{formatDate(run.completed_at?.split('T')[0] || run.period_end)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
               </div>
-            </>
-          )}
-        </>
-      )}
+            </div>
+          )
+        }
+
+        return (
+          <>
+            {/* Dashboard sub-tabs */}
+            <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border, #e5e7eb)', marginBottom: 20, overflowX: 'auto' }}>
+              {dashTabs.map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setDashboardTab(tab.key)}
+                  style={{
+                    padding: '10px 18px', fontSize: 13, fontWeight: activeTab === tab.key ? 600 : 400,
+                    cursor: 'pointer', background: 'none', border: 'none',
+                    borderBottom: `2px solid ${activeTab === tab.key ? tab.colour : 'transparent'}`,
+                    color: activeTab === tab.key ? 'var(--text, #1a1a2e)' : 'var(--text-muted, #6b7280)',
+                    whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                  }}
+                >
+                  {tab.key !== 'overview' && (
+                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: tab.colour }} />
+                  )}
+                  {tab.key === 'overview' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  )}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── OVERVIEW TAB ── */}
+            {activeTab === 'overview' && (
+              <>
+                {/* Summary stats */}
+                <div className="admin-stat-grid" style={{ marginBottom: 24 }}>
+                  <div className="admin-stat-card">
+                    <div className="admin-stat-icon" style={{ background: '#5c6bc0' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
+                    </div>
+                    <div className="admin-stat-info">
+                      <span className="admin-stat-value">{stats.activeEmployees}</span>
+                      <span className="admin-stat-label">Active Employees</span>
+                    </div>
+                  </div>
+                  <div className="admin-stat-card" style={{ minWidth: 200 }}>
+                    <div className="admin-stat-icon" style={{ background: '#43a047' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+                    </div>
+                    <div className="admin-stat-info">
+                      <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalGross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                      <span className="admin-stat-label">Total Gross ({fyLabel})</span>
+                      <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
+                        {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                        {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                        {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="admin-stat-card" style={{ minWidth: 200 }}>
+                    <div className="admin-stat-icon" style={{ background: '#1e88e5' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
+                    </div>
+                    <div className="admin-stat-info">
+                      <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                      <span className="admin-stat-label">Total Net ({fyLabel})</span>
+                      <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
+                        {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                        {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                        {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="admin-stat-card" style={{ minWidth: 200 }}>
+                    <div className="admin-stat-icon" style={{ background: '#ef5350' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 3v18"/><path d="M6 6l6 3 6-3"/></svg>
+                    </div>
+                    <div className="admin-stat-info">
+                      <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                      <span className="admin-stat-label">Total Tax ({fyLabel})</span>
+                      <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
+                        {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                        {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                        {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Actions */}
+                <h3 className="pn-section-title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  Quick Actions
+                </h3>
+                <div className="pn-action-grid">
+                  <button className="pn-action-card pn-action-primary" onClick={startRunPayroll}>
+                    <div className="pn-action-icon" style={{ background: '#5c6bc0' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
+                    </div>
+                    <div><strong>New Payroll Run</strong><br /><span>Step-by-step guided workflow</span></div>
+                  </button>
+                  <button className="pn-action-card" onClick={() => setView('payslips')}>
+                    <div className="pn-action-icon" style={{ background: '#26a69a' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+                    </div>
+                    <div><strong>View All Payslips</strong><br /><span>Browse and filter payslip records</span></div>
+                  </button>
+                  <button className="pn-action-card" onClick={() => setView('employee_pay')}>
+                    <div className="pn-action-icon" style={{ background: '#7e57c2' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
+                    </div>
+                    <div><strong>Employee Pay</strong><br /><span>Salaries, rates, and deductions</span></div>
+                  </button>
+                  <button className="pn-action-card" onClick={() => setView('schedule')}>
+                    <div className="pn-action-icon" style={{ background: '#ef6c00' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    </div>
+                    <div><strong>Payroll Schedule</strong><br /><span>Pay dates and calendar</span></div>
+                  </button>
+                  <button className="pn-action-card" onClick={() => setView('logs')}>
+                    <div className="pn-action-icon" style={{ background: '#78909c' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    </div>
+                    <div><strong>Audit Logs</strong><br /><span>Payroll action history</span></div>
+                  </button>
+                  <button className="pn-action-card" onClick={() => setView('settings')}>
+                    <div className="pn-action-icon" style={{ background: '#546e7a' }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    </div>
+                    <div><strong>Payroll Settings</strong><br /><span>Pay patterns, overtime &amp; worker types</span></div>
+                  </button>
+                </div>
+
+                {/* Integrations status */}
+                {(xeroConnected || sageConnected || modulrConnected) && (
+                  <>
+                    <h3 className="pn-section-title" style={{ marginTop: 28 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      Connected Integrations
+                    </h3>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {xeroConnected && (
+                        <div className="pn-integration-chip" style={{ borderLeft: '3px solid #13b5ea' }}>
+                          <strong>Xero</strong> <span className="pn-badge pn-badge-green">Connected</span>
+                        </div>
+                      )}
+                      {sageConnected && (
+                        <div className="pn-integration-chip" style={{ borderLeft: '3px solid #00d639' }}>
+                          <strong>Sage</strong> <span className="pn-badge pn-badge-green">Connected</span>
+                        </div>
+                      )}
+                      {modulrConnected && (
+                        <div className="pn-integration-chip" style={{ borderLeft: '3px solid #1a1a2e' }}>
+                          <strong>Modulr</strong> <span className="pn-badge pn-badge-green">Active</span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* Audit log with worker type badges */}
+                {recentLogs.length > 0 && (
+                  <>
+                    <h3 className="pn-section-title" style={{ marginTop: 28 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      Audit Log
+                    </h3>
+                    <div className="admin-settings-group">
+                      {recentLogs.map(log => {
+                        const detail = (log.detail || '').toLowerCase() + ' ' + (log.action || '').toLowerCase()
+                        let badgeLabel = ''
+                        let badgeStyle: React.CSSProperties = {}
+                        if (detail.includes('employed')) { badgeLabel = 'Employed'; badgeStyle = { background: '#e8eaf6', color: '#3949ab' } }
+                        else if (detail.includes('shift') && !detail.includes('zero')) { badgeLabel = 'Shift'; badgeStyle = { background: '#ede7f6', color: '#5e35b1' } }
+                        else if (detail.includes('zero')) { badgeLabel = 'Zero hrs'; badgeStyle = { background: '#fff3e0', color: '#e65100' } }
+                        return (
+                          <div key={log.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                            {badgeLabel && (
+                              <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, whiteSpace: 'nowrap', ...badgeStyle }}>{badgeLabel}</span>
+                            )}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{ fontWeight: 600, fontSize: 13 }}>{log.action}</span>
+                              {log.detail && <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginLeft: 8 }}>{log.detail.length > 80 ? log.detail.slice(0, 80) + '…' : log.detail}</span>}
+                            </div>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted, #888)', whiteSpace: 'nowrap' }}>{formatDate(log.created_at)}</span>
+                          </div>
+                        )
+                      })}
+                      <button className="admin-btn" style={{ marginTop: 10, fontSize: 12 }} onClick={() => setView('logs')}>View All Logs →</button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── WORKER TYPE TABS ── */}
+            {activeTab === 'employed' && renderWorkerTypeTab('employed')}
+            {activeTab === 'shift' && renderWorkerTypeTab('shift')}
+            {activeTab === 'zero_hours' && renderWorkerTypeTab('zero_hours')}
+          </>
+        )
+      })()}
 
       {/* ── PAYSLIPS BROWSE ────────────────────────────────────── */}
       {view === 'payslips' && (
