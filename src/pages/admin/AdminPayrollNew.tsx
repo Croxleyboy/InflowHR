@@ -4477,10 +4477,50 @@ export default function AdminPayrollNew() {
               <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
                 {providerConnected ? 'Review Adjustments' : 'Review Before Generating'}
               </h3>
+
+              {/* Pay period & payrun context banner */}
+              {(() => {
+                const periodEntries = Object.entries(wizPeriodByType)
+                const workerTypeLabels: Record<string, string> = { employed: 'Employed', shift_worker: 'Shift Workers', zero_hours: 'Zero Hours' }
+                const selectedTypes = Array.from(wizWorkerTypes).map(wt => workerTypeLabels[wt] || wt).join(', ')
+                return (
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pay Period</div>
+                        {periodEntries.length === 1 ? (
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', marginTop: 2 }}>
+                            {formatDate(periodEntries[0][1].start)} – {formatDate(periodEntries[0][1].end)}
+                          </div>
+                        ) : periodEntries.map(([wt, p]) => (
+                          <div key={wt} style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginTop: 2 }}>
+                            <span style={{ color: '#64748b', fontWeight: 500 }}>{workerTypeLabels[wt] || wt}:</span> {formatDate(p.start)} – {formatDate(p.end)}
+                          </div>
+                        ))}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Worker Types</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1e293b', marginTop: 2 }}>{selectedTypes}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Payroll Mode</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: providerConnected ? '#1565c0' : '#6d28d9', marginTop: 2 }}>
+                          {providerConnected ? `Connected — ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}` : 'Standalone'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Employees</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', marginTop: 2 }}>{wizRunEmployees.length}</div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
               <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
                 {providerConnected
                   ? `Review the adjustments that will be pushed to ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}. Your provider handles salary, tax, and NI calculations — InflowHR sends only the changes.`
-                  : 'Review the employees and their pay details before generating payslips for the next period.'}
+                  : `Review the employees and their pay details before generating estimated payslips for ${(() => { const p = Object.values(wizPeriodByType)[0]; return p ? `${formatDate(p.start)} – ${formatDate(p.end)}` : 'the next period' })()}.`}
               </p>
 
               {wizPriorRuns.length > 0 && (
