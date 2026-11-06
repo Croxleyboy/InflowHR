@@ -3097,57 +3097,26 @@ export default function AdminPayrollNew() {
             {activeTab === 'overview' && (
               <>
                 {/* Summary stats */}
-                <div className="admin-stat-grid" style={{ marginBottom: 24 }}>
-                  <div className="admin-stat-card">
-                    <div className="admin-stat-icon" style={{ background: '#5c6bc0' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
-                    </div>
-                    <div className="admin-stat-info">
-                      <span className="admin-stat-value">{stats.activeEmployees}</span>
-                      <span className="admin-stat-label">Active Employees</span>
-                    </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+                  <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: '16px 18px' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 6 }}>Active employees</div>
+                    <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1 }}>{stats.activeEmployees}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted, #999)', marginTop: 4 }}>Across all types</div>
                   </div>
-                  <div className="admin-stat-card" style={{ minWidth: 200 }}>
-                    <div className="admin-stat-icon" style={{ background: '#43a047' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
-                    </div>
-                    <div className="admin-stat-info">
-                      <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalGross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                      <span className="admin-stat-label">Total Gross ({fyLabel})</span>
-                      <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
-                        {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                        {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                        {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                      </div>
-                    </div>
+                  <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: '16px 18px' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 6 }}>Total gross</div>
+                    <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1 }}>{currencySymbol(currency)}{stats.totalGross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted, #999)', marginTop: 4 }}>This period</div>
                   </div>
-                  <div className="admin-stat-card" style={{ minWidth: 200 }}>
-                    <div className="admin-stat-icon" style={{ background: '#1e88e5' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
-                    </div>
-                    <div className="admin-stat-info">
-                      <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                      <span className="admin-stat-label">Total Net ({fyLabel})</span>
-                      <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
-                        {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                        {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                        {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                      </div>
-                    </div>
+                  <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: '16px 18px' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 6 }}>Total net</div>
+                    <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1 }}>{currencySymbol(currency)}{stats.totalNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted, #999)', marginTop: 4 }}>This period</div>
                   </div>
-                  <div className="admin-stat-card" style={{ minWidth: 200 }}>
-                    <div className="admin-stat-icon" style={{ background: '#ef5350' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 3v18"/><path d="M6 6l6 3 6-3"/></svg>
-                    </div>
-                    <div className="admin-stat-info">
-                      <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                      <span className="admin-stat-label">Total Tax ({fyLabel})</span>
-                      <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
-                        {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                        {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                        {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                      </div>
-                    </div>
+                  <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: '16px 18px' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 6 }}>Total tax &amp; NI</div>
+                    <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1 }}>{currencySymbol(currency)}{stats.totalTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted, #999)', marginTop: 4 }}>PAYE + employer NI</div>
                   </div>
                 </div>
 
@@ -3199,84 +3168,50 @@ export default function AdminPayrollNew() {
                 )}
 
                 {/* Quick Actions */}
-                <h3 className="pn-section-title">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                  Quick Actions
-                </h3>
-                <div className="pn-action-grid">
-                  <button className="pn-action-card pn-action-primary" onClick={startRunPayroll}>
-                    <div className="pn-action-icon" style={{ background: '#5c6bc0' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
-                    </div>
-                    <div><strong>New Payroll Run</strong><br /><span>Step-by-step guided workflow</span></div>
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px', color: 'var(--text, #1a1a2e)' }}>Quick actions</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
+                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8 }} onClick={startRunPayroll}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Run payroll
                   </button>
-                  <button className="pn-action-card" onClick={() => setView('payslips')}>
-                    <div className="pn-action-icon" style={{ background: '#26a69a' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
-                    </div>
-                    <div><strong>View All Payslips</strong><br /><span>Browse and filter payslip records</span></div>
+                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8 }} onClick={() => setView('payslips')}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+                    View payslips
                   </button>
-                  <button className="pn-action-card" onClick={() => setView('employee_pay')}>
-                    <div className="pn-action-icon" style={{ background: '#7e57c2' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
-                    </div>
-                    <div><strong>Employee Pay</strong><br /><span>Salaries, rates, and deductions</span></div>
+                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8 }} onClick={() => setView('schedule')}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    Pay schedule
                   </button>
-                  <button className="pn-action-card" onClick={() => setView('schedule')}>
-                    <div className="pn-action-icon" style={{ background: '#ef6c00' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    </div>
-                    <div><strong>Payroll Schedule</strong><br /><span>Pay dates and calendar</span></div>
-                  </button>
-                  <button className="pn-action-card" onClick={() => setView('logs')}>
-                    <div className="pn-action-icon" style={{ background: '#78909c' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    </div>
-                    <div><strong>Audit Logs</strong><br /><span>Payroll action history</span></div>
-                  </button>
-                  <button className="pn-action-card" onClick={() => setView('settings')}>
-                    <div className="pn-action-icon" style={{ background: '#546e7a' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                    </div>
-                    <div><strong>Payroll Settings</strong><br /><span>Pay patterns, overtime &amp; worker types</span></div>
+                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8 }} onClick={() => setView('settings')}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    Settings
                   </button>
                 </div>
 
-                {/* Integrations status */}
-                {(xeroConnected || sageConnected || modulrConnected) && (
-                  <>
-                    <h3 className="pn-section-title" style={{ marginTop: 28 }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                      Connected Integrations
-                    </h3>
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      {xeroConnected && (
-                        <div className="pn-integration-chip" style={{ borderLeft: '3px solid #13b5ea' }}>
-                          <strong>Xero</strong> <span className="pn-badge pn-badge-green">Connected</span>
-                        </div>
-                      )}
-                      {sageConnected && (
-                        <div className="pn-integration-chip" style={{ borderLeft: '3px solid #00d639' }}>
-                          <strong>Sage</strong> <span className="pn-badge pn-badge-green">Connected</span>
-                        </div>
-                      )}
-                      {modulrConnected && (
-                        <div className="pn-integration-chip" style={{ borderLeft: '3px solid #1a1a2e' }}>
-                          <strong>Modulr</strong> <span className="pn-badge pn-badge-green">Active</span>
-                        </div>
-                      )}
+                {/* Connected integrations */}
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px', color: 'var(--text, #1a1a2e)' }}>Connected integrations</h3>
+                <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, marginBottom: 24, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: xeroConnected ? '#43a047' : '#ccc' }} />
+                      <strong style={{ fontSize: 13 }}>Xero</strong>
                     </div>
-                  </>
-                )}
+                    <span style={{ fontSize: 12, color: xeroConnected ? '#43a047' : 'var(--text-muted, #999)', fontWeight: 500 }}>{xeroConnected ? 'Connected' : 'Not connected'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: sageConnected ? '#43a047' : '#ccc' }} />
+                      <strong style={{ fontSize: 13 }}>Sage</strong>
+                    </div>
+                    <span style={{ fontSize: 12, color: sageConnected ? '#43a047' : 'var(--text-muted, #999)', fontWeight: 500 }}>{sageConnected ? 'Connected' : 'Not connected'}</span>
+                  </div>
+                </div>
 
                 {/* Audit log with worker type badges */}
                 {recentLogs.length > 0 && (
                   <>
-                    <h3 className="pn-section-title" style={{ marginTop: 28 }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                      Audit Log
-                    </h3>
-                    <div className="admin-settings-group">
+                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px', color: 'var(--text, #1a1a2e)' }}>Audit log</h3>
+                    <div style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: '4px 16px' }}>
                       {recentLogs.map(log => {
                         const detail = (log.detail || '').toLowerCase() + ' ' + (log.action || '').toLowerCase()
                         let badgeLabel = ''
@@ -3293,7 +3228,10 @@ export default function AdminPayrollNew() {
                               <span style={{ fontWeight: 600, fontSize: 13 }}>{log.action}</span>
                               {log.detail && <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginLeft: 8 }}>{log.detail.length > 80 ? log.detail.slice(0, 80) + '…' : log.detail}</span>}
                             </div>
-                            <span style={{ fontSize: 12, color: 'var(--text-muted, #888)', whiteSpace: 'nowrap' }}>{formatDate(log.created_at)}</span>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted, #888)', whiteSpace: 'nowrap' }}>
+                              {formatDate(log.created_at.split('T')[0])}
+                              {log.created_at.includes('T') && ` ${log.created_at.split('T')[1]?.slice(0, 5)}`}
+                            </span>
                           </div>
                         )
                       })}
