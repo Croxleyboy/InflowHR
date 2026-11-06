@@ -70,6 +70,7 @@ export default function OneToOnes() {
   const [goals, setGoals] = useState<Goal[]>([])
   const [expandedGoalsFor, setExpandedGoalsFor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [historyPage, setHistoryPage] = useState(1)
 
   const fetchData = useCallback(async () => {
     if (!employeeId) return
@@ -188,6 +189,11 @@ export default function OneToOnes() {
   const upcoming = meetings.filter(m => ['pending', 'accepted'].includes(m.status) && isFutureMeeting(m))
   const history = meetings.filter(m => ['completed', 'not_confirmed', 'cancelled', 'declined'].includes(m.status) || !isFutureMeeting(m))
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 640
+  const historyPerPage = isMobile ? 5 : 8
+  const historyTotalPages = Math.max(1, Math.ceil(history.length / historyPerPage))
+  const historyPaged = history.slice((historyPage - 1) * historyPerPage, historyPage * historyPerPage)
+
   return (
     <div className="oto-page">
       <header className="oto-header">
@@ -207,7 +213,7 @@ export default function OneToOnes() {
         <button className={`oto-tab ${tab === 'upcoming' ? 'oto-tab-active' : ''}`} onClick={() => setTab('upcoming')}>
           {t('one_to_one.upcoming')} {upcoming.length > 0 && <span className="oto-tab-badge">{upcoming.length}</span>}
         </button>
-        <button className={`oto-tab ${tab === 'history' ? 'oto-tab-active' : ''}`} onClick={() => setTab('history')}>
+        <button className={`oto-tab ${tab === 'history' ? 'oto-tab-active' : ''}`} onClick={() => { setTab('history'); setHistoryPage(1) }}>
           {t('one_to_one.history')}
         </button>
         {isManager && (
@@ -248,7 +254,7 @@ export default function OneToOnes() {
             const initials = (otherName || '').split(' ').map(n => n[0]).join('').toUpperCase()
             return (
               <div key={m.id} className="oto-card" onClick={() => navigate(`/one-to-ones/${m.id}`)}>
-                {otherAvatar ? <img className="oto-card-avatar-img" src={otherAvatar} alt={otherName} /> : <div className="oto-card-avatar">{initials}</div>}
+                {otherAvatar ? <img className="oto-card-avatar-img" src={otherAvatar} alt={otherName || ''} /> : <div className="oto-card-avatar">{initials}</div>}
                 <div className="oto-card-content">
                   <span className="oto-card-name">{otherName}</span>
                   <span className="oto-card-date">{formatDate(m.scheduled_date)} &middot; {m.scheduled_time.slice(0, 5)}</span>
@@ -279,14 +285,17 @@ export default function OneToOnes() {
       {!loading && tab === 'history' && (
         <div className="oto-list">
           {history.length === 0 && <p className="claims-empty">{t('one_to_one.no_history')}</p>}
-          {history.map(m => {
+          {historyPaged.map(m => {
             const iAmManager = m.manager_id === employeeId
             const otherName = iAmManager ? m.employee_name : m.manager_name
             const otherAvatar = iAmManager ? m.employee_avatar : m.manager_avatar
-            const initials = (otherName || '').split(' ').map(n => n[0]).join('').toUpperCase()
+            const otherInitials = (otherName || '').split(' ').map(n => n[0]).join('').toUpperCase()
             return (
-              <div key={m.id} className="oto-card" onClick={() => navigate(`/one-to-ones/${m.id}`)}>
-                {otherAvatar ? <img className="oto-card-avatar-img" src={otherAvatar} alt={otherName} /> : <div className="oto-card-avatar">{initials}</div>}
+              <div key={m.id} className="oto-card oto-card-compact" onClick={() => navigate(`/one-to-ones/${m.id}`)}>
+                {otherAvatar
+                  ? <img className="oto-card-avatar-img" src={otherAvatar} alt={otherName || ''} />
+                  : <div className="oto-card-avatar">{otherInitials}</div>
+                }
                 <div className="oto-card-content">
                   <span className="oto-card-name">{otherName}</span>
                   <span className="oto-card-date">{formatDate(m.scheduled_date)}</span>
@@ -311,6 +320,17 @@ export default function OneToOnes() {
               </div>
             )
           })}
+          {historyTotalPages > 1 && (
+            <div className="oto-pagination">
+              <button className="oto-page-btn" disabled={historyPage <= 1} onClick={() => setHistoryPage(p => p - 1)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <span className="oto-page-info">{historyPage} of {historyTotalPages}</span>
+              <button className="oto-page-btn" disabled={historyPage >= historyTotalPages} onClick={() => setHistoryPage(p => p + 1)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            </div>
+          )}
         </div>
       )}
 
