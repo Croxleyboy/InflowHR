@@ -3931,6 +3931,7 @@ export default function AdminPayrollNew() {
                 {!wtToggleValue ? (
                   <p style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic', margin: '8px 0' }}>This worker type is disabled. Enable it to configure pay settings. Existing data is preserved.</p>
                 ) : (
+                <>
                 <div className="admin-detail-grid admin-detail-grid-3">
                   {wt === 'shift_worker' && (
                     <div className="admin-form-field">
@@ -4001,6 +4002,7 @@ export default function AdminPayrollNew() {
                     {settingsSaving ? 'Saving...' : 'Save'}
                   </button>
                 </div>
+                </>
                 )}
               </div>
             )
