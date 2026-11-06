@@ -307,6 +307,10 @@ export default function AdminPayrollNew() {
   const [wizPriorRuns, setWizPriorRuns] = useState<{ id: string; worker_types: string[]; status: string; completed_at: string | null }[]>([])
   const [wizSageFiles, setWizSageFiles] = useState<File[]>([])
   const [wizSageUploading, setWizSageUploading] = useState(false)
+  const [bacsOriginatorSortCode, setBacsOriginatorSortCode] = useState('')
+  const [bacsOriginatorAccountNo, setBacsOriginatorAccountNo] = useState('')
+  const [bacsOriginatorName, setBacsOriginatorName] = useState('')
+  const [bacsSaving, setBacsSaving] = useState(false)
   const [wizXeroCsvFile, setWizXeroCsvFile] = useState<File | null>(null)
   const [wizXeroCsvImporting, setWizXeroCsvImporting] = useState(false)
   const [wizRosterPage, setWizRosterPage] = useState(1)
@@ -609,12 +613,15 @@ export default function AdminPayrollNew() {
       .limit(5)
     setProcessingRuns((procRuns || []) as any)
 
-    const { data: companyRow } = await supabase.from('companies').select('payroll_enabled, payroll_employed_enabled, payroll_shift_enabled, payroll_zero_hours_enabled').eq('id', selectedCompanyId!).single()
+    const { data: companyRow } = await supabase.from('companies').select('payroll_enabled, payroll_employed_enabled, payroll_shift_enabled, payroll_zero_hours_enabled, bacs_originator_sort_code, bacs_originator_account_no, bacs_originator_name').eq('id', selectedCompanyId!).single()
     if (companyRow) {
       setPayrollEnabled((companyRow as any).payroll_enabled ?? true)
       setPayrollEmployedEnabled((companyRow as any).payroll_employed_enabled ?? true)
       setPayrollShiftEnabled((companyRow as any).payroll_shift_enabled ?? true)
       setPayrollZeroHoursEnabled((companyRow as any).payroll_zero_hours_enabled ?? true)
+      setBacsOriginatorSortCode((companyRow as any).bacs_originator_sort_code || '')
+      setBacsOriginatorAccountNo((companyRow as any).bacs_originator_account_no || '')
+      setBacsOriginatorName((companyRow as any).bacs_originator_name || '')
     }
 
     setLoading(false)
@@ -1039,6 +1046,124 @@ export default function AdminPayrollNew() {
     } else {
       setWizSickLeave([])
     }
+  }
+
+  function buildStandalonePaySummary() {
+    return wizRunEmployees.map(emp => {
+      const isEmployed = emp.employment_category === 'Full-time employed' || emp.employment_category === 'Part-time employed' || emp.employment_category === 'employed'
+      const isShift = emp.employment_category === 'shift_worker' && emp.contract_type !== 'Zero hours shift worker'
+      const isZeroHours = emp.contract_type === 'Zero hours shift worker'
+
+      const wtKey = isEmployed ? 'employed' : isShift ? 'shift_worker' : 'zero_hours'
+      const settings = workerSettings.find(s => s.worker_type === wtKey)
+      const freq = (getEffectiveSetting(emp, workerSettings, 'pay_pattern') || 'monthly') as PayFrequency
+      const periodsPerYear = getPeriodsPerYear(freq)
+      const otHandling = getEffectiveSetting(emp, workerSettings, 'overtime_handling')
+      const otMultiplier = Number(settings?.overtime_rate_multiplier) || 1.5
+
+      let grossPay = 0
+      let standardHours = 0
+      let hourlyRate = emp.hourly_rate || 0
+
+      if (isEmployed) {
+        grossPay = (emp.annual_salary || 0) / periodsPerYear
+        const weeksInPeriod = freq === 'weekly' ? 1 : freq === 'bi_weekly' ? 2 : 52 / 12
+        standardHours = (emp.weekly_hours || 37.5) * weeksInPeriod
+        if (!hourlyRate && emp.annual_salary && emp.weekly_hours) {
+          hourlyRate = emp.annual_salary / (emp.weekly_hours * 52)
+        }
+      } else {
+        const review = wizPeriodReviews.find(r => r.employee_id === emp.id && r.status === 'approved')
+        standardHours = Number(review?.adjusted_hours ?? review?.total_hours ?? 0)
+        grossPay = standardHours * hourlyRate
+      }
+
+      const otHours = allOvertimeHours[emp.id] || 0
+      let otAmount = 0
+      if (otHours > 0 && otHandling === 'overtime') {
+        otAmount = otHours * hourlyRate * otMultiplier
+      }
+
+      const empBenefits = wizBenefitChanges.filter((b: any) => b.employee_id === emp.id)
+      const benefitTotal = empBenefits.reduce((s: number, b: any) => s + (b.monthly_cost || 0), 0)
+
+      const empBonus = wizBonusEntries.filter((b: any) => b.employee_id === emp.id)
+      const bonusTotal = empBonus.reduce((s: number, b: any) => s + (b.amount || 0), 0)
+
+      const empUnpaid = wizUnpaidLeave.filter((l: any) => l.employee_id === emp.id)
+      const dailyRate = hourlyRate > 0 ? hourlyRate * (emp.weekly_hours || 37.5) / 5 : (emp.annual_salary || 0) / 260
+      const unpaidDeduction = empUnpaid.reduce((s: number, l: any) => s + (l.days * dailyRate), 0)
+
+      const empSick = wizSickLeave.filter((sl: any) => sl.employee_id === emp.id)
+      const sickDeduction = empSick.reduce((s: number, sl: any) => s + (sl.deduction || 0), 0)
+      const sspAdded = empSick.reduce((s: number, sl: any) => s + (sl.ssp_added || 0), 0)
+
+      let holidayPay = 0
+      if (isZeroHours) {
+        const accrualRate = settings?.holiday_accrual_rate || 12.07
+        holidayPay = grossPay * (accrualRate / 100)
+      }
+
+      const totalGross = grossPay + otAmount + bonusTotal + holidayPay - unpaidDeduction - sickDeduction + sspAdded
+
+      const annualGross = totalGross * periodsPerYear
+      const estimatedTax = calcTax(annualGross, freq)
+      const estimatedNI = calcNI(annualGross, freq)
+
+      const employerNIAnnual = annualGross > 9100 ? (annualGross - 9100) * 0.138 : 0
+      const employerNI = Math.round(employerNIAnnual / periodsPerYear * 100) / 100
+
+      const estimatedNet = totalGross - estimatedTax - estimatedNI
+
+      return {
+        employee: emp,
+        name: `${emp.first_name} ${emp.last_name}`,
+        payrollId: emp.payroll_id || '',
+        type: isEmployed ? 'Employed' : isShift ? 'Shift' : 'Zero Hours',
+        annualSalary: isEmployed ? (emp.annual_salary || 0) : 0,
+        hourlyRate: Math.round(hourlyRate * 100) / 100,
+        standardHours: Math.round(standardHours * 10) / 10,
+        grossPay: Math.round(grossPay * 100) / 100,
+        otHours,
+        otAmount: Math.round(otAmount * 100) / 100,
+        otMultiplier,
+        benefitTotal: Math.round(benefitTotal * 100) / 100,
+        bonusTotal: Math.round(bonusTotal * 100) / 100,
+        unpaidDeduction: Math.round(unpaidDeduction * 100) / 100,
+        sickDeduction: Math.round(sickDeduction * 100) / 100,
+        sspAdded: Math.round(sspAdded * 100) / 100,
+        holidayPay: Math.round(holidayPay * 100) / 100,
+        totalGross: Math.round(totalGross * 100) / 100,
+        estimatedTax,
+        estimatedNI,
+        employerNI,
+        estimatedNet: Math.round(estimatedNet * 100) / 100,
+        taxCode: emp.tax_code || '1257L',
+      }
+    })
+  }
+
+  function exportStandalonePayCsv() {
+    const summary = buildStandalonePaySummary()
+    const periodInfo = Object.values(wizPeriodByType)[0]
+    const headers = ['Employee Name','Payroll ID','Employment Type','Tax Code','Annual Salary','Hourly Rate','Standard Hours','Gross Pay','Overtime Hours','Overtime Rate','Overtime Amount','Benefits','Bonus','Unpaid Leave Deduction','Sick Leave Deduction','SSP Added','Holiday Pay Accrual','Total Gross','Estimated Income Tax','Estimated Employee NI','Estimated Employer NI','Estimated Net Pay','Period Start','Period End']
+    const rows = summary.map(s => [
+      s.name, s.payrollId, s.type, s.taxCode,
+      s.annualSalary.toFixed(2), s.hourlyRate.toFixed(2), s.standardHours.toFixed(1), s.grossPay.toFixed(2),
+      s.otHours.toFixed(1), s.otMultiplier.toFixed(2), s.otAmount.toFixed(2),
+      s.benefitTotal.toFixed(2), s.bonusTotal.toFixed(2), s.unpaidDeduction.toFixed(2), s.sickDeduction.toFixed(2),
+      s.sspAdded.toFixed(2), s.holidayPay.toFixed(2), s.totalGross.toFixed(2),
+      s.estimatedTax.toFixed(2), s.estimatedNI.toFixed(2), s.employerNI.toFixed(2), s.estimatedNet.toFixed(2),
+      periodInfo?.start || '', periodInfo?.end || ''
+    ])
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Payroll_Summary_${localDateStr(new Date())}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function logPayrollAction(action: string, detail: string, status: 'success' | 'error' = 'success') {
@@ -4008,6 +4133,57 @@ export default function AdminPayrollNew() {
             )
           })}
 
+          {/* BACS / Payment Details */}
+          <div className="admin-settings-group">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#455a64', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 15 }}>BACS / Payment Details</h3>
+                <p style={{ margin: 0, fontSize: 12, color: '#6b7280' }}>Your company bank details used as the originator (sender) in BACS payment files</p>
+              </div>
+            </div>
+            <div style={{ background: '#f0f9ff', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #0288d1' }}>
+              <p style={{ fontSize: 12, margin: 0, color: '#01579b' }}>
+                <strong>What is a BACS Originator?</strong> When you send salary payments via BACS (Bankers' Automated Clearing Services), the payment file identifies your company as the <em>originator</em> — the sender of the funds. You need your company's business bank account sort code, account number, and account name. These are found on your business bank statements, online banking portal, or by contacting your bank. They are included in the BACS file header so the receiving bank knows where the payment came from.
+              </p>
+            </div>
+            <div className="admin-detail-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+              <div className="admin-form-field">
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Sort Code</label>
+                <input className="admin-inline-input" type="text" placeholder="00-00-00" value={bacsOriginatorSortCode} onChange={e => setBacsOriginatorSortCode(e.target.value)} style={{ width: '100%', marginTop: 4 }} />
+                <span style={{ fontSize: 11, color: '#6b7280' }}>6 digits, e.g. 20-00-00</span>
+              </div>
+              <div className="admin-form-field">
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Account Number</label>
+                <input className="admin-inline-input" type="text" placeholder="12345678" value={bacsOriginatorAccountNo} onChange={e => setBacsOriginatorAccountNo(e.target.value)} style={{ width: '100%', marginTop: 4 }} />
+                <span style={{ fontSize: 11, color: '#6b7280' }}>8-digit account number</span>
+              </div>
+              <div className="admin-form-field">
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Account Name</label>
+                <input className="admin-inline-input" type="text" placeholder="Company Ltd" value={bacsOriginatorName} onChange={e => setBacsOriginatorName(e.target.value)} style={{ width: '100%', marginTop: 4 }} />
+                <span style={{ fontSize: 11, color: '#6b7280' }}>As shown on your business bank account</span>
+              </div>
+            </div>
+            <div style={{ marginTop: 12, textAlign: 'right' }}>
+              <button className="admin-btn admin-btn-primary" disabled={bacsSaving} onClick={async () => {
+                if (!selectedCompanyId) return
+                setBacsSaving(true)
+                const { error } = await supabase.from('companies').update({
+                  bacs_originator_sort_code: bacsOriginatorSortCode,
+                  bacs_originator_account_no: bacsOriginatorAccountNo,
+                  bacs_originator_name: bacsOriginatorName,
+                }).eq('id', selectedCompanyId)
+                setBacsSaving(false)
+                if (error) { showError('Failed to save BACS details'); return }
+                showSuccess('BACS payment details saved')
+              }}>
+                {bacsSaving ? 'Saving...' : 'Save BACS Details'}
+              </button>
+            </div>
+          </div>
+
           {settingsChangeLog.length > 0 && (
             <div className="admin-settings-group">
               <h3>Settings Change Log</h3>
@@ -4214,7 +4390,7 @@ export default function AdminPayrollNew() {
                       <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>
                         {f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} salary{ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}
                       </span>
-                      <span style={{ fontSize: 11, color: '#5c6bc0', fontWeight: 500 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
+                      <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 600, background: '#f1f5f9', padding: '3px 8px', borderRadius: 4, display: 'inline-block', marginTop: 2 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
                       <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%' }}
                         onClick={() => { setWizWorkerTypes(new Set(['employed'])); setTimeout(advanceToStep2, 0) }}>
                         Start Pay Run →
@@ -4237,7 +4413,7 @@ export default function AdminPayrollNew() {
                       <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>
                         {f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate{ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}
                       </span>
-                      <span style={{ fontSize: 11, color: '#7e57c2', fontWeight: 500 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
+                      <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 600, background: '#f1f5f9', padding: '3px 8px', borderRadius: 4, display: 'inline-block', marginTop: 2 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
                       <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: '#7e57c2' }}
                         onClick={() => { setWizWorkerTypes(new Set(['shift'])); setTimeout(advanceToStep2, 0) }}>
                         Start Pay Run →
@@ -4260,7 +4436,7 @@ export default function AdminPayrollNew() {
                       <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>
                         {f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate{ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}
                       </span>
-                      <span style={{ fontSize: 11, color: '#ef6c00', fontWeight: 500 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
+                      <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 600, background: '#f1f5f9', padding: '3px 8px', borderRadius: 4, display: 'inline-block', marginTop: 2 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
                       <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: '#ef6c00' }}
                         onClick={() => { setWizWorkerTypes(new Set(['zero_hours'])); setTimeout(advanceToStep2, 0) }}>
                         Start Pay Run →
@@ -5549,7 +5725,7 @@ export default function AdminPayrollNew() {
                 !wizGenerated ? (
                   <>
                     <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                      This will create draft payslips for the next calendar month with estimated tax and NI. Payslips are generated in draft status — you can review and edit them before submitting.
+                      This will create draft payslips for {(() => { const p = Object.values(wizPeriodByType)[0]; return p ? `${formatDate(p.start)} – ${formatDate(p.end)}` : 'the next period' })()} with estimated tax and NI. Payslips are generated in draft status — you can review and edit them before submitting.
                     </p>
                     <div style={{ background: '#fff8e1', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
                       <strong style={{ color: '#e65100', fontSize: 13 }}>Standalone Mode — Estimates Only</strong>
@@ -5954,42 +6130,119 @@ export default function AdminPayrollNew() {
                   </p>
 
                   {(() => {
-                    const rosterTotal = wizRunEmployees.length
-                    const rosterPages = Math.ceil(rosterTotal / ROSTER_PAGE_SIZE)
-                    const rosterSlice = wizRunEmployees.slice((wizRosterPage - 1) * ROSTER_PAGE_SIZE, wizRosterPage * ROSTER_PAGE_SIZE)
-                    const workerTypeLabel = wizWorkerTypes.has('employed') ? 'Employed Staff' : wizWorkerTypes.has('shift') ? 'Shift Workers' : 'Zero Hours'
+                    const paySummary = buildStandalonePaySummary()
+                    const totals = paySummary.reduce((t, s) => ({
+                      grossPay: t.grossPay + s.grossPay,
+                      otAmount: t.otAmount + s.otAmount,
+                      benefitTotal: t.benefitTotal + s.benefitTotal,
+                      bonusTotal: t.bonusTotal + s.bonusTotal,
+                      unpaidDeduction: t.unpaidDeduction + s.unpaidDeduction,
+                      sickDeduction: t.sickDeduction + s.sickDeduction,
+                      sspAdded: t.sspAdded + s.sspAdded,
+                      holidayPay: t.holidayPay + s.holidayPay,
+                      totalGross: t.totalGross + s.totalGross,
+                      estimatedTax: t.estimatedTax + s.estimatedTax,
+                      estimatedNI: t.estimatedNI + s.estimatedNI,
+                      employerNI: t.employerNI + s.employerNI,
+                      estimatedNet: t.estimatedNet + s.estimatedNet,
+                    }), { grossPay: 0, otAmount: 0, benefitTotal: 0, bonusTotal: 0, unpaidDeduction: 0, sickDeduction: 0, sspAdded: 0, holidayPay: 0, totalGross: 0, estimatedTax: 0, estimatedNI: 0, employerNI: 0, estimatedNet: 0 })
+                    const cs = currencySymbol(currency)
+                    const fmt = (v: number) => `${cs}${v.toFixed(2)}`
+                    const periodInfo = Object.values(wizPeriodByType)[0]
                     return (
-                      <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                      <div style={{ marginBottom: 16 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                          <strong style={{ fontSize: 14 }}>Employees in this Pay Run — {workerTypeLabel} ({rosterTotal})</strong>
-                        </div>
-                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                          <thead>
-                            <tr style={{ borderBottom: '1px solid var(--border, #e5e7eb)' }}>
-                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Name</th>
-                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Job Title</th>
-                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Department</th>
-                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Payroll ID</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rosterSlice.map(emp => (
-                              <tr key={emp.id} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
-                                <td style={{ padding: '6px 8px', fontWeight: 500 }}>{emp.last_name}, {emp.first_name}</td>
-                                <td style={{ padding: '6px 8px', color: 'var(--text-muted, #6b7280)' }}>{emp.job_title || '—'}</td>
-                                <td style={{ padding: '6px 8px', color: 'var(--text-muted, #6b7280)' }}>{emp.department || '—'}</td>
-                                <td style={{ padding: '6px 8px', color: 'var(--text-muted, #999)', fontFamily: 'monospace', fontSize: 11 }}>{emp.payroll_id || '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        {rosterPages > 1 && (
-                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12 }}>
-                            <button className="admin-btn" style={{ fontSize: 11, padding: '2px 8px' }} disabled={wizRosterPage <= 1} onClick={() => setWizRosterPage(p => p - 1)}>← Prev</button>
-                            <span style={{ color: 'var(--text-muted, #6b7280)' }}>Page {wizRosterPage} of {rosterPages}</span>
-                            <button className="admin-btn" style={{ fontSize: 11, padding: '2px 8px' }} disabled={wizRosterPage >= rosterPages} onClick={() => setWizRosterPage(p => p + 1)}>Next →</button>
+                          <strong style={{ fontSize: 14 }}>Pay Breakdown — {paySummary.length} Employee{paySummary.length !== 1 ? 's' : ''}</strong>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {periodInfo && <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 600, background: '#f1f5f9', padding: '3px 8px', borderRadius: 4 }}>{formatDate(periodInfo.start)} – {formatDate(periodInfo.end)}</span>}
+                            <button className="admin-btn" style={{ fontSize: 11, padding: '4px 12px' }} onClick={exportStandalonePayCsv}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, verticalAlign: 'middle' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                              Download CSV
+                            </button>
                           </div>
-                        )}
+                        </div>
+                        <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, overflowX: 'auto' }}>
+                          <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', minWidth: 800 }}>
+                            <thead>
+                              <tr style={{ borderBottom: '2px solid var(--border, #e5e7eb)' }}>
+                                <th style={{ textAlign: 'left', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Name</th>
+                                <th style={{ textAlign: 'left', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>ID</th>
+                                <th style={{ textAlign: 'center', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Type</th>
+                                <th style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Gross Pay</th>
+                                <th style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Overtime</th>
+                                <th style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Bonus</th>
+                                <th style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Hol Pay</th>
+                                <th style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Deductions</th>
+                                <th style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: '#1565c0' }}>Total Gross</th>
+                                <th style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Est. Tax</th>
+                                <th style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Est. NI</th>
+                                <th style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: '#2e7d32' }}>Est. Net</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {paySummary.map(s => (
+                                <tr key={s.employee.id} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
+                                  <td style={{ padding: '6px 6px', fontWeight: 500 }}>{s.name}</td>
+                                  <td style={{ padding: '6px 6px', color: 'var(--text-muted, #999)', fontFamily: 'monospace', fontSize: 10 }}>{s.payrollId || '—'}</td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'center' }}>
+                                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: s.type === 'Employed' ? '#e3f2fd' : s.type === 'Shift' ? '#f3e5f5' : '#fff3e0', color: s.type === 'Employed' ? '#1565c0' : s.type === 'Shift' ? '#6a1b9a' : '#e65100', fontWeight: 600 }}>{s.type}</span>
+                                  </td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'right' }}>{fmt(s.grossPay)}</td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'right', color: s.otAmount > 0 ? '#1565c0' : '#ccc' }}>{s.otAmount > 0 ? `${fmt(s.otAmount)} (${s.otHours.toFixed(1)}h)` : '—'}</td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'right', color: s.bonusTotal > 0 ? '#2e7d32' : '#ccc' }}>{s.bonusTotal > 0 ? fmt(s.bonusTotal) : '—'}</td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'right', color: s.holidayPay > 0 ? '#0277bd' : '#ccc' }}>{s.holidayPay > 0 ? fmt(s.holidayPay) : '—'}</td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'right', color: (s.unpaidDeduction + s.sickDeduction) > 0 ? '#c62828' : '#ccc' }}>{(s.unpaidDeduction + s.sickDeduction) > 0 ? `-${fmt(s.unpaidDeduction + s.sickDeduction)}` : '—'}</td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'right', fontWeight: 600, color: '#1565c0' }}>{fmt(s.totalGross)}</td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'right', color: '#e65100' }}>{fmt(s.estimatedTax)}</td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'right', color: '#e65100' }}>{fmt(s.estimatedNI)}</td>
+                                  <td style={{ padding: '6px 6px', textAlign: 'right', fontWeight: 600, color: '#2e7d32' }}>{fmt(s.estimatedNet)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ borderTop: '2px solid var(--border, #e5e7eb)', fontWeight: 700 }}>
+                                <td style={{ padding: '8px 6px' }}>Totals</td>
+                                <td></td>
+                                <td></td>
+                                <td style={{ padding: '8px 6px', textAlign: 'right' }}>{fmt(totals.grossPay)}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'right', color: '#1565c0' }}>{totals.otAmount > 0 ? fmt(totals.otAmount) : '—'}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'right', color: '#2e7d32' }}>{totals.bonusTotal > 0 ? fmt(totals.bonusTotal) : '—'}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'right', color: '#0277bd' }}>{totals.holidayPay > 0 ? fmt(totals.holidayPay) : '—'}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'right', color: '#c62828' }}>{(totals.unpaidDeduction + totals.sickDeduction) > 0 ? `-${fmt(totals.unpaidDeduction + totals.sickDeduction)}` : '—'}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'right', color: '#1565c0' }}>{fmt(totals.totalGross)}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e65100' }}>{fmt(totals.estimatedTax)}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e65100' }}>{fmt(totals.estimatedNI)}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'right', color: '#2e7d32' }}>{fmt(totals.estimatedNet)}</td>
+                              </tr>
+                              <tr style={{ fontSize: 10, color: '#6b7280' }}>
+                                <td colSpan={8}></td>
+                                <td colSpan={4} style={{ padding: '4px 6px', textAlign: 'right' }}>Employer NI: {fmt(totals.employerNI)}</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+
+                        {/* Tax & NI Calculation Reference */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, marginTop: 14 }}>
+                          <div style={{ background: '#f0f9ff', borderRadius: 8, padding: 12, borderLeft: '3px solid #0288d1' }}>
+                            <strong style={{ fontSize: 12, color: '#01579b' }}>Estimated Income Tax Bands (2024/25)</strong>
+                            <div style={{ fontSize: 11, color: '#37474f', marginTop: 6, lineHeight: 1.6 }}>
+                              <div>Personal Allowance: {cs}12,570 (tapers above {cs}100,000)</div>
+                              <div>Basic Rate (20%): up to {cs}37,700</div>
+                              <div>Higher Rate (40%): {cs}37,700 – {cs}125,140</div>
+                              <div>Additional Rate (45%): above {cs}125,140</div>
+                            </div>
+                          </div>
+                          <div style={{ background: '#f0f9ff', borderRadius: 8, padding: 12, borderLeft: '3px solid #0288d1' }}>
+                            <strong style={{ fontSize: 12, color: '#01579b' }}>Estimated NI Thresholds (2024/25)</strong>
+                            <div style={{ fontSize: 11, color: '#37474f', marginTop: 6, lineHeight: 1.6 }}>
+                              <div>Primary Threshold: {cs}12,570/year</div>
+                              <div>Upper Earnings Limit: {cs}50,270/year</div>
+                              <div>Employee rate: 8% (2% above UEL)</div>
+                              <div>Employer rate: 13.8% above {cs}9,100</div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )
                   })()}
@@ -6015,16 +6268,14 @@ export default function AdminPayrollNew() {
                       </label>
                     )}
 
-                    {features.modulr_integration && (
-                      <label className={`pn-wiz-type-card ${wizPayMethod === 'bacs' ? 'pn-wiz-type-selected' : ''}`}>
-                        <input type="radio" name="paymethod" checked={wizPayMethod === 'bacs'} onChange={() => setWizPayMethod('bacs')} style={{ display: 'none' }} />
-                        <div className="pn-wiz-type-icon" style={{ background: '#455a64' }}>
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        </div>
-                        <strong>BACS Export</strong>
-                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Download BACS file</span>
-                      </label>
-                    )}
+                    <label className={`pn-wiz-type-card ${wizPayMethod === 'bacs' ? 'pn-wiz-type-selected' : ''}`}>
+                      <input type="radio" name="paymethod" checked={wizPayMethod === 'bacs'} onChange={() => setWizPayMethod('bacs')} style={{ display: 'none' }} />
+                      <div className="pn-wiz-type-icon" style={{ background: '#455a64' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      </div>
+                      <strong>BACS Export</strong>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Download BACS file</span>
+                    </label>
                   </div>
 
                   <div style={{ background: '#fff8e1', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
