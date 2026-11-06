@@ -1493,7 +1493,7 @@ export default function DashboardDetailed() {
       </header>
 
       {/* Full-width profile hero with vineyard background */}
-      <section className="dd2-profile-hero" onClick={() => navigate('/profile')}>
+      <section className="dd2-profile-hero" onClick={() => navigate('/my-profile')}>
         <div className="dd2-profile-bg">
           <img src={heroImages[heroImageIdx]} alt="" />
         </div>
