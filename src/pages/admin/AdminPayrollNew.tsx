@@ -306,6 +306,7 @@ export default function AdminPayrollNew() {
   const [wizXeroCsvFile, setWizXeroCsvFile] = useState<File | null>(null)
   const [wizXeroCsvImporting, setWizXeroCsvImporting] = useState(false)
   const [wizRosterPage, setWizRosterPage] = useState(1)
+  const [wizSourceTab, setWizSourceTab] = useState<'overview' | 'employed' | 'shift' | 'zero_hours'>('overview')
   const [wizPeriodEditType, setWizPeriodEditType] = useState<string | null>(null)
 
   const providerConnected = xeroConnected || sageConnected
@@ -2142,6 +2143,7 @@ export default function AdminPayrollNew() {
   }
 
   async function startRunPayroll() {
+    setWizSourceTab(dashboardTab)
     // Check for an in-progress pay run and resume from the correct step
     if (selectedCompanyId) {
       const { data: activeRun } = await supabase.from('pay_runs')
@@ -2298,6 +2300,7 @@ export default function AdminPayrollNew() {
       if (activeRun && activeRun.length > 0) {
         const run = activeRun[0]
 
+        setWizSourceTab(dashboardTab)
         setWizPayRunId(run.id)
         setWizGenerated(true)
         setWizComplete(false)
@@ -2315,8 +2318,8 @@ export default function AdminPayrollNew() {
         return
       }
     }
+    setWizSourceTab(dashboardTab)
     setView('run_payroll')
-    setWizStep(1)
     setWizWorkerTypes(new Set([type]))
     setWizGenerated(false)
     setWizComplete(false)
@@ -2334,6 +2337,7 @@ export default function AdminPayrollNew() {
     setWizSageFiles([])
     setWizSageUploading(false)
     setWizRosterPage(1)
+    setTimeout(advanceToStep2, 0)
   }
 
   function loadWizBonuses() {
@@ -2865,9 +2869,19 @@ export default function AdminPayrollNew() {
       {/* Breadcrumb */}
       {view !== 'dashboard' && (
         <div className="pn-breadcrumb">
-          <button onClick={() => setView('dashboard')}>Dashboard</button>
+          <button onClick={() => { setView('dashboard'); setDashboardTab('overview') }}>Dashboard</button>
+          {view === 'run_payroll' && wizSourceTab !== 'overview' && (
+            <>
+              <span className="pn-breadcrumb-sep">›</span>
+              <button onClick={() => { setView('dashboard'); setDashboardTab(wizSourceTab) }}>
+                {wizSourceTab === 'employed' ? 'Employed' : wizSourceTab === 'shift' ? 'Shift Workers' : 'Zero Hours'}
+              </button>
+            </>
+          )}
           <span className="pn-breadcrumb-sep">›</span>
-          <span>{viewLabels[view]}</span>
+          <span>{view === 'run_payroll' && wizWorkerTypes.size === 1
+            ? `${Array.from(wizWorkerTypes)[0] === 'employed' ? 'Employed' : Array.from(wizWorkerTypes)[0] === 'shift' ? 'Shift Workers' : 'Zero Hours'} Pay Run`
+            : viewLabels[view]}</span>
         </div>
       )}
 
@@ -4192,7 +4206,7 @@ export default function AdminPayrollNew() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button className="admin-btn" onClick={() => setView('dashboard')}>← Back to Dashboard</button>
+                <button className="admin-btn" onClick={() => { setView('dashboard'); if (wizSourceTab !== 'overview') setDashboardTab(wizSourceTab) }}>← Back to Dashboard</button>
               </div>
             </div>
           )}
@@ -5998,7 +6012,7 @@ export default function AdminPayrollNew() {
                 </p>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
                   <button className="admin-btn admin-btn-primary" onClick={() => setView('payslips')}>Review & Release Payslips →</button>
-                  <button className="admin-btn" onClick={() => setView('dashboard')}>Back to Dashboard</button>
+                  <button className="admin-btn" onClick={() => { setView('dashboard'); if (wizSourceTab !== 'overview') setDashboardTab(wizSourceTab) }}>Back to Dashboard</button>
                 </div>
               </div>
             ) : (
