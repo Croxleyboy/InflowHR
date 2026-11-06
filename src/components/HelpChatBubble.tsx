@@ -413,7 +413,38 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         .eq('company_id', companyId)
         .order('payment_date', { ascending: false })
         .limit(count)
-      if (!data || data.length === 0) return 'No payslip data found.'
+      if (!data || data.length === 0) {
+        const lines: string[] = []
+        const { data: companyRow } = await supabase.from('companies').select('payroll_enabled').eq('id', companyId).single()
+        if (companyRow?.payroll_enabled === false) {
+          return 'Payroll is not currently active for your company. Your HR admin manages payroll settings — please speak to them for more details.'
+        }
+        const { data: emp } = await supabase.from('employees').select('employment_category, pay_pattern_override, annual_salary').eq('id', employeeId).eq('company_id', companyId).single()
+        const { data: wts } = await supabase.from('worker_type_settings').select('pay_pattern, worker_type').eq('company_id', companyId)
+        const { count: runCount } = await supabase.from('pay_runs').select('id', { count: 'exact', head: true }).eq('company_id', companyId)
+        const { data: intXero } = await supabase.from('company_features').select('enabled').eq('company_id', companyId).eq('feature_key', 'xero_integration').single()
+        const { data: intSage } = await supabase.from('company_features').select('enabled').eq('company_id', companyId).eq('feature_key', 'sage_integration').single()
+        const xeroOn = intXero?.enabled === true
+        const sageOn = intSage?.enabled === true
+        if ((runCount ?? 0) === 0) {
+          lines.push('Your company hasn\'t processed any payroll runs yet.')
+          if (!xeroOn && !sageOn) {
+            lines.push('No external payroll provider (Xero or Sage) is currently connected. Your HR admin may manage payroll externally or hasn\'t set it up yet.')
+          } else {
+            lines.push(`Payroll is connected via ${xeroOn ? 'Xero' : 'Sage'}, but no pay runs have been completed yet.`)
+          }
+        } else {
+          lines.push('No payslips have been generated for you yet, although payroll has been run for other employees in your company.')
+        }
+        const empCat = emp?.employment_category || 'employed'
+        const wtsRow = (wts || []).find((w: any) => w.worker_type === empCat)
+        const payPattern = emp?.pay_pattern_override || wtsRow?.pay_pattern || 'monthly'
+        const patternLabel = payPattern === 'weekly' ? 'weekly' : payPattern === 'bi_weekly' ? 'fortnightly' : 'monthly'
+        lines.push(`Your pay schedule is set to ${patternLabel}.`)
+        if (emp?.annual_salary) lines.push(`Your annual salary is ${formatCurrency(Number(emp.annual_salary), currency)}.`)
+        lines.push('Please speak to your HR admin or payroll team for more details on when your next payslip will be available.')
+        return lines.join('\n')
+      }
       return data.map((p: any, i: number) => {
         const header = data.length > 1 ? `Payslip ${i + 1}:\n` : ''
         return header + [
@@ -426,6 +457,51 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
           `Paid: ${formatDate(p.payment_date)}`,
         ].join('\n')
       }).join('\n\n')
+    }
+    case 'get_next_pay_date': {
+      const { data: companyPayroll } = await supabase.from('companies').select('payroll_enabled').eq('id', companyId).single()
+      if (companyPayroll?.payroll_enabled === false) {
+        return 'Payroll is not currently active for your company. Please speak to your HR admin for details about pay dates.'
+      }
+      const { data: lastSlip } = await supabase
+        .from('payslips')
+        .select('payment_date, pay_period_end')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyId)
+        .order('payment_date', { ascending: false })
+        .limit(1)
+      const { data: emp } = await supabase.from('employees').select('employment_category, pay_pattern_override').eq('id', employeeId).eq('company_id', companyId).single()
+      const { data: wts } = await supabase.from('worker_type_settings').select('pay_pattern, worker_type').eq('company_id', companyId)
+      const empCat = emp?.employment_category || 'employed'
+      const wtsRow = (wts || []).find((w: any) => w.worker_type === empCat)
+      const payPattern = emp?.pay_pattern_override || wtsRow?.pay_pattern || 'monthly'
+      const patternLabel = payPattern === 'weekly' ? 'weekly' : payPattern === 'bi_weekly' ? 'fortnightly' : 'monthly'
+
+      if (!lastSlip || lastSlip.length === 0) {
+        const { count: runCount } = await supabase.from('pay_runs').select('id', { count: 'exact', head: true }).eq('company_id', companyId)
+        if ((runCount ?? 0) === 0) {
+          return `Your company hasn't processed any payroll runs yet. Your pay schedule is ${patternLabel}. Please speak to your HR admin for details on when payslips will be available.`
+        }
+        return `No payslips have been generated for you yet. Your pay schedule is ${patternLabel}. Please check with your HR admin for your expected pay date.`
+      }
+
+      const lastPaid = new Date(lastSlip[0].payment_date + 'T00:00')
+      let nextEstimate: Date
+      if (payPattern === 'weekly') {
+        nextEstimate = new Date(lastPaid.getTime() + 7 * 86400000)
+      } else if (payPattern === 'bi_weekly') {
+        nextEstimate = new Date(lastPaid.getTime() + 14 * 86400000)
+      } else {
+        nextEstimate = new Date(lastPaid)
+        nextEstimate.setMonth(nextEstimate.getMonth() + 1)
+      }
+      const lines = [
+        `Your pay schedule is ${patternLabel}.`,
+        `Your last payslip was paid on ${formatDate(lastSlip[0].payment_date)}.`,
+        `Your next payslip is estimated around ${formatDate(nextEstimate.toISOString().slice(0, 10))}.`,
+        'Note: The exact date depends on when your HR admin processes the next payroll run.',
+      ]
+      return lines.join('\n')
     }
     case 'my_manager':
     case 'get_my_profile': {

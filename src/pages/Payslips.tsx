@@ -79,6 +79,7 @@ export default function Payslips() {
   const [empHourlyRate, setEmpHourlyRate] = useState(0)
   const [empOvertimeMultiplier, setEmpOvertimeMultiplier] = useState(1.5)
   const [initialised, setInitialised] = useState(false)
+  const [payrollEnabled, setPayrollEnabled] = useState(true)
   const monthNames = lang === 'de' ? MONTH_NAMES_DE : MONTH_NAMES_EN
 
   const fyMonths = getFYMonths()
@@ -139,6 +140,12 @@ export default function Payslips() {
         }
       })
   }, [EMPLOYEE_ID, companyUser?.company_id])
+
+  useEffect(() => {
+    if (!companyUser?.company_id) return
+    supabase.from('companies').select('payroll_enabled').eq('id', companyUser.company_id).single()
+      .then(({ data }) => { if (data && data.payroll_enabled === false) setPayrollEnabled(false) })
+  }, [companyUser?.company_id])
 
   useEffect(() => {
     if (!EMPLOYEE_ID || !companyUser?.company_id || !current) return
@@ -267,6 +274,12 @@ export default function Payslips() {
               </button>
             )
           })}
+        </div>
+      )}
+
+      {!payrollEnabled && (
+        <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 10, padding: '16px 20px', margin: '0 16px 16px' }}>
+          <p style={{ margin: 0, fontSize: 13, color: '#92400e' }}>Payroll is not currently active for your company. Your existing payslips are still available below.</p>
         </div>
       )}
 

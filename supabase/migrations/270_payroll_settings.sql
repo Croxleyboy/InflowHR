@@ -1,0 +1,4 @@
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS payroll_enabled BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS payroll_employed_enabled BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS payroll_shift_enabled BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS payroll_zero_hours_enabled BOOLEAN NOT NULL DEFAULT true;

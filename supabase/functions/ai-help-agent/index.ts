@@ -35,6 +35,7 @@ const TOOL_FEATURE_MAP: Record<string, string | null> = {
   get_next_shifts: 'shifts',
   get_hours_worked: 'timesheets',
   get_payslip_summary: null,
+  get_next_pay_date: null,
   get_my_profile: null,
   get_benefits: 'benefits',
   get_elearning_progress: null,
@@ -65,7 +66,7 @@ const FEATURE_LABELS: Record<string, string> = {
 // ── Client-side data tools (returned to browser for execution) ──
 const DATA_TOOL_NAMES = [
   'get_leave_balance', 'get_leave_requests', 'get_expense_claims',
-  'get_next_shifts', 'get_hours_worked', 'get_payslip_summary',
+  'get_next_shifts', 'get_hours_worked', 'get_payslip_summary', 'get_next_pay_date',
   'get_my_profile', 'get_benefits', 'get_elearning_progress', 'get_upcoming_holidays',
 ]
 
@@ -76,6 +77,7 @@ const DATA_TOOL_PARAMS: Record<string, string[]> = {
   get_next_shifts: ['start_date', 'end_date', 'limit'],
   get_hours_worked: ['start_date', 'end_date'],
   get_payslip_summary: ['count'],
+  get_next_pay_date: [],
   get_my_profile: [],
   get_benefits: [],
   get_elearning_progress: [],
@@ -119,6 +121,11 @@ function matchDataTool(q: string): { tool: string; params: Record<string, unknow
   // Hours worked
   if (/\b(hours? worked|how many hours|timesheet|hours? this week|hours? logged|hours? today|time worked)\b/.test(lower))
     return { tool: 'get_hours_worked', params: {} }
+
+  // Next pay date / when will I be paid
+  if (/\b(next payslip|next pay slip|next pay day|next payday|when.+paid|when.+pay day|when.+payslip|when.+pay slip|when.+pay run|pay date|pay schedule)\b/.test(lower) &&
+      !/\b(policy|entitlement|increase|review)\b/.test(lower))
+    return { tool: 'get_next_pay_date', params: {} }
 
   // Payslips
   if (/\b(payslip|pay slip|last pay|how much tax|my pay|salary|what did i get paid|what was i paid|my wages|net pay|gross pay|take home)\b/.test(lower) &&

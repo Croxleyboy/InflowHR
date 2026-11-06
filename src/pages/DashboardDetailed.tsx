@@ -171,6 +171,7 @@ export default function DashboardDetailed() {
   const [empPhone, setEmpPhone] = useState<string | null>(null)
   const [empStartDate, setEmpStartDate] = useState<string | null>(null)
   const [reminders, setReminders] = useState<ReminderItem[]>([])
+  const [payrollEnabled, setPayrollEnabled] = useState(true)
 
   // Hero background image switcher
   const heroImages = ['/images/hero-landscape.jpg', '/images/hero-mountains.jpg', '/images/hero-sunset.jpg']
@@ -374,6 +375,9 @@ export default function DashboardDetailed() {
           }
         }
       })
+
+    supabase.from('companies').select('payroll_enabled').eq('id', cid).single()
+      .then(({ data }) => { if (data) setPayrollEnabled((data as any).payroll_enabled ?? true) })
 
     // Notifications — workflow_tracker items (same source as My Notifications page)
     if (employeeEmail) {
@@ -1205,7 +1209,7 @@ export default function DashboardDetailed() {
     )})
   }
 
-  allCards.push({ id: 'expenses', el: (
+  allCards.push({ id: 'expenses', el: payrollEnabled ? (
     <section className="dd2-card" onClick={() => navigate('/payslips')}>
       <div className="dd2-card-header">
         <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
@@ -1244,6 +1248,16 @@ export default function DashboardDetailed() {
             </div>
           </div>
         </div>
+      </div>
+    </section>
+  ) : (
+    <section className="dd2-card" style={{ opacity: 0.7 }}>
+      <div className="dd2-card-header">
+        <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        <h2 className="dd2-card-title" style={{ color: 'var(--text-muted, #9ca3af)' }}>My Pay</h2>
+      </div>
+      <div className="dd2-card-body">
+        <span style={{ fontSize: 13, color: 'var(--text-muted, #9ca3af)' }}>Payroll is not currently active</span>
       </div>
     </section>
   )})
@@ -1546,7 +1560,7 @@ export default function DashboardDetailed() {
                 <span>{tenure.years} year{tenure.years !== 1 ? 's' : ''}, {tenure.days} day{tenure.days !== 1 ? 's' : ''}</span>
               </div>
             )}
-            {lastPayNet !== null && (
+            {payrollEnabled && lastPayNet !== null && (
               <div className="dd2-profile-detail dd2-profile-detail-pay" onClick={(ev) => { ev.stopPropagation(); navigate('/payslips') }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
                 <span>{formatCurrency(lastPayNet, currency)}{lastPayDate ? ` · ${new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>

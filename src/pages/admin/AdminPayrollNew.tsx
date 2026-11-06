@@ -220,6 +220,10 @@ export default function AdminPayrollNew() {
   const [modulrPaying, setModulrPaying] = useState(false)
   const [modulrWarning, setModulrWarning] = useState<{ show: boolean; payslipIds: number[]; bulk: boolean }>({ show: false, payslipIds: [], bulk: false })
   const [recentLogs, setRecentLogs] = useState<AuditLogEntry[]>([])
+  const [payrollEnabled, setPayrollEnabled] = useState(true)
+  const [payrollEmployedEnabled, setPayrollEmployedEnabled] = useState(true)
+  const [payrollShiftEnabled, setPayrollShiftEnabled] = useState(true)
+  const [payrollZeroHoursEnabled, setPayrollZeroHoursEnabled] = useState(true)
 
   // Payroll schedule settings
   const [payDayMode, setPayDayMode] = useState<'end' | 'start' | 'custom'>('end')
@@ -605,6 +609,14 @@ export default function AdminPayrollNew() {
       .limit(5)
     setProcessingRuns((procRuns || []) as any)
 
+    const { data: companyRow } = await supabase.from('companies').select('payroll_enabled, payroll_employed_enabled, payroll_shift_enabled, payroll_zero_hours_enabled').eq('id', selectedCompanyId!).single()
+    if (companyRow) {
+      setPayrollEnabled((companyRow as any).payroll_enabled ?? true)
+      setPayrollEmployedEnabled((companyRow as any).payroll_employed_enabled ?? true)
+      setPayrollShiftEnabled((companyRow as any).payroll_shift_enabled ?? true)
+      setPayrollZeroHoursEnabled((companyRow as any).payroll_zero_hours_enabled ?? true)
+    }
+
     setLoading(false)
   }, [selectedCompanyId, fyRange])
 
@@ -620,6 +632,17 @@ export default function AdminPayrollNew() {
       document.removeEventListener('visibilitychange', visHandler)
     }
   }, [selectedCompanyId, loadAll])
+
+  async function togglePayrollSetting(field: string, value: boolean) {
+    if (!selectedCompanyId) return
+    const { error } = await supabase.from('companies').update({ [field]: value }).eq('id', selectedCompanyId)
+    if (error) { showError('Failed to update setting'); return }
+    if (field === 'payroll_enabled') setPayrollEnabled(value)
+    if (field === 'payroll_employed_enabled') setPayrollEmployedEnabled(value)
+    if (field === 'payroll_shift_enabled') setPayrollShiftEnabled(value)
+    if (field === 'payroll_zero_hours_enabled') setPayrollZeroHoursEnabled(value)
+    showSuccess('Payroll setting updated')
+  }
 
   function saveWorkerTypeSettings(workerType: string) {
     const setting = editingSettings[workerType]
@@ -2887,12 +2910,22 @@ export default function AdminPayrollNew() {
 
       {/* ── DASHBOARD VIEW ─────────────────────────────────────── */}
       {view === 'dashboard' && (() => {
+        if (!payrollEnabled) {
+          return (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '24px 20px', textAlign: 'center' }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" style={{ marginBottom: 12 }}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+              <h3 style={{ margin: '0 0 8px', color: '#991b1b' }}>Payroll is currently switched off</h3>
+              <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Pay runs, payslips and schedules are inactive. Go to Settings to enable payroll.</p>
+              <button className="admin-btn" style={{ background: '#6b7280', color: '#fff', border: 'none' }} onClick={() => setView('settings')}>Go to Settings</button>
+            </div>
+          )
+        }
         const dashTabs: { key: 'overview' | 'employed' | 'shift' | 'zero_hours'; label: string; colour: string; employees: Employee[] }[] = [
           { key: 'overview', label: 'Dashboard', colour: '#5c6bc0', employees: [] },
         ]
-        if (employedEmployees.length > 0) dashTabs.push({ key: 'employed', label: 'Employed Staff', colour: '#5c6bc0', employees: employedEmployees })
-        if (shiftEmployees.length > 0) dashTabs.push({ key: 'shift', label: 'Shift Workers', colour: '#7e57c2', employees: shiftEmployees })
-        if (zeroHoursEmployees.length > 0) dashTabs.push({ key: 'zero_hours', label: 'Zero Hours', colour: '#ef6c00', employees: zeroHoursEmployees })
+        if (employedEmployees.length > 0 && payrollEmployedEnabled) dashTabs.push({ key: 'employed', label: 'Employed Staff', colour: '#5c6bc0', employees: employedEmployees })
+        if (shiftEmployees.length > 0 && payrollShiftEnabled) dashTabs.push({ key: 'shift', label: 'Shift Workers', colour: '#7e57c2', employees: shiftEmployees })
+        if (zeroHoursEmployees.length > 0 && payrollZeroHoursEnabled) dashTabs.push({ key: 'zero_hours', label: 'Zero Hours', colour: '#ef6c00', employees: zeroHoursEmployees })
 
         const activeTab = dashTabs.find(t => t.key === dashboardTab) ? dashboardTab : 'overview'
 
@@ -3184,20 +3217,20 @@ export default function AdminPayrollNew() {
                 {/* Quick Actions */}
                 <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px', color: 'var(--text, #1a1a2e)' }}>Quick actions</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
-                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8 }} onClick={startRunPayroll}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8, background: '#16a34a', color: '#fff', border: 'none' }} onClick={startRunPayroll}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                     Run payroll
                   </button>
-                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8 }} onClick={() => setView('payslips')}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8, background: '#2563eb', color: '#fff', border: 'none' }} onClick={() => setView('payslips')}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
                     View payslips
                   </button>
-                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8 }} onClick={() => setView('schedule')}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8, background: '#d97706', color: '#fff', border: 'none' }} onClick={() => setView('schedule')}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                     Pay schedule
                   </button>
-                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8 }} onClick={() => setView('settings')}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                  <button className="admin-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 500, borderRadius: 8, background: '#6b7280', color: '#fff', border: 'none' }} onClick={() => setView('settings')}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     Settings
                   </button>
                 </div>
@@ -3840,6 +3873,22 @@ export default function AdminPayrollNew() {
       {/* ── PAYROLL SETTINGS VIEW ────────────────────────────── */}
       {view === 'settings' && (
         <div className="admin-settings-section">
+          {/* Master payroll toggle */}
+          <div style={{ background: payrollEnabled ? 'var(--bg-card, #f0fdf4)' : '#fef2f2', border: `1px solid ${payrollEnabled ? '#bbf7d0' : '#fecaca'}`, borderRadius: 12, padding: '16px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>Payroll</h3>
+              <p style={{ margin: 0, fontSize: 12, color: '#6b7280' }}>
+                {payrollEnabled ? 'Payroll is enabled. Pay runs, payslips and schedules are active.' : 'Payroll is switched off. No pay runs can be created. Existing data is preserved.'}
+              </p>
+            </div>
+            <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, cursor: 'pointer', flexShrink: 0 }}>
+              <input type="checkbox" checked={payrollEnabled} onChange={e => togglePayrollSetting('payroll_enabled', e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+              <span style={{ position: 'absolute', inset: 0, borderRadius: 12, background: payrollEnabled ? '#22c55e' : '#d1d5db', transition: 'background 0.2s' }}>
+                <span style={{ position: 'absolute', top: 2, left: payrollEnabled ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+              </span>
+            </label>
+          </div>
+
           <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
             Set company-wide defaults for how each worker type records time, gets paid, and handles overtime.
             Individual employees can be overridden in their profile — overridden employees become exceptions and won't change when you update these defaults.
@@ -3857,8 +3906,10 @@ export default function AdminPayrollNew() {
               : employees.filter(e => e.employment_category === 'employed')
             const empCount = empFilter.length
             const exceptionCount = empFilter.filter(e => e.is_payroll_exception).length
+            const wtToggleField = wt === 'employed' ? 'payroll_employed_enabled' : wt === 'shift_worker' ? 'payroll_shift_enabled' : 'payroll_zero_hours_enabled'
+            const wtToggleValue = wt === 'employed' ? payrollEmployedEnabled : wt === 'shift_worker' ? payrollShiftEnabled : payrollZeroHoursEnabled
             return (
-              <div className="admin-settings-group" key={wt}>
+              <div className="admin-settings-group" key={wt} style={{ opacity: wtToggleValue ? 1 : 0.7 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                   <div>
                     <h3 style={{ margin: 0 }}>{label}</h3>
@@ -3867,8 +3918,19 @@ export default function AdminPayrollNew() {
                       {exceptionCount > 0 && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600 }}>{exceptionCount} exception{exceptionCount !== 1 ? 's' : ''}</span>}
                     </span>
                   </div>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: colour }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: colour }} />
+                    <label style={{ position: 'relative', display: 'inline-block', width: 36, height: 20, cursor: payrollEnabled ? 'pointer' : 'not-allowed', opacity: payrollEnabled ? 1 : 0.5 }}>
+                      <input type="checkbox" checked={wtToggleValue} disabled={!payrollEnabled} onChange={e => togglePayrollSetting(wtToggleField, e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                      <span style={{ position: 'absolute', inset: 0, borderRadius: 10, background: wtToggleValue ? '#22c55e' : '#d1d5db', transition: 'background 0.2s' }}>
+                        <span style={{ position: 'absolute', top: 2, left: wtToggleValue ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                      </span>
+                    </label>
+                  </div>
                 </div>
+                {!wtToggleValue ? (
+                  <p style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic', margin: '8px 0' }}>This worker type is disabled. Enable it to configure pay settings. Existing data is preserved.</p>
+                ) : (
                 <div className="admin-detail-grid admin-detail-grid-3">
                   {wt === 'shift_worker' && (
                     <div className="admin-form-field">
@@ -3939,6 +4001,7 @@ export default function AdminPayrollNew() {
                     {settingsSaving ? 'Saving...' : 'Save'}
                   </button>
                 </div>
+                )}
               </div>
             )
           })}
@@ -6008,9 +6071,34 @@ export default function AdminPayrollNew() {
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" style={{ marginBottom: 12 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                 <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#2e7d32' }}>Payroll Run Complete</h3>
                 <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 20 }}>
-                  Payslips are ready for review. Go to <strong>Payslips</strong> to approve and release them to employees.
+                  {providerConnected
+                    ? <>Payslips are ready for review. Go to <strong>Payslips</strong> to approve and release them to employees.</>
+                    : <>Payslips have been generated. Once you have paid your employees externally, confirm below to release payslips.</>
+                  }
                 </p>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
+                {!providerConnected && (
+                  <div style={{ background: '#fff3e0', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
+                    <p style={{ fontSize: 12, margin: 0, color: '#e65100' }}>
+                      <strong>No payroll provider connected.</strong> Pay your employees via your bank or payment method, then click "Confirm Payroll is Paid" to release payslips.
+                    </p>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  {!providerConnected && (
+                    <button className="admin-btn admin-btn-primary" disabled={wizReleasing} style={{ background: '#16a34a' }} onClick={async () => {
+                      if (!wizPayRunId || !selectedCompanyId) return
+                      setWizReleasing(true)
+                      await supabase.from('pay_runs').update({ status: 'released', released_at: new Date().toISOString() }).eq('id', wizPayRunId)
+                      await supabase.from('payslips').update({ status: 'released', released_at: new Date().toISOString() }).eq('pay_run_id', wizPayRunId).eq('company_id', selectedCompanyId)
+                      await logPayrollAction('Payroll Confirmed Paid', `Pay run ${wizPayRunId} confirmed as paid and payslips released (standalone)`)
+                      showSuccess('Payroll confirmed as paid — payslips released to employees.')
+                      await loadAll()
+                      setWizReleasing(false)
+                      setView('payslips')
+                    }}>
+                      {wizReleasing ? 'Releasing…' : 'Confirm Payroll is Paid ✓'}
+                    </button>
+                  )}
                   <button className="admin-btn admin-btn-primary" onClick={() => setView('payslips')}>Review & Release Payslips →</button>
                   <button className="admin-btn" onClick={() => { setView('dashboard'); if (wizSourceTab !== 'overview') setDashboardTab(wizSourceTab) }}>Back to Dashboard</button>
                 </div>
