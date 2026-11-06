@@ -316,6 +316,9 @@ export default function AdminPayrollNew() {
   const [wizRosterPage, setWizRosterPage] = useState(1)
   const [wizSourceTab, setWizSourceTab] = useState<'overview' | 'employed' | 'shift' | 'zero_hours'>('overview')
   const [wizPeriodEditType, setWizPeriodEditType] = useState<string | null>(null)
+  const [wizTopUpMode, setWizTopUpMode] = useState(false)
+  const [wizManagePayslipsType, setWizManagePayslipsType] = useState<string | null>(null)
+  const [wizManagePeriod, setWizManagePeriod] = useState<{ start: string; end: string } | null>(null)
 
   const providerConnected = xeroConnected || sageConnected
   const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
@@ -1177,6 +1180,64 @@ export default function AdminPayrollNew() {
     })
   }
 
+  function getPeriodsPayslipStatus(period: { start: string; end: string }, workerType: 'employed' | 'shift' | 'zero_hours') {
+    const typeEmployees = workerType === 'employed' ? employedEmployees
+      : workerType === 'shift' ? shiftEmployees : zeroHoursEmployees
+    const typeEmpIds = new Set(typeEmployees.map(e => e.id))
+    const periodPayslips = payslips.filter(p =>
+      p.pay_period_start >= period.start && p.pay_period_start <= period.end &&
+      p.employee && typeEmpIds.has(p.employee.id)
+    )
+    const paidPayslips = periodPayslips.filter(p => p.status === 'paid')
+    const draftPayslips = periodPayslips.filter(p => p.status !== 'paid')
+    return {
+      total: periodPayslips.length,
+      paid: paidPayslips.length,
+      drafts: draftPayslips.length,
+      allPaid: periodPayslips.length > 0 && draftPayslips.length === 0,
+      hasDrafts: draftPayslips.length > 0,
+      payslips: periodPayslips,
+      newEmployeeCount: typeEmployees.length - paidPayslips.length,
+    }
+  }
+
+  async function refreshPayslips() {
+    const fyStart = localDateStr(fyRange.startDate)
+    const fyEnd = localDateStr(fyRange.endDate)
+    const { data } = await supabase.from('payslips')
+      .select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)')
+      .eq('company_id', selectedCompanyId)
+      .gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd)
+      .order('payment_date', { ascending: false })
+    if (data) setPayslips(data as Payslip[])
+  }
+
+  async function deletePayslip(id: number) {
+    const { error } = await supabase.from('payslips').delete().eq('id', id)
+    if (error) { showError('Failed to delete payslip'); return }
+    setPayslips(prev => prev.filter(ps => ps.id !== id))
+    await logPayrollAction('delete_payslips', `Deleted payslip #${id}`)
+    showSuccess('Payslip deleted')
+  }
+
+  async function deleteAllDraftPayslips(period: { start: string; end: string }, workerType: 'employed' | 'shift' | 'zero_hours') {
+    const typeEmployees = workerType === 'employed' ? employedEmployees
+      : workerType === 'shift' ? shiftEmployees : zeroHoursEmployees
+    const typeEmpIds = new Set(typeEmployees.map(e => e.id))
+    const toDelete = payslips.filter(p =>
+      p.pay_period_start >= period.start && p.pay_period_start <= period.end &&
+      p.employee && typeEmpIds.has(p.employee.id) && p.status !== 'paid'
+    )
+    if (toDelete.length === 0) { showError('No draft payslips to delete'); return }
+    const ids = toDelete.map(p => p.id)
+    const { error } = await supabase.from('payslips').delete().in('id', ids)
+    if (error) { showError('Failed to delete payslips'); return }
+    setPayslips(prev => prev.filter(ps => !ids.includes(ps.id)))
+    await logPayrollAction('delete_payslips', `Deleted ${ids.length} draft payslips for ${formatDate(period.start)} – ${formatDate(period.end)} (${workerType})`)
+    showSuccess(`Deleted ${ids.length} draft payslip${ids.length !== 1 ? 's' : ''}`)
+    setWizManagePayslipsType(null)
+  }
+
   // Wizard: generate payslips for selected worker types
   async function wizGenerate() {
     setWizGenerating(true)
@@ -1193,15 +1254,33 @@ export default function AdminPayrollNew() {
       return false
     })
 
+    let filteredEmployees = targetEmployees
     const targetEmpIds = new Set(targetEmployees.map(e => e.id))
     const existingForTarget = payslips.filter(p => p.pay_period_start >= periodStart && p.pay_period_start <= periodEnd && p.employee && targetEmpIds.has(p.employee.id))
+
     if (existingForTarget.length > 0) {
-      showError(`Payslips for ${existingForTarget.length} of these employees already exist for ${formatDate(periodStart)} – ${formatDate(periodEnd)}. Run a different worker type or navigate to a different period.`)
-      setWizGenerating(false)
-      return
+      if (wizTopUpMode) {
+        const paidEmpIds = new Set(existingForTarget.filter(p => p.status === 'paid').map(p => p.employee!.id))
+        const nonPaidExisting = existingForTarget.filter(p => p.status !== 'paid')
+        if (nonPaidExisting.length > 0) {
+          showError(`${nonPaidExisting.length} draft/generated payslips still exist for this period. Delete them via Manage Payslips before running a top-up.`)
+          setWizGenerating(false)
+          return
+        }
+        filteredEmployees = targetEmployees.filter(e => !paidEmpIds.has(e.id))
+        if (filteredEmployees.length === 0) {
+          showError('All employees already have paid payslips for this period. No new employees to process.')
+          setWizGenerating(false)
+          return
+        }
+      } else {
+        showError(`Payslips for ${existingForTarget.length} of these employees already exist for ${formatDate(periodStart)} – ${formatDate(periodEnd)}. Run a different worker type or navigate to a different period.`)
+        setWizGenerating(false)
+        return
+      }
     }
 
-    if (targetEmployees.length === 0) {
+    if (filteredEmployees.length === 0) {
       showError('No employees match the selected worker types')
       setWizGenerating(false)
       return
@@ -1267,7 +1346,7 @@ export default function AdminPayrollNew() {
 
     const errors: string[] = []
     let payslipIdx = 0
-    for (const emp of targetEmployees) {
+    for (const emp of filteredEmployees) {
       if (!emp.payroll_id) {
         nextPayrollSeq++
         emp.payroll_id = `PAY-${String(nextPayrollSeq).padStart(4, '0')}`
@@ -1510,7 +1589,7 @@ export default function AdminPayrollNew() {
       await logPayrollAction('Payslip Generation Failed', `${errors.length} error(s): ${errors[0]}`, 'error')
     } else {
       showSuccess(`Generated payslips for ${formatDate(periodStart)} – ${formatDate(periodEnd)}`)
-      await logPayrollAction('Payslips Generated', `Period ${formatDate(periodStart)} – ${formatDate(periodEnd)}, ${targetEmployees.length} employee(s)`)
+      await logPayrollAction('Payslips Generated', `${wizTopUpMode ? 'Top-up: ' : ''}Period ${formatDate(periodStart)} – ${formatDate(periodEnd)}, ${filteredEmployees.length} employee(s)`)
       setWizGenerated(true)
       await loadAll()
     }
@@ -4375,76 +4454,155 @@ export default function AdminPayrollNew() {
               </p>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
-                {employedEmployees.length > 0 && (() => {
-                  const ws = workerSettings.find(s => s.worker_type === 'employed')
-                  const f = ws?.pay_pattern || 'monthly'
+                {[
+                  { key: 'employed' as const, label: 'Employed Staff', settingsKey: 'employed', wizKey: 'employed', colour: '#5c6bc0', emps: employedEmployees, defaultFreq: 'monthly',
+                    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>,
+                    detail: (f: string, ot: string) => `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} salary${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}` },
+                  { key: 'shift' as const, label: 'Shift Workers', settingsKey: 'shift_worker', wizKey: 'shift', colour: '#7e57c2', emps: shiftEmployees, defaultFreq: 'weekly',
+                    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+                    detail: (f: string, ot: string) => `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}` },
+                  { key: 'zero_hours' as const, label: 'Zero Hours', settingsKey: 'zero_hours', wizKey: 'zero_hours', colour: '#ef6c00', emps: zeroHoursEmployees, defaultFreq: 'weekly',
+                    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+                    detail: (f: string, ot: string) => `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}` },
+                ].filter(c => c.emps.length > 0).map(card => {
+                  const ws = workerSettings.find(s => s.worker_type === card.settingsKey)
+                  const f = ws?.pay_pattern || card.defaultFreq
                   const ot = ws?.overtime_handling || 'none'
-                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth, lastPayRuns['employed'])
+                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth, lastPayRuns[card.key === 'shift' ? 'shift' : card.key])
+                  const ps = getPeriodsPayslipStatus(period, card.key)
                   return (
-                    <div className="pn-wiz-type-card" style={{ cursor: 'default' }}>
-                      <div className="pn-wiz-type-icon" style={{ background: '#5c6bc0' }}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
-                      </div>
-                      <strong>Employed Staff</strong>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{employedEmployees.length} employee{employedEmployees.length !== 1 ? 's' : ''}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>
-                        {f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} salary{ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}
-                      </span>
+                    <div key={card.key} className="pn-wiz-type-card" style={{ cursor: 'default' }}>
+                      <div className="pn-wiz-type-icon" style={{ background: card.colour }}>{card.icon}</div>
+                      <strong>{card.label}</strong>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{card.emps.length} employee{card.emps.length !== 1 ? 's' : ''}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>{card.detail(f, ot)}</span>
                       <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 600, background: '#f1f5f9', padding: '3px 8px', borderRadius: 4, display: 'inline-block', marginTop: 2 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
-                      <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%' }}
-                        onClick={() => { setWizWorkerTypes(new Set(['employed'])); setTimeout(advanceToStep2, 0) }}>
-                        Start Pay Run →
-                      </button>
+
+                      {ps.allPaid && (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                            <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>Paid</span>
+                            <span style={{ fontSize: 11, color: '#64748b' }}>{ps.paid} payslip{ps.paid !== 1 ? 's' : ''}</span>
+                          </div>
+                          {ps.newEmployeeCount > 0 ? (
+                            <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: card.colour }}
+                              onClick={() => { setWizTopUpMode(true); setWizWorkerTypes(new Set([card.wizKey])); setTimeout(advanceToStep2, 0) }}>
+                              Top-Up Run → ({ps.newEmployeeCount} new)
+                            </button>
+                          ) : (
+                            <button className="admin-btn" style={{ marginTop: 8, fontSize: 12, width: '100%', opacity: 0.6 }} disabled>
+                              All Paid — No New Employees
+                            </button>
+                          )}
+                        </>
+                      )}
+
+                      {ps.hasDrafts && (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                            <span style={{ fontSize: 11, background: '#fff3e0', color: '#e65100', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>{ps.drafts} draft{ps.drafts !== 1 ? 's' : ''}</span>
+                            {ps.paid > 0 && <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>{ps.paid} paid</span>}
+                          </div>
+                          <button className="admin-btn" style={{ marginTop: 8, fontSize: 12, width: '100%', color: '#e65100', borderColor: '#e65100' }}
+                            onClick={() => { setWizManagePayslipsType(card.key); setWizManagePeriod(period) }}>
+                            Manage Payslips
+                          </button>
+                        </>
+                      )}
+
+                      {ps.total === 0 && (
+                        <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: card.colour }}
+                          onClick={() => { setWizTopUpMode(false); setWizWorkerTypes(new Set([card.wizKey])); setTimeout(advanceToStep2, 0) }}>
+                          Start Pay Run →
+                        </button>
+                      )}
                     </div>
                   )
-                })()}
-                {shiftEmployees.length > 0 && (() => {
-                  const ws = workerSettings.find(s => s.worker_type === 'shift_worker')
-                  const f = ws?.pay_pattern || 'weekly'
-                  const ot = ws?.overtime_handling || 'none'
-                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth, lastPayRuns['shift'])
-                  return (
-                    <div className="pn-wiz-type-card" style={{ cursor: 'default' }}>
-                      <div className="pn-wiz-type-icon" style={{ background: '#7e57c2' }}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                      </div>
-                      <strong>Shift Workers</strong>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{shiftEmployees.length} employee{shiftEmployees.length !== 1 ? 's' : ''}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>
-                        {f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate{ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}
-                      </span>
-                      <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 600, background: '#f1f5f9', padding: '3px 8px', borderRadius: 4, display: 'inline-block', marginTop: 2 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
-                      <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: '#7e57c2' }}
-                        onClick={() => { setWizWorkerTypes(new Set(['shift'])); setTimeout(advanceToStep2, 0) }}>
-                        Start Pay Run →
-                      </button>
-                    </div>
-                  )
-                })()}
-                {zeroHoursEmployees.length > 0 && (() => {
-                  const ws = workerSettings.find(s => s.worker_type === 'zero_hours')
-                  const f = ws?.pay_pattern || 'weekly'
-                  const ot = ws?.overtime_handling || 'none'
-                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth, lastPayRuns['zero_hours'])
-                  return (
-                    <div className="pn-wiz-type-card" style={{ cursor: 'default' }}>
-                      <div className="pn-wiz-type-icon" style={{ background: '#ef6c00' }}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                      </div>
-                      <strong>Zero Hours</strong>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{zeroHoursEmployees.length} employee{zeroHoursEmployees.length !== 1 ? 's' : ''}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>
-                        {f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate{ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}
-                      </span>
-                      <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 600, background: '#f1f5f9', padding: '3px 8px', borderRadius: 4, display: 'inline-block', marginTop: 2 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
-                      <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: '#ef6c00' }}
-                        onClick={() => { setWizWorkerTypes(new Set(['zero_hours'])); setTimeout(advanceToStep2, 0) }}>
-                        Start Pay Run →
-                      </button>
-                    </div>
-                  )
-                })()}
+                })}
               </div>
+
+              {/* Manage Payslips Panel */}
+              {wizManagePayslipsType && wizManagePeriod && (() => {
+                const typeLabel = wizManagePayslipsType === 'employed' ? 'Employed Staff' : wizManagePayslipsType === 'shift' ? 'Shift Workers' : 'Zero Hours'
+                const typeEmployees = wizManagePayslipsType === 'employed' ? employedEmployees : wizManagePayslipsType === 'shift' ? shiftEmployees : zeroHoursEmployees
+                const typeEmpIds = new Set(typeEmployees.map(e => e.id))
+                const periodPayslips = payslips.filter(p =>
+                  p.pay_period_start >= wizManagePeriod.start && p.pay_period_start <= wizManagePeriod.end &&
+                  p.employee && typeEmpIds.has(p.employee.id)
+                )
+                const draftCount = periodPayslips.filter(p => p.status !== 'paid').length
+                return (
+                  <div className="admin-settings-group" style={{ marginTop: 0, marginBottom: 20, borderLeft: '4px solid #e65100' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>
+                        Manage Payslips — {typeLabel} ({formatDate(wizManagePeriod.start)} – {formatDate(wizManagePeriod.end)})
+                      </h4>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {draftCount > 0 && (
+                          <button className="admin-btn" style={{ fontSize: 11, padding: '4px 12px', color: '#d32f2f', borderColor: '#d32f2f' }}
+                            onClick={() => deleteAllDraftPayslips(wizManagePeriod, wizManagePayslipsType as 'employed' | 'shift' | 'zero_hours')}>
+                            Delete All Drafts ({draftCount})
+                          </button>
+                        )}
+                        <button className="admin-btn" style={{ fontSize: 11, padding: '4px 12px' }}
+                          onClick={() => { setWizManagePayslipsType(null); setWizManagePeriod(null) }}>
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: '#374151' }}>Employee</th>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: '#374151' }}>Status</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 600, color: '#374151' }}>Gross</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 600, color: '#374151' }}>Net</th>
+                            <th style={{ textAlign: 'center', padding: '6px 8px', fontWeight: 600, color: '#374151' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {periodPayslips.map(p => {
+                            const statusColours: Record<string, { bg: string; text: string }> = {
+                              draft: { bg: '#fff3e0', text: '#e65100' },
+                              generated: { bg: '#e3f2fd', text: '#1565c0' },
+                              flagged: { bg: '#fce4ec', text: '#c62828' },
+                              processed: { bg: '#e8f5e9', text: '#2e7d32' },
+                              paid: { bg: '#e8f5e9', text: '#2e7d32' },
+                            }
+                            const sc = statusColours[p.status] || statusColours.draft
+                            return (
+                              <tr key={p.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                <td style={{ padding: '6px 8px' }}>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
+                                <td style={{ padding: '6px 8px' }}>
+                                  <span style={{ fontSize: 11, background: sc.bg, color: sc.text, padding: '2px 8px', borderRadius: 10, fontWeight: 600, textTransform: 'capitalize' }}>{p.status}</span>
+                                </td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatCurrency(Number(p.gross_pay), currency)}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatCurrency(Number(p.net_pay), currency)}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                  {p.status !== 'paid' ? (
+                                    <button className="admin-btn" style={{ fontSize: 11, padding: '2px 10px', color: '#d32f2f', borderColor: '#d32f2f' }}
+                                      onClick={() => deletePayslip(p.id)}>
+                                      Delete
+                                    </button>
+                                  ) : (
+                                    <span style={{ fontSize: 11, color: '#9ca3af' }}>Locked</span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {draftCount === 0 && periodPayslips.length > 0 && (
+                      <p style={{ fontSize: 12, color: '#2e7d32', marginTop: 8, marginBottom: 0 }}>
+                        All payslips are paid. Close this panel and use Top-Up Run to process new employees.
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button className="admin-btn" onClick={() => { setView('dashboard'); if (wizSourceTab !== 'overview') setDashboardTab(wizSourceTab) }}>← Back to Dashboard</button>
@@ -4516,6 +4674,16 @@ export default function AdminPayrollNew() {
                   </div>
                 )
               })()}
+
+              {wizTopUpMode && (
+                <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 12, marginBottom: 12, borderLeft: '4px solid #2e7d32' }}>
+                  <strong style={{ color: '#2e7d32', fontSize: 13 }}>Top-Up Run</strong>
+                  <p style={{ fontSize: 12, color: '#2e7d32', margin: '4px 0 0' }}>
+                    This is a top-up run. Employees who already have a <strong>paid</strong> payslip for this period are excluded.
+                    Only new starters and employees with changes will be processed.
+                  </p>
+                </div>
+              )}
 
               <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
                 {providerConnected
