@@ -4250,10 +4250,39 @@ body {
   box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
 .directory-table-hide-mobile {}
+.directory-table-hide-mobile-status {}
+.directory-table-show-mobile {}
+.directory-table-status-dots {
+  display: none;
+}
 
 @media (max-width: 640px) {
   .directory-table-hide-mobile { display: none; }
-  .directory-table-name-cell { min-width: 140px; }
+  .directory-table-hide-mobile-status { display: none; }
+  .directory-table { font-size: 12px; }
+  .directory-table thead th { padding: 6px 6px; font-size: 10px; }
+  .directory-table-row td { padding: 6px 6px; }
+  .directory-table-name-cell { min-width: 0; gap: 6px; }
+  .directory-table-avatar, .directory-table-avatar-initials { width: 28px; height: 28px; font-size: 10px; }
+  .directory-table-name { font-size: 12px; }
+  .directory-table-email { font-size: 10px; }
+  .directory-table-role { font-size: 11px; }
+  .directory-table-secondary { font-size: 11px; }
+  .directory-table-badge { font-size: 10px; padding: 1px 6px; }
+  .directory-table-wrap { overflow-x: hidden; }
+  .directory-table-status-dots {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 1px;
+  }
+  .directory-table-status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
 }
 
 /* ── Directory Contact Modal ── */
