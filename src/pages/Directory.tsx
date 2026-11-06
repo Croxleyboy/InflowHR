@@ -488,12 +488,12 @@ export default function Directory() {
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th className="directory-table-hide-mobile-status">Status</th>
+                  <th className="directory-table-hide-mobile">Status</th>
                   <th>Role</th>
-                  <th className="directory-table-show-mobile">Reports to</th>
-                  <th className="directory-table-show-mobile">Office</th>
+                  <th className="directory-table-hide-mobile">Reports to</th>
+                  <th className="directory-table-hide-mobile">Office</th>
                   <th className="directory-table-hide-mobile">Tenure</th>
-                  {teamsEnabled && <th className="directory-table-hide-mobile-status" style={{ width: 40 }}>Teams</th>}
+                  {teamsEnabled && <th className="directory-table-hide-mobile" style={{ width: 40 }}>Teams</th>}
                 </tr>
               </thead>
               <tbody>
@@ -520,7 +520,7 @@ export default function Directory() {
                         </div>
                       </div>
                     </td>
-                    <td className="directory-table-hide-mobile-status">
+                    <td className="directory-table-hide-mobile">
                       {isOnLeave(entry) ? (
                         <span className="directory-table-badge directory-table-badge-leave">On Leave</span>
                       ) : (
@@ -528,11 +528,11 @@ export default function Directory() {
                       )}
                     </td>
                     <td><span className="directory-table-role">{entry.job_title || '—'}</span></td>
-                    <td className="directory-table-show-mobile"><span className="directory-table-secondary">{entry.manager_name || '—'}</span></td>
-                    <td className="directory-table-show-mobile"><span className="directory-table-secondary">{entry.location || '—'}</span></td>
+                    <td className="directory-table-hide-mobile"><span className="directory-table-secondary">{entry.manager_name || '—'}</span></td>
+                    <td className="directory-table-hide-mobile"><span className="directory-table-secondary">{entry.location || '—'}</span></td>
                     <td className="directory-table-hide-mobile"><span className="directory-table-secondary">{getTenure(entry.start_date)}</span></td>
                     {teamsEnabled && (
-                      <td className="directory-table-hide-mobile-status">
+                      <td className="directory-table-hide-mobile">
                         {presenceMap[entry.user_email] && presenceMap[entry.user_email] !== 'PresenceUnknown' && (
                           <span
                             className="directory-table-presence"
