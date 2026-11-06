@@ -95,6 +95,8 @@ export default function CheckInPrompt() {
     if (location.pathname.includes('/checkin') || location.pathname.startsWith('/admin')) return
     const key = `checkin_dismissed_${employeeId}_${toLocalDateStr()}`
     if (sessionStorage.getItem(key)) return
+    const snoozeUntil = sessionStorage.getItem(`checkin_snooze_${employeeId}_${toLocalDateStr()}`)
+    if (snoozeUntil && Date.now() < Number(snoozeUntil)) return
 
     let timer: ReturnType<typeof setTimeout>
     checkShiftAvailability().then(() => {
@@ -149,7 +151,14 @@ export default function CheckInPrompt() {
       }
     }
 
+    if (employeeId) {
+      try { sessionStorage.setItem(`checkin_snooze_${employeeId}_${toLocalDateStr()}`, String(Date.now() + delayMs)) } catch {}
+    }
+
     remindTimerRef.current = setTimeout(() => {
+      if (employeeId) {
+        try { sessionStorage.removeItem(`checkin_snooze_${employeeId}_${toLocalDateStr()}`) } catch {}
+      }
       setDismissed(false)
       setVisible(true)
       checkShiftAvailability()

@@ -4250,23 +4250,22 @@ body {
   box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
 .directory-table-hide-mobile {}
-.directory-table-hide-mobile-status {}
-.directory-table-show-mobile {}
 .directory-table-status-dots {
   display: none;
 }
 
 @media (max-width: 640px) {
   .directory-table-hide-mobile { display: none; }
-  .directory-table-hide-mobile-status { display: none; }
-  .directory-table { font-size: 12px; }
-  .directory-table thead th { padding: 6px 6px; font-size: 10px; }
-  .directory-table-row td { padding: 6px 6px; }
+  .directory-table { font-size: 12px; table-layout: fixed; width: 100%; }
+  .directory-table thead th { padding: 6px 4px; font-size: 10px; }
+  .directory-table thead th:first-child { width: 65%; }
+  .directory-table thead th:nth-child(3) { width: 35%; }
+  .directory-table-row td { padding: 6px 4px; }
   .directory-table-name-cell { min-width: 0; gap: 6px; }
   .directory-table-avatar, .directory-table-avatar-initials { width: 28px; height: 28px; font-size: 10px; }
   .directory-table-name { font-size: 12px; }
-  .directory-table-email { font-size: 10px; }
-  .directory-table-role { font-size: 11px; }
+  .directory-table-email { font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; display: block; }
+  .directory-table-role { font-size: 11px; word-break: break-word; }
   .directory-table-secondary { font-size: 11px; }
   .directory-table-badge { font-size: 10px; padding: 1px 6px; }
   .directory-table-wrap { overflow-x: hidden; }
