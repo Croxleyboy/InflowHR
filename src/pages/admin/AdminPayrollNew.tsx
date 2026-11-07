@@ -1201,18 +1201,7 @@ export default function AdminPayrollNew() {
     }
   }
 
-  async function refreshPayslips() {
-    const fyStart = localDateStr(fyRange.startDate)
-    const fyEnd = localDateStr(fyRange.endDate)
-    const { data } = await supabase.from('payslips')
-      .select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)')
-      .eq('company_id', selectedCompanyId)
-      .gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd)
-      .order('payment_date', { ascending: false })
-    if (data) setPayslips(data as Payslip[])
-  }
-
-  async function deletePayslip(id: number) {
+  async function deletePayslipById(id: number) {
     const { error } = await supabase.from('payslips').delete().eq('id', id)
     if (error) { showError('Failed to delete payslip'); return }
     setPayslips(prev => prev.filter(ps => ps.id !== id))
@@ -4455,13 +4444,13 @@ export default function AdminPayrollNew() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
                 {[
-                  { key: 'employed' as const, label: 'Employed Staff', settingsKey: 'employed', wizKey: 'employed', colour: '#5c6bc0', emps: employedEmployees, defaultFreq: 'monthly',
+                  { key: 'employed' as const, label: 'Employed Staff', settingsKey: 'employed', wizKey: 'employed' as const, colour: '#5c6bc0', emps: employedEmployees, defaultFreq: 'monthly',
                     icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>,
                     detail: (f: string, ot: string) => `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} salary${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}` },
-                  { key: 'shift' as const, label: 'Shift Workers', settingsKey: 'shift_worker', wizKey: 'shift', colour: '#7e57c2', emps: shiftEmployees, defaultFreq: 'weekly',
+                  { key: 'shift' as const, label: 'Shift Workers', settingsKey: 'shift_worker', wizKey: 'shift' as const, colour: '#7e57c2', emps: shiftEmployees, defaultFreq: 'weekly',
                     icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
                     detail: (f: string, ot: string) => `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}` },
-                  { key: 'zero_hours' as const, label: 'Zero Hours', settingsKey: 'zero_hours', wizKey: 'zero_hours', colour: '#ef6c00', emps: zeroHoursEmployees, defaultFreq: 'weekly',
+                  { key: 'zero_hours' as const, label: 'Zero Hours', settingsKey: 'zero_hours', wizKey: 'zero_hours' as const, colour: '#ef6c00', emps: zeroHoursEmployees, defaultFreq: 'weekly',
                     icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
                     detail: (f: string, ot: string) => `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}` },
                 ].filter(c => c.emps.length > 0).map(card => {
@@ -4582,7 +4571,7 @@ export default function AdminPayrollNew() {
                                 <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                                   {p.status !== 'paid' ? (
                                     <button className="admin-btn" style={{ fontSize: 11, padding: '2px 10px', color: '#d32f2f', borderColor: '#d32f2f' }}
-                                      onClick={() => deletePayslip(p.id)}>
+                                      onClick={() => deletePayslipById(p.id)}>
                                       Delete
                                     </button>
                                   ) : (
