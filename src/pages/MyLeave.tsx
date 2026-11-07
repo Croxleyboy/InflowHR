@@ -9,6 +9,19 @@ import { getFYRange, formatDate } from '../lib/formatters'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import Chevron from '../components/Chevron'
 
+interface TeamLeaveRequest {
+  id: number
+  employee_id: string
+  leave_type_id: number
+  start_date: string
+  end_date: string
+  days_requested: number
+  status: string
+  reason: string | null
+  employee_name: string
+  employee_avatar: string | null
+}
+
 interface LeaveBalance {
   leave_type_id: number
   total_allowance: number
@@ -61,7 +74,7 @@ const LEAVE_TYPE_COLORS: Record<string, string> = {
 export default function MyLeave() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
-  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser, isManager } = useAuth()
   const { showError } = useToast()
   const [balances, setBalances] = useState<LeaveBalance[]>([])
   const [otherTypes, setOtherTypes] = useState<OtherLeaveType[]>([])
@@ -74,7 +87,10 @@ export default function MyLeave() {
 
   const [historyRequests, setHistoryRequests] = useState<LeaveRequest[]>([])
   const [historyTypeMap, setHistoryTypeMap] = useState<Map<number, LeaveType>>(new Map())
-  const [historyTab, setHistoryTab] = useState<'active' | 'dismissed'>('active')
+  const [historyTab, setHistoryTab] = useState<'active' | 'dismissed' | 'team'>('active')
+  const [teamLeaveRequests, setTeamLeaveRequests] = useState<TeamLeaveRequest[]>([])
+  const [teamLeaveTypeMap, setTeamLeaveTypeMap] = useState<Map<number, LeaveType>>(new Map())
+  const [teamLeaveLoading, setTeamLeaveLoading] = useState(false)
 
   const loadData = useCallback(async () => {
     if (!EMPLOYEE_ID) return
@@ -180,7 +196,44 @@ export default function MyLeave() {
     setLoading(false)
   }, [EMPLOYEE_ID])
 
+  const loadTeamLeave = useCallback(async () => {
+    if (!EMPLOYEE_ID || !companyUser?.company_id || !isManager) return
+    setTeamLeaveLoading(true)
+    const { data: directReports } = await supabase
+      .from('employees')
+      .select('id, first_name, last_name, avatar_url')
+      .eq('company_id', companyUser.company_id)
+      .eq('manager_id', EMPLOYEE_ID)
+      .eq('is_active', true)
+    if (!directReports || directReports.length === 0) { setTeamLeaveLoading(false); return }
+    const reportIds = directReports.map((r: any) => r.id)
+    const nameMap = new Map(directReports.map((r: any) => [r.id, { name: `${r.first_name} ${r.last_name}`, avatar: r.avatar_url }]))
+    const { data: teamReqs } = await supabase
+      .from('leave_requests')
+      .select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status, reason')
+      .eq('company_id', companyUser.company_id)
+      .in('employee_id', reportIds)
+      .in('status', ['pending', 'approved'])
+      .order('start_date', { ascending: true })
+    if (teamReqs && teamReqs.length > 0) {
+      const typeIds = [...new Set(teamReqs.map((r: any) => r.leave_type_id))]
+      const { data: types } = await supabase.from('leave_types').select('id, name, colour').in('id', typeIds)
+      if (types) setTeamLeaveTypeMap(new Map(types.map((lt: any) => [lt.id, lt as LeaveType])))
+      setTeamLeaveRequests(teamReqs.map((r: any) => {
+        const emp = nameMap.get(r.employee_id) || { name: 'Employee', avatar: null }
+        return { ...r, employee_name: emp.name, employee_avatar: emp.avatar }
+      }))
+    } else {
+      setTeamLeaveRequests([])
+    }
+    setTeamLeaveLoading(false)
+  }, [EMPLOYEE_ID, companyUser?.company_id, isManager])
+
   useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    if (historyTab === 'team' && teamLeaveRequests.length === 0 && !teamLeaveLoading) loadTeamLeave()
+  }, [historyTab, loadTeamLeave])
 
   useEffect(() => {
     const onFocus = () => { if (EMPLOYEE_ID) loadData() }
@@ -711,7 +764,7 @@ export default function MyLeave() {
         </>
       )}
 
-      {/* Desktop-only: inline leave history */}
+      {/* Desktop-only: inline leave history as directory-style table */}
       {isDesktop && (
         <div className="ml-inline-history">
           <div className="leave-history-tabs">
@@ -723,27 +776,116 @@ export default function MyLeave() {
               Cancelled & Declined
               {dismissedHistoryRequests.length > 0 && <span className="leave-history-tab-count leave-history-tab-count-muted">{dismissedHistoryRequests.length}</span>}
             </button>
+            {isManager && (
+              <button className={`leave-history-tab${historyTab === 'team' ? ' active' : ''}`} onClick={() => setHistoryTab('team')} style={historyTab === 'team' ? { borderColor: '#7b1fa2', color: '#7b1fa2' } : {}}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+                  <circle cx="18" cy="8" r="3"/><path d="M21 21v-1a3 3 0 0 0-2-2.83"/>
+                </svg>
+                My Team
+                {teamLeaveRequests.filter(r => r.status === 'pending').length > 0 && (
+                  <span className="leave-history-tab-count" style={{ background: '#e65100' }}>{teamLeaveRequests.filter(r => r.status === 'pending').length}</span>
+                )}
+              </button>
+            )}
           </div>
 
           {historyTab === 'active' && activeHistoryRequests.length === 0 && (
             <p className="claims-empty">{t('leave_history.no_leave')}</p>
           )}
 
-          {historyTab === 'active' && upcomingHistory.length > 0 && (
+          {historyTab === 'active' && (upcomingHistory.length > 0 || previousHistory.length > 0) && (
             <>
-              <h3 className="leave-history-section-title">{t('leave_history.upcoming')}</h3>
-              <div className="leave-history-list">
-                {upcomingHistory.map(renderHistoryRow)}
-              </div>
-            </>
-          )}
-
-          {historyTab === 'active' && previousHistory.length > 0 && (
-            <>
-              <h3 className="leave-history-section-title">{t('leave_history.previous')}</h3>
-              <div className="leave-history-list">
-                {previousHistory.map(renderHistoryRow)}
-              </div>
+              {upcomingHistory.length > 0 && (
+                <>
+                  <h3 className="leave-history-section-title">{t('leave_history.upcoming')}</h3>
+                  <div className="ml-leave-table-wrap">
+                    <table className="ml-leave-table">
+                      <thead>
+                        <tr>
+                          <th>Leave Type</th>
+                          <th>Status</th>
+                          <th>From</th>
+                          <th>To</th>
+                          <th>Days</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {upcomingHistory.map(req => {
+                          const lt = historyTypeMap.get(req.leave_type_id)
+                          const typeName = lt ? lt.name : 'Leave'
+                          const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
+                          return (
+                            <tr key={req.id} className="ml-leave-table-row" onClick={() => navigate(`/leave/${req.id}`)}>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ width: 4, height: 28, borderRadius: 2, background: colour, flexShrink: 0 }} />
+                                  <span style={{ fontWeight: 700, color: 'var(--text)' }}>{translateLeaveType(typeName)}</span>
+                                </div>
+                              </td>
+                              <td>
+                                <span className="ml-leave-table-badge" style={{ background: req.status === 'approved' ? '#e6f7ec' : '#fff3e0', color: req.status === 'approved' ? '#16a34a' : '#e65100' }}>
+                                  {tStatus(req.status)}
+                                </span>
+                              </td>
+                              <td><span style={{ fontWeight: 600 }}>{formatDate(req.start_date)}</span></td>
+                              <td><span style={{ fontWeight: 600 }}>{formatDate(req.end_date)}</span></td>
+                              <td>
+                                <span className="ml-leave-table-days" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+              {previousHistory.length > 0 && (
+                <>
+                  <h3 className="leave-history-section-title">{t('leave_history.previous')}</h3>
+                  <div className="ml-leave-table-wrap">
+                    <table className="ml-leave-table">
+                      <thead>
+                        <tr>
+                          <th>Leave Type</th>
+                          <th>Status</th>
+                          <th>From</th>
+                          <th>To</th>
+                          <th>Days</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previousHistory.map(req => {
+                          const lt = historyTypeMap.get(req.leave_type_id)
+                          const typeName = lt ? lt.name : 'Leave'
+                          const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
+                          return (
+                            <tr key={req.id} className="ml-leave-table-row" onClick={() => navigate(`/leave/${req.id}`)}>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ width: 4, height: 28, borderRadius: 2, background: colour, flexShrink: 0 }} />
+                                  <span style={{ fontWeight: 700, color: 'var(--text)' }}>{translateLeaveType(typeName)}</span>
+                                </div>
+                              </td>
+                              <td>
+                                <span className="ml-leave-table-badge" style={{ background: '#e6f7ec', color: '#16a34a' }}>
+                                  {tStatus(req.status)}
+                                </span>
+                              </td>
+                              <td><span style={{ fontWeight: 600 }}>{formatDate(req.start_date)}</span></td>
+                              <td><span style={{ fontWeight: 600 }}>{formatDate(req.end_date)}</span></td>
+                              <td>
+                                <span className="ml-leave-table-days" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -752,9 +894,126 @@ export default function MyLeave() {
           )}
 
           {historyTab === 'dismissed' && dismissedHistoryRequests.length > 0 && (
-            <div className="leave-history-list" style={{ marginTop: 12 }}>
-              {dismissedHistoryRequests.map(renderHistoryRow)}
+            <div className="ml-leave-table-wrap" style={{ marginTop: 12 }}>
+              <table className="ml-leave-table">
+                <thead>
+                  <tr>
+                    <th>Leave Type</th>
+                    <th>Status</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Days</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dismissedHistoryRequests.map(req => {
+                    const lt = historyTypeMap.get(req.leave_type_id)
+                    const typeName = lt ? lt.name : 'Leave'
+                    const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
+                    return (
+                      <tr key={req.id} className="ml-leave-table-row" style={{ opacity: 0.7 }} onClick={() => navigate(`/leave/${req.id}`)}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ width: 4, height: 28, borderRadius: 2, background: colour, flexShrink: 0 }} />
+                            <span style={{ fontWeight: 700, color: 'var(--text)' }}>{translateLeaveType(typeName)}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="ml-leave-table-badge" style={{ background: req.status === 'cancelled' ? '#f5f5f5' : '#fbe9e7', color: req.status === 'cancelled' ? '#757575' : '#c62828' }}>
+                            {tStatus(req.status)}
+                          </span>
+                        </td>
+                        <td><span style={{ fontWeight: 600 }}>{formatDate(req.start_date)}</span></td>
+                        <td><span style={{ fontWeight: 600 }}>{formatDate(req.end_date)}</span></td>
+                        <td>
+                          <span className="ml-leave-table-days" style={{ borderColor: '#999', color: '#999' }}>{req.days_requested}</span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
+          )}
+
+          {historyTab === 'team' && (
+            <>
+              {teamLeaveLoading && <p className="claims-empty">{t('common.loading')}</p>}
+              {!teamLeaveLoading && teamLeaveRequests.length === 0 && (
+                <p className="claims-empty">No team leave requests found</p>
+              )}
+              {!teamLeaveLoading && teamLeaveRequests.length > 0 && (() => {
+                const pendingTeam = teamLeaveRequests.filter(r => r.status === 'pending')
+                const approvedTeam = teamLeaveRequests.filter(r => r.status === 'approved' && r.end_date >= todayStr)
+                const pastTeam = teamLeaveRequests.filter(r => r.status === 'approved' && r.end_date < todayStr)
+                const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+                const renderTeamTable = (rows: TeamLeaveRequest[], title: string, showApproveHint?: boolean) => rows.length === 0 ? null : (
+                  <>
+                    <h3 className="leave-history-section-title" style={showApproveHint ? { color: '#e65100' } : {}}>{title}</h3>
+                    <div className="ml-leave-table-wrap">
+                      <table className="ml-leave-table">
+                        <thead>
+                          <tr>
+                            <th>Employee</th>
+                            <th>Leave Type</th>
+                            <th>Status</th>
+                            <th>From</th>
+                            <th>To</th>
+                            <th>Days</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map(req => {
+                            const lt = teamLeaveTypeMap.get(req.leave_type_id)
+                            const typeName = lt ? lt.name : 'Leave'
+                            const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
+                            return (
+                              <tr key={req.id} className="ml-leave-table-row">
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    {req.employee_avatar ? (
+                                      <img src={req.employee_avatar} alt="" style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #e8a000', objectFit: 'cover' }} />
+                                    ) : (
+                                      <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #e8a000', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        {getInitials(req.employee_name)}
+                                      </div>
+                                    )}
+                                    <span style={{ fontWeight: 700, color: 'var(--text)' }}>{req.employee_name}</span>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ width: 4, height: 20, borderRadius: 2, background: colour, flexShrink: 0 }} />
+                                    <span style={{ fontSize: 13 }}>{translateLeaveType(typeName)}</span>
+                                  </div>
+                                </td>
+                                <td>
+                                  <span className="ml-leave-table-badge" style={{ background: req.status === 'pending' ? '#fff3e0' : '#e6f7ec', color: req.status === 'pending' ? '#e65100' : '#16a34a' }}>
+                                    {tStatus(req.status)}
+                                  </span>
+                                </td>
+                                <td><span style={{ fontWeight: 600 }}>{formatDate(req.start_date)}</span></td>
+                                <td><span style={{ fontWeight: 600 }}>{formatDate(req.end_date)}</span></td>
+                                <td>
+                                  <span className="ml-leave-table-days" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )
+                return (
+                  <>
+                    {renderTeamTable(pendingTeam, `Pending Approvals (${pendingTeam.length})`, true)}
+                    {renderTeamTable(approvedTeam, `Upcoming Leaves (${approvedTeam.length})`)}
+                    {renderTeamTable(pastTeam, `Leave History (${pastTeam.length})`)}
+                  </>
+                )
+              })()}
+            </>
           )}
         </div>
       )}
