@@ -2434,16 +2434,31 @@ export default function AdminPayrollNew() {
     setWizPeriodEditType(null)
   }
 
-  async function advanceToStep2() {
+  async function advanceToStep2(overrideWorkerTypes?: Set<'employed' | 'shift' | 'zero_hours'>, overridePeriodStart?: Record<string, string>) {
+    const types = overrideWorkerTypes || wizWorkerTypes
     const periodMap: Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }> = {}
-    for (const wt of Array.from(wizWorkerTypes)) {
+    for (const wt of Array.from(types)) {
       const wtSettingKey = wt === 'shift' ? 'shift_worker' : wt
       const wtSetting = workerSettings.find(s => s.worker_type === wtSettingKey)
       const freq = (wtSetting?.pay_pattern || 'monthly') as PayFrequency
       const freqLabel = freq === 'weekly' ? 'Weekly' : freq === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'
       const overtimeLabel = (wtSetting?.overtime_handling || 'none') === 'overtime' ? 'Overtime' : (wtSetting?.overtime_handling || 'none') === 'toil' ? 'TOIL' : 'None'
-      const lastRun = lastPayRuns[wt] || null
-      const period = getNextPeriodForFreq(freq, fyStartMonth, lastRun)
+      const overrideStart = overridePeriodStart?.[wt]
+      let period: { start: string; end: string }
+      if (overrideStart) {
+        const s = new Date(overrideStart + 'T00:00:00')
+        if (freq === 'monthly') {
+          const e = new Date(s.getFullYear(), s.getMonth() + 1, 0)
+          period = { start: localDateStr(s), end: localDateStr(e) }
+        } else {
+          const days = freq === 'weekly' ? 7 : 14
+          const e = new Date(s); e.setDate(e.getDate() + days - 1)
+          period = { start: localDateStr(s), end: localDateStr(e) }
+        }
+      } else {
+        const lastRun = lastPayRuns[wt] || null
+        period = getNextPeriodForFreq(freq, fyStartMonth, lastRun)
+      }
       periodMap[wt] = { ...period, freq, freqLabel, overtimeLabel }
     }
     setWizPeriodByType(periodMap)
@@ -2553,7 +2568,7 @@ export default function AdminPayrollNew() {
     setWizSageFiles([])
     setWizSageUploading(false)
     setWizRosterPage(1)
-    setTimeout(advanceToStep2, 0)
+    setTimeout(() => advanceToStep2(new Set([type])), 0)
   }
 
   function loadWizBonuses() {
@@ -4475,7 +4490,7 @@ export default function AdminPayrollNew() {
                           </div>
                           {ps.newEmployeeCount > 0 ? (
                             <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: card.colour }}
-                              onClick={() => { setWizTopUpMode(true); setWizWorkerTypes(new Set([card.wizKey])); setTimeout(advanceToStep2, 0) }}>
+                              onClick={() => { setWizTopUpMode(true); setWizWorkerTypes(new Set([card.wizKey])); setTimeout(() => advanceToStep2(new Set([card.wizKey])), 0) }}>
                               Top-Up Run → ({ps.newEmployeeCount} new)
                             </button>
                           ) : (
@@ -4486,22 +4501,43 @@ export default function AdminPayrollNew() {
                         </>
                       )}
 
-                      {ps.hasDrafts && (
-                        <>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                            <span style={{ fontSize: 11, background: '#fff3e0', color: '#e65100', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>{ps.drafts} draft{ps.drafts !== 1 ? 's' : ''}</span>
-                            {ps.paid > 0 && <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>{ps.paid} paid</span>}
-                          </div>
-                          <button className="admin-btn" style={{ marginTop: 8, fontSize: 12, width: '100%', color: '#e65100', borderColor: '#e65100' }}
-                            onClick={() => { setWizManagePayslipsType(card.key); setWizManagePeriod(period) }}>
-                            Manage Payslips
-                          </button>
-                        </>
-                      )}
+                      {ps.hasDrafts && (() => {
+                        const nextStart = new Date(period.end + 'T00:00:00')
+                        nextStart.setDate(nextStart.getDate() + 1)
+                        let nextEnd: Date
+                        if (f === 'monthly') {
+                          nextEnd = new Date(nextStart.getFullYear(), nextStart.getMonth() + 1, 0)
+                        } else {
+                          const days = f === 'weekly' ? 7 : 14
+                          nextEnd = new Date(nextStart); nextEnd.setDate(nextEnd.getDate() + days - 1)
+                        }
+                        const nextPeriodStart = localDateStr(nextStart)
+                        const nextPeriodEnd = localDateStr(nextEnd)
+                        return (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                              <span style={{ fontSize: 11, background: '#fff3e0', color: '#e65100', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>{ps.drafts} draft{ps.drafts !== 1 ? 's' : ''}</span>
+                              {ps.paid > 0 && <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>{ps.paid} paid</span>}
+                            </div>
+                            <button className="admin-btn" style={{ marginTop: 8, fontSize: 12, width: '100%', color: '#e65100', borderColor: '#e65100' }}
+                              onClick={() => { setWizManagePayslipsType(card.key); setWizManagePeriod(period) }}>
+                              Manage Payslips
+                            </button>
+                            <button className="admin-btn" style={{ marginTop: 4, fontSize: 11, width: '100%', color: '#64748b', borderColor: '#cbd5e1' }}
+                              onClick={() => {
+                                setWizTopUpMode(false)
+                                setWizWorkerTypes(new Set([card.wizKey]))
+                                setTimeout(() => advanceToStep2(new Set([card.wizKey]), { [card.wizKey]: nextPeriodStart }), 0)
+                              }}>
+                              Run Next Period → {formatDate(nextPeriodStart)} – {formatDate(nextPeriodEnd)}
+                            </button>
+                          </>
+                        )
+                      })()}
 
                       {ps.total === 0 && (
                         <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: card.colour }}
-                          onClick={() => { setWizTopUpMode(false); setWizWorkerTypes(new Set([card.wizKey])); setTimeout(advanceToStep2, 0) }}>
+                          onClick={() => { setWizTopUpMode(false); setWizWorkerTypes(new Set([card.wizKey])); setTimeout(() => advanceToStep2(new Set([card.wizKey])), 0) }}>
                           Start Pay Run →
                         </button>
                       )}
@@ -4628,7 +4664,7 @@ export default function AdminPayrollNew() {
               {/* Pay period & payrun context banner */}
               {(() => {
                 const periodEntries = Object.entries(wizPeriodByType)
-                const workerTypeLabels: Record<string, string> = { employed: 'Employed', shift_worker: 'Shift Workers', zero_hours: 'Zero Hours' }
+                const workerTypeLabels: Record<string, string> = { employed: 'Employed', shift: 'Shift Workers', shift_worker: 'Shift Workers', zero_hours: 'Zero Hours' }
                 const selectedTypes = Array.from(wizWorkerTypes).map(wt => workerTypeLabels[wt] || wt).join(', ')
                 return (
                   <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
