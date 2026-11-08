@@ -6335,7 +6335,7 @@ body {
     grid-template-columns: 3fr 2fr;
     gap: 20px;
     align-items: stretch;
-    max-width: 1100px;
+    max-width: 1280px;
     margin: 16px auto;
   }
 
@@ -6359,9 +6359,12 @@ body {
   }
 
   .desktop-content .ml-inline-history {
-    max-width: 1100px;
+    max-width: 1280px;
     margin: 20px auto 0;
-    padding: 0 16px;
+    padding: 16px 20px 20px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--card-bg, var(--bg));
   }
 
   .desktop-content .ml-inline-history .leave-history-tabs {
@@ -6451,65 +6454,161 @@ body {
     flex-shrink: 0;
   }
 
-  .ml-team-stats {
+  .ml-team-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 14px;
-    margin-bottom: 20px;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 4px;
   }
 
-  .ml-team-stat-card {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px 18px;
+  .ml-team-card {
     border-radius: 12px;
     border: 1px solid var(--border);
     background: var(--card-bg, var(--bg));
-  }
-
-  .ml-team-stat-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .ml-team-stat-pending .ml-team-stat-icon { background: #fff3e0; }
-  .ml-team-stat-today .ml-team-stat-icon { background: #f3e5f5; }
-  .ml-team-stat-week .ml-team-stat-icon { background: #e3f2fd; }
-  .ml-team-stat-members .ml-team-stat-icon { background: #e8f5e9; }
-
-  .ml-team-stat-info {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    min-height: 280px;
   }
 
-  .ml-team-stat-value {
-    font-size: 24px;
-    font-weight: 800;
-    line-height: 1;
+  .ml-team-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .ml-team-card-header h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0;
     color: var(--text);
   }
 
-  .ml-team-stat-label {
+  .ml-team-card-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 12px;
     font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    font-weight: 700;
+    color: #fff;
   }
 
-  .ml-team-trend-card {
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: var(--card-bg, var(--bg));
-    padding: 18px 20px;
-    margin-bottom: 20px;
+  .ml-team-card-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    max-height: 320px;
+  }
+
+  .ml-team-card-empty {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 32px 16px;
+    margin: 0;
+  }
+
+  .ml-team-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .ml-team-row:last-child {
+    border-bottom: none;
+  }
+
+  .ml-team-row-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .ml-team-row-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid #e8a000;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .ml-team-row-avatar-placeholder {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ml-team-row-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .ml-team-row-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ml-team-row-dates {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .ml-team-row-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    flex-shrink: 0;
+    margin-left: 12px;
+  }
+
+  .ml-team-row-days {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .ml-team-row-type {
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .ml-team-month-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 18px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .ml-team-month-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
   }
 
   .desktop-content .settings-page {
