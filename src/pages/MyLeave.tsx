@@ -7,7 +7,6 @@ import { useToast } from '../context/ToastContext'
 import { getManagerEmail } from '../lib/workflow'
 import { getFYRange, formatDate } from '../lib/formatters'
 import { useMediaQuery } from '../hooks/useMediaQuery'
-import Chevron from '../components/Chevron'
 
 interface TeamLeaveRequest {
   id: number
@@ -330,14 +329,6 @@ export default function MyLeave() {
 
   const fmt = (v: number) => isZeroHours ? v.toFixed(1) : String(v)
 
-  function statusColor(status: string): string {
-    if (status === 'approved') return '#43a047'
-    if (status === 'pending') return '#e65100'
-    if (status === 'rejected') return '#c62828'
-    if (status === 'cancelled') return '#757575'
-    return '#999'
-  }
-
   const activeHistoryRequests = historyRequests.filter(r => r.status === 'approved' || r.status === 'pending')
   const dismissedHistoryRequests = historyRequests.filter(r => r.status === 'cancelled' || r.status === 'rejected')
   const todayStr = (() => {
@@ -352,40 +343,6 @@ export default function MyLeave() {
       <div className="feature-page">
         <p className="claims-empty">{t('common.loading')}</p>
       </div>
-    )
-  }
-
-  const renderHistoryRow = (req: LeaveRequest) => {
-    const lt = historyTypeMap.get(req.leave_type_id)
-    const typeName = lt ? lt.name : 'Leave'
-    const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
-    return (
-      <button
-        key={req.id}
-        className="leave-history-row"
-        style={{ '--leave-row-colour': colour } as React.CSSProperties}
-        onClick={() => navigate(`/leave/${req.id}`)}
-      >
-        <div className="leave-history-row-main">
-          <span className="leave-history-row-type">{translateLeaveType(typeName)}</span>
-          <div className="leave-history-row-dates">
-            <span className="leave-history-row-date-label">{t('leave_history.from')}</span>
-            <span className="leave-history-row-date">{formatDate(req.start_date)}</span>
-            <span className="leave-history-row-date-label">{t('leave_history.to')}</span>
-            <span className="leave-history-row-date">{formatDate(req.end_date)}</span>
-          </div>
-        </div>
-        <div className="leave-history-row-right">
-          <div className="leave-history-row-days">
-            <span className="leave-history-row-days-count" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
-            <span className="leave-history-row-days-label">{t('leave_history.days')}</span>
-          </div>
-          <span className="leave-history-row-status" style={{ color: statusColor(req.status) }}>
-            {tStatus(req.status)}
-          </span>
-        </div>
-        <Chevron color="#c8e600" />
-      </button>
     )
   }
 
