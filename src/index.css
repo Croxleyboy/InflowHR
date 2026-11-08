@@ -6483,11 +6483,16 @@ body {
   .ml-team-card {
     border-radius: 12px;
     border: 1px solid var(--border);
-    background: var(--card-bg, var(--bg));
+    background: #fff;
     display: flex;
     flex-direction: column;
     min-height: 280px;
   }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .ml-team-card { background: var(--card-bg, #1e1e2e); }
+  }
+  :root[data-theme="dark"] .ml-team-card { background: var(--card-bg, #1e1e2e); }
 
   .ml-team-card-header {
     display: flex;
