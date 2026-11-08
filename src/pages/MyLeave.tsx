@@ -933,163 +933,144 @@ export default function MyLeave() {
               )}
               {!teamLeaveLoading && (() => {
                 const pendingTeam = teamLeaveRequests.filter(r => r.status === 'pending')
-                const onLeaveToday = teamLeaveRequests.filter(r => r.status === 'approved' && r.start_date <= todayStr && r.end_date >= todayStr)
-                const weekEnd = new Date()
-                weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()))
-                const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`
-                const upcomingThisWeek = teamLeaveRequests.filter(r => r.status === 'approved' && r.start_date >= todayStr && r.start_date <= weekEndStr)
                 const approvedTeam = teamLeaveRequests.filter(r => r.status === 'approved' && r.end_date >= todayStr)
                 const pastTeam = teamLeaveRequests.filter(r => r.status === 'approved' && r.end_date < todayStr)
                 const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
                 const maxTrend = Math.max(...teamTrendData.map(w => w.days), 1)
-                const chartW = 600
-                const chartH = 160
-                const barW = 36
-                const gap = (chartW - teamTrendData.length * barW) / (teamTrendData.length + 1)
+                const chartW = 480
+                const chartH = 180
+                const barW = 28
+                const barGap = (chartW - teamTrendData.length * barW) / (teamTrendData.length + 1)
 
-                const renderTeamTable = (rows: TeamLeaveRequest[], title: string, showApproveHint?: boolean) => rows.length === 0 ? null : (
-                  <>
-                    <h3 className="leave-history-section-title" style={showApproveHint ? { color: '#e65100' } : {}}>{title}</h3>
-                    <div className="ml-leave-table-wrap">
-                      <table className="ml-leave-table">
-                        <thead>
-                          <tr>
-                            <th>Employee</th>
-                            <th>Leave Type</th>
-                            <th>Status</th>
-                            <th>From</th>
-                            <th>To</th>
-                            <th>Days</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows.map(req => {
-                            const lt = teamLeaveTypeMap.get(req.leave_type_id)
-                            const typeName = lt ? lt.name : 'Leave'
-                            const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
-                            return (
-                              <tr key={req.id} className="ml-leave-table-row">
-                                <td>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    {req.employee_avatar ? (
-                                      <img src={req.employee_avatar} alt="" style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #e8a000', objectFit: 'cover' }} />
-                                    ) : (
-                                      <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #e8a000', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        {getInitials(req.employee_name)}
-                                      </div>
-                                    )}
-                                    <span style={{ fontWeight: 700, color: 'var(--text)' }}>{req.employee_name}</span>
-                                  </div>
-                                </td>
-                                <td>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ width: 4, height: 20, borderRadius: 2, background: colour, flexShrink: 0 }} />
-                                    <span style={{ fontSize: 13 }}>{translateLeaveType(typeName)}</span>
-                                  </div>
-                                </td>
-                                <td>
-                                  <span className="ml-leave-table-badge" style={{ background: req.status === 'pending' ? '#fff3e0' : '#e6f7ec', color: req.status === 'pending' ? '#e65100' : '#16a34a' }}>
-                                    {tStatus(req.status)}
-                                  </span>
-                                </td>
-                                <td><span style={{ fontWeight: 600 }}>{formatDate(req.start_date)}</span></td>
-                                <td><span style={{ fontWeight: 600 }}>{formatDate(req.end_date)}</span></td>
-                                <td>
-                                  <span className="ml-leave-table-days" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
+                const renderTeamRow = (req: TeamLeaveRequest) => {
+                  const lt = teamLeaveTypeMap.get(req.leave_type_id)
+                  const typeName = lt ? lt.name : 'Leave'
+                  const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
+                  return (
+                    <div key={req.id} className="ml-team-row">
+                      <div className="ml-team-row-left">
+                        {req.employee_avatar ? (
+                          <img src={req.employee_avatar} alt="" className="ml-team-row-avatar" />
+                        ) : (
+                          <div className="ml-team-row-avatar ml-team-row-avatar-placeholder">
+                            {getInitials(req.employee_name)}
+                          </div>
+                        )}
+                        <div className="ml-team-row-info">
+                          <span className="ml-team-row-name">{req.employee_name}</span>
+                          <span className="ml-team-row-dates">{formatDate(req.start_date)} - {formatDate(req.end_date)}</span>
+                        </div>
+                      </div>
+                      <div className="ml-team-row-right">
+                        <span className="ml-team-row-days">{req.days_requested} {req.days_requested === 1 ? 'Day' : 'Days'}</span>
+                        <span className="ml-team-row-type" style={{ color: colour }}>{translateLeaveType(typeName)}</span>
+                      </div>
                     </div>
-                  </>
-                )
+                  )
+                }
+
+                const groupByMonth = (rows: TeamLeaveRequest[]) => {
+                  const groups: { month: string; items: TeamLeaveRequest[] }[] = []
+                  rows.forEach(r => {
+                    const d = new Date(r.start_date + 'T00:00:00')
+                    const m = d.toLocaleDateString('en-GB', { month: 'long' })
+                    const last = groups[groups.length - 1]
+                    if (last && last.month === m) { last.items.push(r) }
+                    else { groups.push({ month: m, items: [r] }) }
+                  })
+                  return groups
+                }
+
                 return (
-                  <>
-                    <div className="ml-team-stats">
-                      <div className="ml-team-stat-card ml-team-stat-pending">
-                        <div className="ml-team-stat-icon">
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                          </svg>
-                        </div>
-                        <div className="ml-team-stat-info">
-                          <span className="ml-team-stat-value">{pendingTeam.length}</span>
-                          <span className="ml-team-stat-label">Pending Approvals</span>
-                        </div>
+                  <div className="ml-team-grid">
+                    <div className="ml-team-card">
+                      <div className="ml-team-card-header">
+                        <h3>Pending Approvals</h3>
+                        <span className="ml-team-card-badge" style={{ background: '#e65100' }}>{pendingTeam.length}</span>
                       </div>
-                      <div className="ml-team-stat-card ml-team-stat-today">
-                        <div className="ml-team-stat-icon">
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7b1fa2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                            <circle cx="9" cy="7" r="4"/>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                          </svg>
-                        </div>
-                        <div className="ml-team-stat-info">
-                          <span className="ml-team-stat-value">{onLeaveToday.length}</span>
-                          <span className="ml-team-stat-label">On Leave Today</span>
-                        </div>
-                      </div>
-                      <div className="ml-team-stat-card ml-team-stat-week">
-                        <div className="ml-team-stat-icon">
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                            <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-                            <line x1="3" y1="10" x2="21" y2="10"/>
-                          </svg>
-                        </div>
-                        <div className="ml-team-stat-info">
-                          <span className="ml-team-stat-value">{upcomingThisWeek.length}</span>
-                          <span className="ml-team-stat-label">Upcoming This Week</span>
-                        </div>
-                      </div>
-                      <div className="ml-team-stat-card ml-team-stat-members">
-                        <div className="ml-team-stat-icon">
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
-                            <circle cx="18" cy="8" r="3"/><path d="M21 21v-1a3 3 0 0 0-2-2.83"/>
-                          </svg>
-                        </div>
-                        <div className="ml-team-stat-info">
-                          <span className="ml-team-stat-value">{teamReportCount}</span>
-                          <span className="ml-team-stat-label">Team Members</span>
-                        </div>
+                      <div className="ml-team-card-body">
+                        {pendingTeam.length === 0 && <p className="ml-team-card-empty">No pending approvals</p>}
+                        {pendingTeam.map(renderTeamRow)}
                       </div>
                     </div>
 
-                    {teamTrendData.length > 0 && (
-                      <div className="ml-team-trend-card">
-                        <h3 className="leave-history-section-title" style={{ marginBottom: 12 }}>Leave Trend (Last 12 Weeks)</h3>
-                        <svg viewBox={`0 0 ${chartW} ${chartH + 30}`} width="100%" style={{ maxWidth: chartW, display: 'block' }}>
-                          <line x1="0" y1={chartH} x2={chartW} y2={chartH} stroke="var(--border, #e0e0e0)" strokeWidth="1" />
-                          {[0.25, 0.5, 0.75, 1].map(pct => (
-                            <line key={pct} x1="0" y1={chartH - chartH * pct} x2={chartW} y2={chartH - chartH * pct} stroke="var(--border, #e0e0e0)" strokeWidth="0.5" strokeDasharray="4 4" />
-                          ))}
-                          {teamTrendData.map((w, i) => {
-                            const barH = maxTrend > 0 ? (w.days / maxTrend) * (chartH - 10) : 0
-                            const x = gap + i * (barW + gap)
-                            return (
-                              <g key={i}>
-                                <rect x={x} y={chartH - barH} width={barW} height={barH} rx={4} fill={i === teamTrendData.length - 1 ? '#7b1fa2' : '#c8e600'} opacity={w.days === 0 ? 0.2 : 0.85} />
-                                {w.days > 0 && (
-                                  <text x={x + barW / 2} y={chartH - barH - 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text)">{w.days}</text>
-                                )}
-                                <text x={x + barW / 2} y={chartH + 14} textAnchor="middle" fontSize="9" fill="var(--text-muted, #999)">{w.weekLabel}</text>
-                              </g>
-                            )
-                          })}
-                        </svg>
+                    <div className="ml-team-card">
+                      <div className="ml-team-card-header">
+                        <h3>Upcoming Leaves</h3>
+                        <span className="ml-team-card-badge" style={{ background: '#1565c0' }}>{approvedTeam.length}</span>
                       </div>
-                    )}
+                      <div className="ml-team-card-body">
+                        {approvedTeam.length === 0 && <p className="ml-team-card-empty">No upcoming leaves</p>}
+                        {groupByMonth(approvedTeam).map(g => (
+                          <div key={g.month}>
+                            <div className="ml-team-month-label">
+                              <span className="ml-team-month-dot" />
+                              {g.month}
+                            </div>
+                            {g.items.map(renderTeamRow)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
 
-                    {renderTeamTable(pendingTeam, `Pending Approvals (${pendingTeam.length})`, true)}
-                    {renderTeamTable(approvedTeam, `Upcoming Leaves (${approvedTeam.length})`)}
-                    {renderTeamTable(pastTeam, `Leave History (${pastTeam.length})`)}
-                  </>
+                    <div className="ml-team-card">
+                      <div className="ml-team-card-header">
+                        <h3>Leave Trend</h3>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Weekly View</span>
+                      </div>
+                      <div className="ml-team-card-body" style={{ padding: '12px 8px 8px' }}>
+                        {teamTrendData.length > 0 && (
+                          <svg viewBox={`0 0 ${chartW} ${chartH + 28}`} width="100%" style={{ display: 'block' }}>
+                            <line x1="30" y1={chartH} x2={chartW} y2={chartH} stroke="var(--border, #e0e0e0)" strokeWidth="1" />
+                            {[0.25, 0.5, 0.75, 1].map(pct => {
+                              const y = chartH - (chartH - 10) * pct
+                              return (
+                                <g key={pct}>
+                                  <line x1="30" y1={y} x2={chartW} y2={y} stroke="var(--border, #e0e0e0)" strokeWidth="0.5" strokeDasharray="3 3" />
+                                  <text x="26" y={y + 3} textAnchor="end" fontSize="9" fill="var(--text-muted, #999)">{Math.round(maxTrend * pct)}</text>
+                                </g>
+                              )
+                            })}
+                            <text x="4" y={chartH / 2} textAnchor="middle" fontSize="9" fill="var(--text-muted, #999)" transform={`rotate(-90, 4, ${chartH / 2})`}>No of Associates</text>
+                            {teamTrendData.map((w, i) => {
+                              const barH = maxTrend > 0 ? (w.days / maxTrend) * (chartH - 10) : 0
+                              const x = 36 + barGap + i * (barW + barGap)
+                              return (
+                                <g key={i}>
+                                  <rect x={x} y={chartH - barH} width={barW} height={Math.max(barH, 0)} rx={3} fill={i === teamTrendData.length - 1 ? '#43a047' : '#c8e600'} opacity={w.days === 0 ? 0.15 : 0.9} />
+                                  {w.days > 0 && (
+                                    <text x={x + barW / 2} y={chartH - barH - 4} textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--text)">{w.days}</text>
+                                  )}
+                                  <text x={x + barW / 2} y={chartH + 13} textAnchor="middle" fontSize="8" fill="var(--text-muted, #999)">{w.weekLabel}</text>
+                                </g>
+                              )
+                            })}
+                          </svg>
+                        )}
+                        {teamTrendData.length === 0 && <p className="ml-team-card-empty">No trend data available</p>}
+                      </div>
+                    </div>
+
+                    <div className="ml-team-card">
+                      <div className="ml-team-card-header">
+                        <h3>Leave History</h3>
+                        <span className="ml-team-card-badge" style={{ background: '#7b1fa2' }}>{pastTeam.length}</span>
+                      </div>
+                      <div className="ml-team-card-body">
+                        {pastTeam.length === 0 && <p className="ml-team-card-empty">No leave history</p>}
+                        {groupByMonth(pastTeam).map(g => (
+                          <div key={g.month}>
+                            <div className="ml-team-month-label">
+                              <span className="ml-team-month-dot" />
+                              {g.month}
+                            </div>
+                            {g.items.map(renderTeamRow)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 )
               })()}
             </>
