@@ -6330,23 +6330,41 @@ body {
     grid-column: 1 / -1;
   }
 
+  .desktop-content .my-leave-header {
+    max-width: 1280px;
+    margin: 0 auto;
+    border-radius: 14px 14px 0 0;
+  }
+
   .desktop-content .ml-top-section {
     display: grid;
     grid-template-columns: 3fr 2fr;
     gap: 20px;
     align-items: stretch;
     max-width: 1280px;
-    margin: 16px auto;
+    margin: 0 auto;
+    padding: 20px;
+    background: var(--card-bg, var(--bg));
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
   }
 
   .desktop-content .ml-annual-card {
     margin: 0;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
 
   .desktop-content .ml-actions-panel {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    background: var(--card-bg, var(--bg));
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
 
   .desktop-content .ml-actions-panel .my-leave-im-off-btn {
@@ -6360,10 +6378,11 @@ body {
 
   .desktop-content .ml-inline-history {
     max-width: 1280px;
-    margin: 20px auto 0;
+    margin: 0 auto;
     padding: 16px 20px 20px;
-    border-radius: 14px;
+    border-radius: 0 0 14px 14px;
     border: 1px solid var(--border);
+    border-top: none;
     background: var(--card-bg, var(--bg));
   }
 
@@ -6622,6 +6641,13 @@ body {
     border-radius: 16px;
     box-shadow: 0 2px 12px rgba(0,0,0,0.06);
     overflow: hidden;
+  }
+
+  .desktop-content .my-leave-page {
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
   }
 
   .desktop-content .kudos-page,
