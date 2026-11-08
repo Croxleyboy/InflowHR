@@ -90,6 +90,8 @@ export default function MyLeave() {
   const [teamLeaveRequests, setTeamLeaveRequests] = useState<TeamLeaveRequest[]>([])
   const [teamLeaveTypeMap, setTeamLeaveTypeMap] = useState<Map<number, LeaveType>>(new Map())
   const [teamLeaveLoading, setTeamLeaveLoading] = useState(false)
+  const [teamTrendData, setTeamTrendData] = useState<{ weekLabel: string; days: number }[]>([])
+  const [teamReportCount, setTeamReportCount] = useState(0)
 
   const loadData = useCallback(async () => {
     if (!EMPLOYEE_ID) return
@@ -204,16 +206,31 @@ export default function MyLeave() {
       .eq('company_id', companyUser.company_id)
       .eq('manager_id', EMPLOYEE_ID)
       .eq('is_active', true)
-    if (!directReports || directReports.length === 0) { setTeamLeaveLoading(false); return }
+    if (!directReports || directReports.length === 0) { setTeamLeaveLoading(false); setTeamReportCount(0); return }
+    setTeamReportCount(directReports.length)
     const reportIds = directReports.map((r: any) => r.id)
     const nameMap = new Map(directReports.map((r: any) => [r.id, { name: `${r.first_name} ${r.last_name}`, avatar: r.avatar_url }]))
-    const { data: teamReqs } = await supabase
-      .from('leave_requests')
-      .select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status, reason')
-      .eq('company_id', companyUser.company_id)
-      .in('employee_id', reportIds)
-      .in('status', ['pending', 'approved'])
-      .order('start_date', { ascending: true })
+    const trendStart = new Date()
+    trendStart.setDate(trendStart.getDate() - 84)
+    const trendStartStr = `${trendStart.getFullYear()}-${String(trendStart.getMonth() + 1).padStart(2, '0')}-${String(trendStart.getDate()).padStart(2, '0')}`
+    const [activeRes, trendRes] = await Promise.all([
+      supabase
+        .from('leave_requests')
+        .select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status, reason')
+        .eq('company_id', companyUser.company_id)
+        .in('employee_id', reportIds)
+        .in('status', ['pending', 'approved'])
+        .order('start_date', { ascending: true }),
+      supabase
+        .from('leave_requests')
+        .select('start_date, days_requested')
+        .eq('company_id', companyUser.company_id)
+        .in('employee_id', reportIds)
+        .eq('status', 'approved')
+        .gte('start_date', trendStartStr)
+        .order('start_date', { ascending: true })
+    ])
+    const teamReqs = activeRes.data
     if (teamReqs && teamReqs.length > 0) {
       const typeIds = [...new Set(teamReqs.map((r: any) => r.leave_type_id))]
       const { data: types } = await supabase.from('leave_types').select('id, name, colour').in('id', typeIds)
@@ -225,6 +242,21 @@ export default function MyLeave() {
     } else {
       setTeamLeaveRequests([])
     }
+    const weeks: { weekLabel: string; days: number }[] = []
+    const now = new Date()
+    for (let w = 11; w >= 0; w--) {
+      const wStart = new Date(now)
+      wStart.setDate(now.getDate() - (w * 7) - now.getDay() + 1)
+      const wEnd = new Date(wStart)
+      wEnd.setDate(wStart.getDate() + 6)
+      const wStartStr = `${wStart.getFullYear()}-${String(wStart.getMonth() + 1).padStart(2, '0')}-${String(wStart.getDate()).padStart(2, '0')}`
+      const wEndStr = `${wEnd.getFullYear()}-${String(wEnd.getMonth() + 1).padStart(2, '0')}-${String(wEnd.getDate()).padStart(2, '0')}`
+      const total = (trendRes.data || [])
+        .filter((r: any) => r.start_date >= wStartStr && r.start_date <= wEndStr)
+        .reduce((sum: number, r: any) => sum + (r.days_requested || 0), 0)
+      weeks.push({ weekLabel: `${wStart.getDate()}/${wStart.getMonth() + 1}`, days: total })
+    }
+    setTeamTrendData(weeks)
     setTeamLeaveLoading(false)
   }, [EMPLOYEE_ID, companyUser?.company_id, isManager])
 
@@ -896,14 +928,26 @@ export default function MyLeave() {
           {historyTab === 'team' && (
             <>
               {teamLeaveLoading && <p className="claims-empty">{t('common.loading')}</p>}
-              {!teamLeaveLoading && teamLeaveRequests.length === 0 && (
+              {!teamLeaveLoading && teamLeaveRequests.length === 0 && teamReportCount === 0 && (
                 <p className="claims-empty">No team leave requests found</p>
               )}
-              {!teamLeaveLoading && teamLeaveRequests.length > 0 && (() => {
+              {!teamLeaveLoading && (() => {
                 const pendingTeam = teamLeaveRequests.filter(r => r.status === 'pending')
+                const onLeaveToday = teamLeaveRequests.filter(r => r.status === 'approved' && r.start_date <= todayStr && r.end_date >= todayStr)
+                const weekEnd = new Date()
+                weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()))
+                const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`
+                const upcomingThisWeek = teamLeaveRequests.filter(r => r.status === 'approved' && r.start_date >= todayStr && r.start_date <= weekEndStr)
                 const approvedTeam = teamLeaveRequests.filter(r => r.status === 'approved' && r.end_date >= todayStr)
                 const pastTeam = teamLeaveRequests.filter(r => r.status === 'approved' && r.end_date < todayStr)
                 const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+
+                const maxTrend = Math.max(...teamTrendData.map(w => w.days), 1)
+                const chartW = 600
+                const chartH = 160
+                const barW = 36
+                const gap = (chartW - teamTrendData.length * barW) / (teamTrendData.length + 1)
+
                 const renderTeamTable = (rows: TeamLeaveRequest[], title: string, showApproveHint?: boolean) => rows.length === 0 ? null : (
                   <>
                     <h3 className="leave-history-section-title" style={showApproveHint ? { color: '#e65100' } : {}}>{title}</h3>
@@ -964,6 +1008,84 @@ export default function MyLeave() {
                 )
                 return (
                   <>
+                    <div className="ml-team-stats">
+                      <div className="ml-team-stat-card ml-team-stat-pending">
+                        <div className="ml-team-stat-icon">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                          </svg>
+                        </div>
+                        <div className="ml-team-stat-info">
+                          <span className="ml-team-stat-value">{pendingTeam.length}</span>
+                          <span className="ml-team-stat-label">Pending Approvals</span>
+                        </div>
+                      </div>
+                      <div className="ml-team-stat-card ml-team-stat-today">
+                        <div className="ml-team-stat-icon">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7b1fa2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                          </svg>
+                        </div>
+                        <div className="ml-team-stat-info">
+                          <span className="ml-team-stat-value">{onLeaveToday.length}</span>
+                          <span className="ml-team-stat-label">On Leave Today</span>
+                        </div>
+                      </div>
+                      <div className="ml-team-stat-card ml-team-stat-week">
+                        <div className="ml-team-stat-icon">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                          </svg>
+                        </div>
+                        <div className="ml-team-stat-info">
+                          <span className="ml-team-stat-value">{upcomingThisWeek.length}</span>
+                          <span className="ml-team-stat-label">Upcoming This Week</span>
+                        </div>
+                      </div>
+                      <div className="ml-team-stat-card ml-team-stat-members">
+                        <div className="ml-team-stat-icon">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+                            <circle cx="18" cy="8" r="3"/><path d="M21 21v-1a3 3 0 0 0-2-2.83"/>
+                          </svg>
+                        </div>
+                        <div className="ml-team-stat-info">
+                          <span className="ml-team-stat-value">{teamReportCount}</span>
+                          <span className="ml-team-stat-label">Team Members</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {teamTrendData.length > 0 && (
+                      <div className="ml-team-trend-card">
+                        <h3 className="leave-history-section-title" style={{ marginBottom: 12 }}>Leave Trend (Last 12 Weeks)</h3>
+                        <svg viewBox={`0 0 ${chartW} ${chartH + 30}`} width="100%" style={{ maxWidth: chartW, display: 'block' }}>
+                          <line x1="0" y1={chartH} x2={chartW} y2={chartH} stroke="var(--border, #e0e0e0)" strokeWidth="1" />
+                          {[0.25, 0.5, 0.75, 1].map(pct => (
+                            <line key={pct} x1="0" y1={chartH - chartH * pct} x2={chartW} y2={chartH - chartH * pct} stroke="var(--border, #e0e0e0)" strokeWidth="0.5" strokeDasharray="4 4" />
+                          ))}
+                          {teamTrendData.map((w, i) => {
+                            const barH = maxTrend > 0 ? (w.days / maxTrend) * (chartH - 10) : 0
+                            const x = gap + i * (barW + gap)
+                            return (
+                              <g key={i}>
+                                <rect x={x} y={chartH - barH} width={barW} height={barH} rx={4} fill={i === teamTrendData.length - 1 ? '#7b1fa2' : '#c8e600'} opacity={w.days === 0 ? 0.2 : 0.85} />
+                                {w.days > 0 && (
+                                  <text x={x + barW / 2} y={chartH - barH - 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text)">{w.days}</text>
+                                )}
+                                <text x={x + barW / 2} y={chartH + 14} textAnchor="middle" fontSize="9" fill="var(--text-muted, #999)">{w.weekLabel}</text>
+                              </g>
+                            )
+                          })}
+                        </svg>
+                      </div>
+                    )}
+
                     {renderTeamTable(pendingTeam, `Pending Approvals (${pendingTeam.length})`, true)}
                     {renderTeamTable(approvedTeam, `Upcoming Leaves (${approvedTeam.length})`)}
                     {renderTeamTable(pastTeam, `Leave History (${pastTeam.length})`)}

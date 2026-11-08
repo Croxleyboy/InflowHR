@@ -6451,6 +6451,67 @@ body {
     flex-shrink: 0;
   }
 
+  .ml-team-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .ml-team-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 18px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--card-bg, var(--bg));
+  }
+
+  .ml-team-stat-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .ml-team-stat-pending .ml-team-stat-icon { background: #fff3e0; }
+  .ml-team-stat-today .ml-team-stat-icon { background: #f3e5f5; }
+  .ml-team-stat-week .ml-team-stat-icon { background: #e3f2fd; }
+  .ml-team-stat-members .ml-team-stat-icon { background: #e8f5e9; }
+
+  .ml-team-stat-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ml-team-stat-value {
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .ml-team-stat-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .ml-team-trend-card {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--card-bg, var(--bg));
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+
   .desktop-content .settings-page {
     padding: 20px 0;
   }
