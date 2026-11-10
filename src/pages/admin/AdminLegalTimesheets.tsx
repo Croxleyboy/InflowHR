@@ -881,7 +881,7 @@ export default function AdminLegalTimesheets() {
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(8)
     doc.setFont('helvetica', 'bold')
-    const cols = [lm + 4, lm + 22, lm + 55, lm + 88, rm - 42, rm - 24, rm - 4]
+    const cols = [lm + 4, lm + 22, lm + 52, lm + 82, rm - 56, rm - 36, rm - 4]
     doc.text('Date', cols[0], y + 6)
     doc.text('Fee Earner', cols[1], y + 6)
     doc.text('Matter', cols[2], y + 6)
